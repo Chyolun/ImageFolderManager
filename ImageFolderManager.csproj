@@ -114,6 +114,7 @@
     <Compile Include="Models\ImageCache.cs" />
     <Compile Include="Models\ImageInfo.cs" />
     <Compile Include="RelayCommand.cs" />
+    <Compile Include="Services\FileSystemWatcherService.cs" />
     <Compile Include="Services\FolderService.cs" />
     <Compile Include="ViewModels\MainViewModel.cs" />
     <Compile Include="Views\MainWindow.xaml.cs">
