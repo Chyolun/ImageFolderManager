@@ -1,0 +1,218 @@
+﻿<mah:MetroWindow x:Class="ImageFolderManager.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:ImageFolderManager.ViewModels"
+        xmlns:mah="http://metro.mahapps.com/winfx/xaml/controls"
+        mc:Ignorable="d"
+        Title="Image Folder Manager"
+        Height="600"
+        Width="1000"
+        GlowBrush="{DynamicResource AccentColorBrush}"
+        BorderBrush="{DynamicResource AccentColorBrush}"
+        WindowStartupLocation="CenterScreen"
+        Background="{DynamicResource MahApps.Brushes.Control.Background}">
+
+    <!-- Set the DataContext to MainViewModel -->
+    <mah:MetroWindow.DataContext>
+        <local:MainViewModel />
+    </mah:MetroWindow.DataContext>
+
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="250"/>
+            <ColumnDefinition Width="3"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+
+        <!-- Left Panel -->
+        <Grid Grid.Column="0" Margin="5">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="30" />
+                <RowDefinition Height="auto" />
+                <RowDefinition Height="3" />
+                <RowDefinition Height="30" />
+                <RowDefinition Height="*" />
+                <!-- 搜索栏或其他内容 -->
+            </Grid.RowDefinitions>
+
+            <StackPanel Grid.Row="0">
+                <Button Content="Open a Folder"
+                  Command="{Binding SetRootDirectoryCommand}"
+                  Margin="0,0,0,10" />
+             </StackPanel>
+
+                <!-- 目录树（可滚动） -->
+            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                <TreeView ItemsSource="{Binding RootFolders}" SelectedItemChanged="TreeView_SelectedItemChanged"  ContextMenuOpening="TreeView_ContextMenuOpening">
+                    <TreeView.ItemContainerStyle>
+                        <Style TargetType="TreeViewItem">
+                            <EventSetter Event="Expanded" Handler="TreeViewItem_Expanded"/>
+                        </Style>
+                    </TreeView.ItemContainerStyle>
+                    <TreeView.ItemTemplate>
+                        <HierarchicalDataTemplate ItemsSource="{Binding Children}">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="{Binding Name}" Foreground="White" />
+                            </StackPanel>
+                        </HierarchicalDataTemplate>
+                    </TreeView.ItemTemplate>
+                </TreeView>
+            </ScrollViewer>
+
+            <!-- 垂直分割条 -->
+            <GridSplitter Grid.Row="2"
+                  Height="3"
+                  HorizontalAlignment="Stretch"
+                  VerticalAlignment="Center"
+                  Background="Gray"
+                  ShowsPreview="True" />
+
+            <StackPanel Grid.Row="3">
+                <TextBlock Text="Search Results:" Foreground="LightGreen" FontWeight="Bold" Margin="0,0,0,5"/>
+            </StackPanel>
+
+            <!-- 下半：搜索结果 -->
+            <ScrollViewer Grid.Row="4" VerticalScrollBarVisibility="Auto" >
+                <ListBox ItemsSource="{Binding SearchResultFolders}"
+                         SelectedItem="{Binding SelectedSearchResult, Mode=TwoWay}"
+                         ContextMenuOpening="SearchResultListBox_ContextMenuOpening" >
+                    <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel Orientation="Vertical">
+                                    <TextBlock Text="{Binding Name}" Foreground="White"/>
+                                    <TextBlock Text="{Binding FolderPath}" Foreground="Gray" FontSize="10"/>
+                                    <TextBlock Text="{Binding Rating}" Foreground="Gold" FontSize="10"/>
+                                <TextBlock Text="{Binding TagsDisplay}" Foreground="LightBlue" FontSize="10"/>
+                            </StackPanel>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+          
+            </ScrollViewer>
+        </Grid>
+
+        <!-- 垂直分割条 -->
+            <GridSplitter Grid.Column="1"
+                  Width="5"
+                  HorizontalAlignment="Center"
+                  VerticalAlignment="Stretch"
+                  Background="Gray"
+                  ShowsPreview="True" />
+
+            <!-- Right Panel -->
+        <Grid Grid.Column="3" Margin="10">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="35"/>
+                <!-- 搜索栏 -->
+                <RowDefinition Height="*"/>
+                <!-- 图片区域 -->
+                <RowDefinition Height="Auto"/>
+                <!-- Tag & 评分区域 -->
+            </Grid.RowDefinitions>
+
+            <!-- 搜索栏 -->
+            <StackPanel   Orientation="Horizontal" Grid.Column="0"  Margin="0,0,0,0" >
+                <TextBox  Width="500"   Margin="5,0,0,5"  Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                           Background="Black"
+                              Foreground="White">
+                    <TextBox.InputBindings>
+                        <KeyBinding Key="Enter"
+                    Command="{Binding SearchCommand}" />
+                    </TextBox.InputBindings>
+                </TextBox>
+                <Button Content="Search" Width="50"  Margin="5,0,0,5"
+                       Command="{Binding SearchCommand}" />
+            </StackPanel>
+            <!-- 图片预览 -->
+            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                <ItemsControl ItemsSource="{Binding Images}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <WrapPanel />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel Margin="5">
+                                <!--<Border BorderBrush="DarkGray" BorderThickness="1"
+                                Width="200" Height="300" Background="White">
+                                    <Image Source="{Binding Thumbnail}"
+                                   Width="200"
+                                   Height="300"
+                                   Stretch="Uniform"
+                                   VerticalAlignment="Center"
+                                   HorizontalAlignment="Center" />
+                                </Border>-->
+                                <Image Source="{Binding Thumbnail}"
+                                   Width="200"
+                                   Height="300"
+                                   Stretch="Uniform"
+                                   VerticalAlignment="Center"
+                                   HorizontalAlignment="Center"
+                                   Tag="{Binding FilePath}" 
+                                   MouseLeftButtonDown="Image_MouseLeftButtonDown" />
+                                <TextBlock Text="{Binding FileName}"
+                                   Width="200"
+                                   FontSize="10"
+                                   Foreground="White"
+                                   TextAlignment="Center"
+                                   Margin="0,5,0,0"/>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+
+            <!-- Tag + 评分区域 -->
+            <GroupBox Header="Folder Info" Grid.Row="2" Margin="0,10,0,0" Foreground="White">
+                <StackPanel>
+
+                    <!-- 评分 -->
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,0">
+                        <TextBlock Text="Rating:" VerticalAlignment="Center" Foreground="White" Margin="0,0,10,0"/>
+                        <ItemsControl ItemsSource="{Binding Stars}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Button Content="{Binding Symbol}"
+                                Command="{Binding DataContext.SetRatingCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                CommandParameter="{Binding Value}"
+                                FontSize="20"
+                                Foreground="Gold"
+                                Background="Transparent"
+                                BorderThickness="0"
+                                Padding="0" />
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <StackPanel Orientation="Horizontal"/>
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                        </ItemsControl>
+                    </StackPanel>
+
+                    <!-- 空白行 -->
+                    <Border Height="10"/>
+
+                    <!-- 已保存 Tag 列表展示 -->
+                   
+                    <TextBlock Text="{Binding DisplayTagLine}" 
+                                           Foreground="LightGreen" 
+                                           FontWeight="SemiBold" 
+                                           Margin="0,0,0,10"
+                                           TextWrapping="Wrap"/>
+                    
+
+                    <!-- Tag 输入 -->
+                    <TextBlock Text="Tags (use # to separate):" Foreground="White" Margin="0,5,0,5"/>
+                    <TextBox Text="{Binding TagInputText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                    <!-- Save 按钮 -->
+                    <Button Content="Update" Width="150" Margin="0,10,0,0"
+                Command="{Binding SaveTagsCommand}"/>
+                </StackPanel>
+            </GroupBox>
+        </Grid>
+    </Grid>
+</mah:MetroWindow>
