@@ -53,6 +53,16 @@ namespace ImageFolderManager.Services
                 watcher.EnableRaisingEvents = false;
                 watcher.Dispose();
                 _watchers.Remove(folderPath);
+
+                // Also unwatch any subfolders being watched
+                var subfoldersToUnwatch = _watchers.Keys
+                    .Where(path => path.StartsWith(folderPath + Path.DirectorySeparatorChar))
+                    .ToList();
+
+                foreach (var subPath in subfoldersToUnwatch)
+                {
+                    UnwatchFolder(subPath);
+                }
             }
         }
 
