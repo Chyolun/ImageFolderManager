@@ -276,28 +276,32 @@ namespace ImageFolderManager.ViewModels
 
             try
             {
+                // Store the parent before deletion for later use
+                var parentFolder = folder.Parent;
+                string folderPath = folder.FolderPath;
+
                 // Stop watching this folder before deletion
-                _fileSystemWatcher.UnwatchFolder(folder.FolderPath);
+                _fileSystemWatcher.UnwatchFolder(folderPath);
 
                 // 删除到回收站
                 Microsoft.VisualBasic.FileIO.FileSystem.DeleteDirectory(
-                    folder.FolderPath,
+                    folderPath,
                     Microsoft.VisualBasic.FileIO.UIOption.OnlyErrorDialogs,
                     Microsoft.VisualBasic.FileIO.RecycleOption.SendToRecycleBin);
 
                 // Remove this folder and all subfolders from _allLoadedFolders
-                RemoveFolderAndSubfoldersFromAllLoaded(folder.FolderPath);
+                RemoveFolderAndSubfoldersFromAllLoaded(folderPath);
 
                 // 从搜索结果中移除
-                RemoveFolderAndSubfoldersFromSearchResults(folder.FolderPath);
+                RemoveFolderAndSubfoldersFromSearchResults(folderPath);
 
-                // 从树结构中移除
-                RemoveFolder(folder);
+                // 从树结构中移除 - 使用更可靠的方法
+                RemoveFolderFromTree(folder);
 
                 // 自动选中其父节点
-                if (folder.Parent != null)
+                if (parentFolder != null)
                 {
-                    SelectedFolder = folder.Parent;
+                    SelectedFolder = parentFolder;
                     await LoadImagesForSelectedFolderAsync();
                 }
             }
@@ -331,43 +335,80 @@ namespace ImageFolderManager.ViewModels
             }
         }
 
-        public void RemoveFolder(FolderInfo folder)
+        //public void RemoveFolder(FolderInfo folder)
+        //{
+        //    RemoveFolderFromTree(folder);
+        //}
+
+        //private void RemoveFromChildren(ObservableCollection<FolderInfo> folders, FolderInfo target)
+        //{
+        //    // This is kept for compatibility but won't be used
+        //    foreach (var folder in folders)
+        //    {
+        //        if (folder == null) continue; // 避免对 null 进行访问
+
+        //        if (folder.Children != null && folder.Children.Contains(target))
+        //        {
+        //            folder.Children.Remove(target);
+        //            return;
+        //        }
+
+        //        if (folder.Children != null)
+        //        {
+        //            RemoveFromChildren(folder.Children, target);
+        //        }
+        //    }
+        //}
+
+        public void RemoveFolderFromTree(FolderInfo folder)
         {
             if (folder == null) return;
 
+            // Case 1: Remove from root folders if it's a root folder
             if (RootFolders.Contains(folder))
             {
                 RootFolders.Remove(folder);
+                return;
             }
-            else if (folder.Parent != null)
-            {
-                // If parent is available, remove directly from parent's children
-                folder.Parent.Children.Remove(folder);
-            }
-            else
-            {
-                // Fallback: search through the tree recursively
-                RemoveFromChildren(RootFolders, folder);
-            }
-        }
 
-        private void RemoveFromChildren(ObservableCollection<FolderInfo> folders, FolderInfo target)
-        {
-            foreach (var folder in folders)
+            // Case 2: Remove from parent's children if parent is available
+            if (folder.Parent != null && folder.Parent.Children != null)
             {
-                if (folder == null) continue; // 避免对 null 进行访问
-
-                if (folder.Children != null && folder.Children.Contains(target))
+                if (folder.Parent.Children.Contains(folder))
                 {
-                    folder.Children.Remove(target);
+                    folder.Parent.Children.Remove(folder);
                     return;
                 }
+            }
 
-                if (folder.Children != null)
+            // Case 3: Fallback - search through the entire tree
+            RemoveFolderRecursive(RootFolders, folder);
+        }
+
+        private bool RemoveFolderRecursive(ObservableCollection<FolderInfo> folders, FolderInfo target)
+        {
+            if (folders == null) return false;
+
+            // First, check if the target is in this collection
+            if (folders.Contains(target))
+            {
+                folders.Remove(target);
+                return true;
+            }
+
+            // If not, search through all children
+            foreach (var folder in folders.ToList()) // Use ToList to avoid collection modification issues
+            {
+                if (folder?.Children != null)
                 {
-                    RemoveFromChildren(folder.Children, target);
+                    if (RemoveFolderRecursive(folder.Children, target))
+                    {
+                        return true;
+                    }
                 }
             }
+
+            return false;
         }
 
         private void UpdateFolderMetadataInAllLoadedFolders(string folderPath, List<string> newTags, int newRating)
