@@ -1,0 +1,46 @@
+﻿<UserControl x:Class="ImageFolderManager.Views.FolderTreeView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
+             xmlns:local="clr-namespace:ImageFolderManager.Views"
+             mc:Ignorable="d" 
+             d:DesignHeight="450" d:DesignWidth="300">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0" Text="Folder Tree" 
+                   FontSize="13" Foreground="LightGreen" 
+                   FontWeight="Bold" Margin="5,2,5,0"/>
+
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+            <TreeView x:Name="FolderTreeViewControl" 
+                      ItemsSource="{Binding RootFolders}"
+                      SelectedItemChanged="TreeView_SelectedItemChanged"
+                      ContextMenuOpening="TreeView_ContextMenuOpening"
+                      PreviewMouseLeftButtonDown="TreeView_PreviewMouseLeftButtonDown"
+                      PreviewMouseMove="TreeView_PreviewMouseMove"
+                      PreviewMouseLeftButtonUp="TreeView_PreviewMouseLeftButtonUp"
+                      AllowDrop="True"
+                      Drop="TreeView_Drop"
+                      DragOver="TreeView_DragOver">
+                <TreeView.ItemContainerStyle>
+                    <Style TargetType="TreeViewItem">
+                        <EventSetter Event="Expanded" Handler="TreeViewItem_Expanded"/>
+                        <Setter Property="Foreground" Value="White"/>
+                    </Style>
+                </TreeView.ItemContainerStyle>
+                <TreeView.ItemTemplate>
+                    <HierarchicalDataTemplate ItemsSource="{Binding Children}">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="{Binding Name}" Foreground="White" />
+                        </StackPanel>
+                    </HierarchicalDataTemplate>
+                </TreeView.ItemTemplate>
+            </TreeView>
+        </ScrollViewer>
+    </Grid>
+</UserControl>

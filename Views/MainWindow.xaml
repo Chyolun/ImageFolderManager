@@ -1,0 +1,246 @@
+﻿<mah:MetroWindow x:Class="ImageFolderManager.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:views="clr-namespace:ImageFolderManager.Views"
+        xmlns:local="clr-namespace:ImageFolderManager.ViewModels"
+        xmlns:mah="http://metro.mahapps.com/winfx/xaml/controls"
+        mc:Ignorable="d"
+        Title="Image Folder Manager"
+        Height="600"
+        Width="1000"
+        GlowBrush="{DynamicResource AccentColorBrush}"
+        BorderBrush="{DynamicResource AccentColorBrush}"
+        WindowStartupLocation="CenterScreen"
+        Background="{DynamicResource MahApps.Brushes.Control.Background}">
+
+    <!-- Set the DataContext to MainViewModel -->
+    <mah:MetroWindow.DataContext>
+        <local:MainViewModel />
+    </mah:MetroWindow.DataContext>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- Menu Bar -->
+        <Menu Grid.Row="0" Background="{DynamicResource MahApps.Brushes.ThemeBackground}">
+            <MenuItem Header="Settings" Foreground="White">
+                <MenuItem Header="Root Directory" Click="RootDirectory_Click"/>
+                <MenuItem Header="Preview Size" Click="PreviewSize_Click"/>
+            </MenuItem>
+            <MenuItem Header="Tools" Foreground="White">
+                <MenuItem Header="Refresh All" Click="RefreshAll_Click"/>
+            </MenuItem>
+        </Menu>
+
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="250"/>
+                <ColumnDefinition Width="3"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- Left Panel -->
+            <Grid Grid.Column="0" Margin="5">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="auto" />
+                    <RowDefinition Height="3" />
+                    <RowDefinition Height="25" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <!-- IMPORTANT: Ensure ShellTreeView gets the MainViewModel DataContext -->
+                <views:ShellTreeView Grid.Row="0" x:Name="ShellTreeViewControl" 
+                                    FolderSelected="OnFolderSelected"
+                                    DataContext="{Binding}" />
+
+                <!-- Vertical Splitter -->
+                <GridSplitter Grid.Row="1"
+                  Height="3"
+                  HorizontalAlignment="Stretch"
+                  VerticalAlignment="Center"
+                  Background="Gray"
+                  ShowsPreview="True" />
+
+                <!-- Search Results Header -->
+                <StackPanel Grid.Row="2">
+                    <TextBlock Text="Search Results" FontSize="13" 
+                   Foreground="LightGreen" FontWeight="Bold" 
+                   Margin="5,2,5,0"/>
+                </StackPanel>
+
+                <!-- Search Results List -->
+                <ScrollViewer Grid.Row="3" VerticalScrollBarVisibility="Auto">
+                    <ListBox ItemsSource="{Binding SearchResultFolders}"
+                 SelectedItem="{Binding SelectedSearchResult, Mode=TwoWay}"
+                 ContextMenuOpening="SearchResultListBox_ContextMenuOpening"
+                 SelectionChanged="SearchResults_SelectionChanged">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel Orientation="Vertical">
+                                    <TextBlock Text="{Binding Name}" Foreground="White"/>
+                                    <TextBlock Text="{Binding FolderPath}" Foreground="Gray" FontSize="10"/>
+                                    <TextBlock Text="{Binding Rating, StringFormat={}Rating: {0}/5}" Foreground="Gold" FontSize="10"/>
+                                    <TextBlock Text="{Binding TagsDisplay}" Foreground="LightBlue" FontSize="10"/>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </ScrollViewer>
+            </Grid>
+
+            <!-- Vertical Splitter -->
+            <GridSplitter Grid.Column="1"
+                      Width="5"
+                      HorizontalAlignment="Center"
+                      VerticalAlignment="Stretch"
+                      Background="Gray"
+                      ShowsPreview="True" />
+
+            <!-- Right Panel -->
+            <Grid Grid.Column="2" Margin="10">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="35"/>
+                    <!-- Search bar -->
+                    <RowDefinition Height="Auto"/>
+                    <!-- Tag Cloud -->
+                    <RowDefinition Height="*"/>
+                    <!-- Image area -->
+                    <RowDefinition Height="Auto"/>
+                    <!-- Tag & rating area -->
+                    <RowDefinition Height="30"/>
+                    <!-- message -->
+                </Grid.RowDefinitions>
+
+                <!-- Search bar -->
+                <StackPanel Orientation="Horizontal" Grid.Column="0" Margin="0,0,0,0">
+                    <TextBox Width="500" Margin="5,0,0,5" Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                               Background="Black"
+                               Foreground="White">
+                        <TextBox.InputBindings>
+                            <KeyBinding Key="Enter"
+                        Command="{Binding SearchCommand}" />
+                        </TextBox.InputBindings>
+                    </TextBox>
+                    <Button Content="Search" Width="50" Margin="5,0,0,5"
+                           Command="{Binding SearchCommand}" />
+                </StackPanel>
+
+                <GroupBox Header="Popular Tags" Grid.Row="1" Margin="0,5,0,5" Foreground="White">
+                    <views:TagCloudControl DataContext="{Binding TagCloud}" 
+                                  MaxHeight="100"  
+                                  Margin="0,5,0,5"/>
+                </GroupBox>
+
+                <!-- Image preview -->
+                <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
+                    <ItemsControl ItemsSource="{Binding Images}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <WrapPanel />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel Margin="5">
+                                    <Image Source="{Binding Thumbnail}"
+                                       Width="{Binding DataContext.PreviewWidth, RelativeSource={RelativeSource AncestorType=Window}}"
+                                       Height="{Binding DataContext.PreviewHeight, RelativeSource={RelativeSource AncestorType=Window}}"
+                                       Stretch="Uniform"
+                                       VerticalAlignment="Center"
+                                       HorizontalAlignment="Center"
+                                       Tag="{Binding FilePath}" 
+                                       MouseLeftButtonDown="Image_MouseLeftButtonDown" />
+                                    <TextBlock Text="{Binding FileName}"
+                                       Width="{Binding DataContext.PreviewWidth, RelativeSource={RelativeSource AncestorType=Window}}"
+                                       FontSize="10"
+                                       Foreground="White"
+                                       TextAlignment="Center"
+                                       Margin="0,5,0,0"/>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+
+                <!-- Tag + Rating area -->
+                <GroupBox Header="Folder Info" Grid.Row="3" Margin="0,10,0,0" Foreground="White">
+                    <StackPanel>
+                        <!-- Current Folder Path -->
+                        <TextBlock Text="{Binding SelectedFolder.FolderPath}" 
+                                   Foreground="LightGray" 
+                                   FontSize="11" 
+                                   TextWrapping="Wrap"
+                                   Margin="0,0,0,10"/>
+
+                        <!-- Rating -->
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,0">
+                            <TextBlock Text="Rating:" VerticalAlignment="Center" Foreground="White" Margin="0,0,10,0"/>
+                            <ItemsControl ItemsSource="{Binding Stars}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Button Content="{Binding Symbol}"
+                                    Command="{Binding DataContext.SetRatingCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                    CommandParameter="{Binding Value}"
+                                    FontSize="20"
+                                    Foreground="Gold"
+                                    Background="Transparent"
+                                    BorderThickness="0"
+                                    Padding="0" />
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <StackPanel Orientation="Horizontal"/>
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                            </ItemsControl>
+                        </StackPanel>
+
+                        <!-- Space -->
+                        <Border Height="10"/>
+
+                        <!-- Saved Tags display -->
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+
+                            <TextBlock Text="{Binding DisplayTagLine}" 
+                              Grid.Column="0"
+                              Foreground="LightGreen" 
+                              FontWeight="SemiBold" 
+                              Margin="0,0,0,10"
+                              TextWrapping="Wrap"/>
+                            <Button Content="Edit" 
+                               Grid.Column="1"
+                               Width="60"
+                               Height="24"
+                               Margin="5,0,0,10"
+                               HorizontalAlignment="Right"
+                               Command="{Binding EditTagsCommand}"/>
+                        </Grid>
+                        <!-- Tags input -->
+                        <TextBlock Text="Tags (use # to separate):" Foreground="White" Margin="0,5,0,5"/>
+                        <TextBox Text="{Binding TagInputText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" 
+                                 Name="TagsTextBox" />
+                        <!-- Save button -->
+                        <Button Content="Update" Width="150" Margin="0,10,0,0"
+                                     Command="{Binding SaveTagsCommand}"/>
+                    </StackPanel>
+                </GroupBox>
+                <StackPanel Grid.Row="4" Margin="10,5,20,3">
+                    <TextBlock Text="{Binding StatusMessage}" 
+                       Foreground="LightGray" 
+                       TextWrapping="Wrap"
+                       Margin="5"/>
+                </StackPanel>
+            </Grid>
+        </Grid>
+    </Grid>
+</mah:MetroWindow>

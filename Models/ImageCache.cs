@@ -1,0 +1,618 @@
+﻿using System;
+using System.Collections.Concurrent;
+using System.Diagnostics;
+using System.IO;
+using System.Linq;
+using System.Security.Cryptography;
+using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
+using System.Windows.Media.Imaging;
+
+namespace ImageFolderManager.Models
+{
+    /// <summary>
+    /// Provides an optimized caching mechanism for image thumbnails with LRU eviction policy and content-based caching
+    /// </summary>
+    public static class ImageCache
+    {
+        // Configuration
+        private static readonly int MAX_CACHE_SIZE = 300; // Maximum number of items in memory cache
+        private static readonly int TRIM_THRESHOLD = 350; // When to start cache trimming
+        private static readonly int TRIM_TARGET = 250;    // How many items to keep after trimming
+
+        // Cache storage
+        private class CacheItem
+        {
+            public WeakReference<BitmapImage> Image { get; }
+            public DateTime LastAccessed { get; set; }
+
+            public CacheItem(BitmapImage image)
+            {
+                Image = new WeakReference<BitmapImage>(image);
+                LastAccessed = DateTime.UtcNow;
+            }
+        }
+
+        private static readonly ConcurrentDictionary<string, CacheItem> _thumbnailCache = new();
+
+        // Thread synchronization
+        private static readonly SemaphoreSlim _cacheLock = new(1, 1);
+        private static readonly SemaphoreSlim _diskOperationLock = new(3, 3); // Allow multiple concurrent disk operations
+        private static bool _isTrimming = false;
+
+        // Disk cache path
+        private static readonly string _cacheFolder = Path.Combine(
+            AppDomain.CurrentDomain.BaseDirectory,
+            "Cache");
+
+        // Statistics
+        private static long _cacheHits = 0;
+        private static long _cacheMisses = 0;
+
+        // Cancellation tracking
+        private static ConcurrentDictionary<string, CancellationTokenSource> _loadingOperations =
+            new ConcurrentDictionary<string, CancellationTokenSource>();
+
+        static ImageCache()
+        {
+            try
+            {
+                Directory.CreateDirectory(_cacheFolder);
+                Task.Run(CleanupOrphanedCacheFilesAsync);
+            }
+            catch (Exception)
+            {
+                _cacheFolder = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                    "ImageFolderManager", "Cache");
+
+                Directory.CreateDirectory(_cacheFolder);
+            }
+        }
+
+        /// <summary>
+        /// Loads a thumbnail for the specified image path, using cache when available
+        /// </summary>
+        /// <param name="path">Path to the source image</param>
+        /// <param name="cancellationToken">Optional cancellation token</param>
+        /// <param name="progressCallback">Optional callback to report loading progress</param>
+        /// <returns>A BitmapImage thumbnail or null if loading failed or was cancelled</returns>
+        public static async Task<BitmapImage> LoadThumbnailAsync(
+            string path,
+            CancellationToken cancellationToken = default,
+            IProgress<double> progressCallback = null)
+        {
+            if (string.IsNullOrEmpty(path) || !File.Exists(path))
+                return null;
+
+            // Register this loading operation for possible cancellation
+            var operationCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            _loadingOperations[path] = operationCts;
+
+            try
+            {
+                // Report initial progress
+                progressCallback?.Report(0.1);
+
+                // Check memory cache first (fastest)
+                if (TryGetFromMemoryCache(path, out var cachedImage))
+                {
+                    Interlocked.Increment(ref _cacheHits);
+                    progressCallback?.Report(1.0); // Complete
+                    return cachedImage;
+                }
+
+                // Check if the operation was cancelled
+                operationCts.Token.ThrowIfCancellationRequested();
+
+                Interlocked.Increment(ref _cacheMisses);
+                progressCallback?.Report(0.2);
+
+                // Calculate content-based cache key
+                string contentHash = await CalculateFileContentHashAsync(path, operationCts.Token);
+
+                // Check if operation was cancelled
+                operationCts.Token.ThrowIfCancellationRequested();
+                progressCallback?.Report(0.3);
+
+                // Get thumbnail cache path based on content hash
+                string thumbPath = GetThumbnailCachePath(path, contentHash);
+
+                // Check disk cache next
+                if (File.Exists(thumbPath))
+                {
+                    try
+                    {
+                        await _diskOperationLock.WaitAsync(operationCts.Token);
+                        try
+                        {
+                            progressCallback?.Report(0.5);
+                            var bitmap = await LoadImageFromFileAsync(thumbPath, operationCts.Token);
+                            if (bitmap != null)
+                            {
+                                StoreInMemoryCache(path, bitmap);
+                                progressCallback?.Report(1.0); // Complete
+                                return bitmap;
+                            }
+                        }
+                        finally
+                        {
+                            _diskOperationLock.Release();
+                        }
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        throw;
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"Error loading cached thumbnail: {ex.Message}");
+                        // Fall through to regenerate
+                    }
+                }
+
+                // Check if operation was cancelled
+                operationCts.Token.ThrowIfCancellationRequested();
+                progressCallback?.Report(0.6);
+
+                // Generate new thumbnail
+                try
+                {
+                    return await Task.Run(async () =>
+                    {
+                        try
+                        {
+                            int decodeWidth = Services.AppSettings.Instance.PreviewWidth;
+
+                            // Check if operation was cancelled
+                            operationCts.Token.ThrowIfCancellationRequested();
+                            progressCallback?.Report(0.7);
+
+                            var bitmap = new BitmapImage();
+                            bitmap.BeginInit();
+                            bitmap.UriSource = new Uri(path);
+                            bitmap.DecodePixelWidth = decodeWidth;
+                            bitmap.CacheOption = BitmapCacheOption.OnLoad;
+                            bitmap.EndInit();
+                            bitmap.Freeze(); // Important for cross-thread usage
+
+                            StoreInMemoryCache(path, bitmap);
+                            progressCallback?.Report(0.9);
+
+                            // Save to disk cache asynchronously without waiting for completion
+                            _ = SaveThumbnailToDiskAsync(bitmap, thumbPath, contentHash);
+
+                            progressCallback?.Report(1.0); // Complete
+                            return bitmap;
+                        }
+                        catch (OperationCanceledException)
+                        {
+                            throw;
+                        }
+                        catch (Exception ex)
+                        {
+                            Debug.WriteLine($"Error generating thumbnail for {path}: {ex.Message}");
+                            return null;
+                        }
+                    }, operationCts.Token);
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"Error in thumbnail generation task: {ex.Message}");
+                    return null;
+                }
+            }
+            finally
+            {
+                // Clean up the cancellation token source
+                _loadingOperations.TryRemove(path, out _);
+                operationCts.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// Cancels loading operation for the specified path
+        /// </summary>
+        public static void CancelLoading(string path)
+        {
+            if (_loadingOperations.TryGetValue(path, out var cts))
+            {
+                try
+                {
+                    cts.Cancel();
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"Error cancelling loading operation: {ex.Message}");
+                }
+            }
+        }
+
+        /// <summary>
+        /// Cancels all ongoing loading operations
+        /// </summary>
+        public static void CancelAllLoading()
+        {
+            foreach (var cts in _loadingOperations.Values)
+            {
+                try
+                {
+                    cts.Cancel();
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"Error cancelling loading operation: {ex.Message}");
+                }
+            }
+        }
+
+        /// <summary>
+        /// Calculates a stable hash based on the file's content properties
+        /// This allows the same image to be identified even if it's moved to a new location
+        /// </summary>
+        private static async Task<string> CalculateFileContentHashAsync(string filePath, CancellationToken cancellationToken)
+        {
+            try
+            {
+                // Get key file properties that should be stable even if the file is moved
+                var fileInfo = new FileInfo(filePath);
+                if (!fileInfo.Exists)
+                    return string.Empty;
+
+                // Only calculate MD5 for the first few KB of large files for performance
+                int bytesToRead = (int)Math.Min(fileInfo.Length, 32 * 1024); // 32KB max
+                byte[] fileBytes = new byte[bytesToRead];
+
+                // Check cancellation before file read
+                cancellationToken.ThrowIfCancellationRequested();
+
+                using (var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, true))
+                {
+                    await fs.ReadAsync(fileBytes, 0, bytesToRead, cancellationToken);
+                }
+
+                // Check cancellation after file read
+                cancellationToken.ThrowIfCancellationRequested();
+
+                // Combine file size, creation time, last write time, and the first few KB of content
+                using (var md5 = MD5.Create())
+                {
+                    var data = Encoding.UTF8.GetBytes(
+                        $"{fileInfo.Length}|{fileInfo.CreationTimeUtc.Ticks}|{fileInfo.LastWriteTimeUtc.Ticks}");
+
+                    // First hash the metadata
+                    md5.TransformBlock(data, 0, data.Length, data, 0);
+
+                    // Then include some of the actual file content
+                    md5.TransformFinalBlock(fileBytes, 0, fileBytes.Length);
+
+                    // Return as base64 string (URL-safe version)
+                    return Convert.ToBase64String(md5.Hash)
+                        .Replace('+', '-').Replace('/', '_').Replace("=", "");
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error calculating content hash: {ex.Message}");
+                // Fallback to a simpler hash in case of error
+                return Convert.ToBase64String(
+                    Encoding.UTF8.GetBytes(filePath + DateTime.UtcNow.Ticks.ToString()))
+                    .Replace('+', '-').Replace('/', '_').Replace("=", "");
+            }
+        }
+
+        /// <summary>
+        /// Tries to retrieve an image from the memory cache
+        /// </summary>
+        private static bool TryGetFromMemoryCache(string path, out BitmapImage bitmap)
+        {
+            bitmap = null;
+
+            if (_thumbnailCache.TryGetValue(path, out var cacheItem))
+            {
+                if (cacheItem.Image.TryGetTarget(out bitmap))
+                {
+                    // Update last accessed time for LRU tracking
+                    cacheItem.LastAccessed = DateTime.UtcNow;
+                    return true;
+                }
+
+                // Reference was collected by GC, remove from cache
+                _thumbnailCache.TryRemove(path, out _);
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Stores an image in the memory cache and triggers trimming if needed
+        /// </summary>
+        private static void StoreInMemoryCache(string path, BitmapImage bitmap)
+        {
+            _thumbnailCache[path] = new CacheItem(bitmap);
+
+            // Trim cache if it grows too large
+            if (_thumbnailCache.Count > TRIM_THRESHOLD && !_isTrimming)
+            {
+                Task.Run(TrimCacheAsync);
+            }
+        }
+
+        /// <summary>
+        /// Trims the cache using LRU policy to stay within memory limits
+        /// </summary>
+        private static async Task TrimCacheAsync()
+        {
+            // Use lock to ensure only one trim operation runs at a time
+            if (!await _cacheLock.WaitAsync(0))
+                return;
+
+            try
+            {
+                _isTrimming = true;
+
+                if (_thumbnailCache.Count <= MAX_CACHE_SIZE)
+                    return;
+
+                Debug.WriteLine($"Trimming cache from {_thumbnailCache.Count} items to {TRIM_TARGET} items");
+
+                // First, remove items where WeakReference is no longer valid
+                foreach (var key in _thumbnailCache.Keys.ToList())
+                {
+                    if (_thumbnailCache.TryGetValue(key, out var cacheItem) &&
+                        !cacheItem.Image.TryGetTarget(out _))
+                    {
+                        _thumbnailCache.TryRemove(key, out _);
+                    }
+                }
+
+                // If still above target, remove oldest accessed items
+                if (_thumbnailCache.Count > TRIM_TARGET)
+                {
+                    var itemsToRemove = _thumbnailCache
+                        .OrderBy(kvp => kvp.Value.LastAccessed)
+                        .Take(_thumbnailCache.Count - TRIM_TARGET)
+                        .Select(kvp => kvp.Key)
+                        .ToList();
+
+                    foreach (var key in itemsToRemove)
+                    {
+                        _thumbnailCache.TryRemove(key, out _);
+                    }
+                }
+
+                // Request garbage collection to free up memory
+                GC.Collect(1, GCCollectionMode.Optimized, false);
+
+                Debug.WriteLine($"Cache trimmed to {_thumbnailCache.Count} items");
+            }
+            finally
+            {
+                _isTrimming = false;
+                _cacheLock.Release();
+            }
+        }
+
+        /// <summary>
+        /// Gets the file path for caching a thumbnail
+        /// </summary>
+        private static string GetThumbnailCachePath(string originalPath, string contentHash)
+        {
+            if (string.IsNullOrEmpty(originalPath))
+                return null;
+
+            // Include thumbnail size in the filename to ensure different sizes get different cache files
+            int width = Services.AppSettings.Instance.PreviewWidth;
+            int height = Services.AppSettings.Instance.PreviewHeight;
+
+            // Create a filename using the content hash plus dimensions
+            string filename = $"{contentHash}_{width}x{height}.jpg";
+
+            return Path.Combine(_cacheFolder, filename);
+        }
+
+        /// <summary>
+        /// Loads an image from a file asynchronously
+        /// </summary>
+        private static async Task<BitmapImage> LoadImageFromFileAsync(string filePath, CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrEmpty(filePath) || !File.Exists(filePath))
+                return null;
+
+            try
+            {
+                return await Task.Run(() =>
+                {
+                    try
+                    {
+                        // Check cancellation
+                        cancellationToken.ThrowIfCancellationRequested();
+
+                        // Use FileStream with async pattern for .NET Framework 4.8
+                        using (var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read))
+                        {
+                            var bitmap = new BitmapImage();
+                            bitmap.BeginInit();
+                            bitmap.StreamSource = stream;
+                            bitmap.CacheOption = BitmapCacheOption.OnLoad;
+                            bitmap.EndInit();
+                            bitmap.Freeze(); // Important for cross-thread usage
+                            return bitmap;
+                        }
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        throw;
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"Error loading image from file {filePath}: {ex.Message}");
+                        return null;
+                    }
+                }, cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error in image loading task: {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Saves a thumbnail to the disk cache
+        /// </summary>
+        private static async Task SaveThumbnailToDiskAsync(BitmapImage image, string filePath, string contentHash)
+        {
+            if (image == null || string.IsNullOrEmpty(filePath))
+                return;
+
+            try
+            {
+                await _diskOperationLock.WaitAsync();
+                try
+                {
+                    // Ensure directory exists
+                    Directory.CreateDirectory(Path.GetDirectoryName(filePath));
+
+                    // Store the content hash in file metadata for future verification
+                    // This is stored in Windows alternate data stream for NTFS
+                    bool saveMetadata = false;
+
+                    using (var fileStream = new FileStream(filePath, FileMode.Create))
+                    {
+                        var encoder = new JpegBitmapEncoder
+                        {
+                            QualityLevel = 85 // Good balance between quality and size
+                        };
+
+                        encoder.Frames.Add(BitmapFrame.Create(image));
+                        encoder.Save(fileStream);
+                    }
+
+                    // Write content hash to a side-car metadata file for cross-filesystem compatibility
+                    if (saveMetadata)
+                    {
+                        string metadataPath = filePath + ".meta";
+                        // Use synchronous File.WriteAllText as WriteAllTextAsync isn't available in .NET Framework 4.8
+                        File.WriteAllText(metadataPath, contentHash);
+                    }
+                }
+                finally
+                {
+                    _diskOperationLock.Release();
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error saving thumbnail to disk: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Clears both memory and disk caches
+        /// </summary>
+        public static void ClearCache()
+        {
+            // Cancel all ongoing loading operations first
+            CancelAllLoading();
+
+            // Clear memory cache
+            _thumbnailCache.Clear();
+
+            try
+            {
+                if (Directory.Exists(_cacheFolder))
+                {
+                    foreach (var file in Directory.GetFiles(_cacheFolder))
+                    {
+                        try { File.Delete(file); }
+                        catch (Exception ex)
+                        {
+                            Debug.WriteLine($"Error deleting cache file: {ex.Message}");
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error clearing cache: {ex.Message}");
+            }
+
+            // Force garbage collection to clean up
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+        }
+
+        /// <summary>
+        /// Returns statistics about the cache performance
+        /// </summary>
+        public static (int MemoryCacheSize, long Hits, long Misses, double HitRatio) GetStatistics()
+        {
+            long totalRequests = _cacheHits + _cacheMisses;
+            double hitRatio = totalRequests > 0 ? (double)_cacheHits / totalRequests : 0;
+
+            return (_thumbnailCache.Count, _cacheHits, _cacheMisses, hitRatio);
+        }
+
+        /// <summary>
+        /// Cleans up orphaned cache files that don't match any current images
+        /// </summary>
+        private static async Task CleanupOrphanedCacheFilesAsync()
+        {
+            try
+            {
+                // Only run if cache folder exists
+                if (!Directory.Exists(_cacheFolder))
+                    return;
+
+                // Get cache files older than 7 days
+                var oldFiles = Directory.GetFiles(_cacheFolder)
+                    .Select(f => new FileInfo(f))
+                    .Where(f => f.LastAccessTime < DateTime.Now.AddDays(-7))
+                    .ToList();
+
+                if (oldFiles.Count == 0)
+                    return;
+
+                Debug.WriteLine($"Cleaning up {oldFiles.Count} orphaned cache files");
+
+                foreach (var file in oldFiles)
+                {
+                    try
+                    {
+                        await _diskOperationLock.WaitAsync();
+                        try
+                        {
+                            file.Delete();
+                        }
+                        finally
+                        {
+                            _diskOperationLock.Release();
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"Error deleting orphaned cache file: {ex.Message}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error in orphaned cache cleanup: {ex.Message}");
+            }
+        }
+    }
+}
