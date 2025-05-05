@@ -9,6 +9,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Threading;
 using ImageFolderManager.Models;
 using ImageFolderManager.Services;
 using ImageFolderManager.ViewModels;
@@ -61,11 +62,7 @@ namespace ImageFolderManager.Views
 
         // Dictionary to map ShellObject paths to TreeViewItem
         private Dictionary<string, TreeViewItem> _pathToTreeViewItem =
-            new Dictionary<string, TreeViewItem>(StringComparer.OrdinalIgnoreCase);
-
-        // Clipboard for cut/copy operations
-        private FolderInfo _clipboardFolder;
-        private bool _isCutOperation;
+                new Dictionary<string, TreeViewItem>(StringComparer.OrdinalIgnoreCase);
 
         // Current root directory
         private string _rootDirectory;
@@ -924,18 +921,14 @@ namespace ImageFolderManager.Views
             var selectedFolders = GetSelectedFolderInfos();
             if (selectedFolders.Count == 0) return;
 
-            // If single folder, use existing cut implementation
-            if (selectedFolders.Count == 1)
-            {
-                Cut_Click(sender, e);
-                return;
-            }
-
-            // Multi-folder cut operation
             if (ViewModel != null)
             {
                 ViewModel.CutMultipleFolders(selectedFolders);
-                //StatusMessage = $"Cut {selectedFolders.Count} folders to clipboard";
+            }
+            else
+            {
+                MessageBox.Show("Could not cut folders: ViewModel is not available.",
+                    "Operation Failed", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -944,18 +937,14 @@ namespace ImageFolderManager.Views
             var selectedFolders = GetSelectedFolderInfos();
             if (selectedFolders.Count == 0) return;
 
-            // If single folder, use existing copy implementation
-            if (selectedFolders.Count == 1)
-            {
-                Copy_Click(sender, e);
-                return;
-            }
-
-            // Multi-folder copy operation
             if (ViewModel != null)
             {
                 ViewModel.CopyMultipleFolders(selectedFolders);
-               // StatusMessage = $"Copied {selectedFolders.Count} folders to clipboard";
+            }
+            else
+            {
+                MessageBox.Show("Could not copy folders: ViewModel is not available.",
+                    "Operation Failed", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -964,33 +953,22 @@ namespace ImageFolderManager.Views
             var selectedFolders = GetSelectedFolderInfos();
             if (selectedFolders.Count == 0) return;
 
-            // If single folder, use existing delete implementation
-            if (selectedFolders.Count == 1)
-            {
-                Delete_Click(sender, e);
-                return;
-            }
-
-            // Multi-folder delete operation
             if (ViewModel != null)
             {
-                // Confirm deletion
-                var result = MessageBox.Show(
-                    $"Are you sure you want to delete {selectedFolders.Count} selected folders?",
-                    "Confirm Delete",
-                    MessageBoxButton.YesNo,
-                    MessageBoxImage.Warning);
+                // ViewModel.DeleteMultipleFolders 已经包含确认对话框和所有业务逻辑
+                ViewModel.DeleteMultipleFolders(selectedFolders);
 
-                if (result == MessageBoxResult.Yes)
-                {
-                    ViewModel.DeleteMultipleFolders(selectedFolders);
-                    ClearSelectedItems();
-                    RefreshTree();
-                }
+                // 清空选择并刷新树
+                ClearSelectedItems();
+                RefreshTree();
+            }
+            else
+            {
+                MessageBox.Show("Could not delete folders: ViewModel is not available.",
+                    "Operation Failed", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
-        // Original single-selection operations - kept for backward compatibility
         private void NewFolder_Click(object sender, RoutedEventArgs e)
         {
             Debug.WriteLine("NewFolder_Click handler called");
@@ -1016,18 +994,16 @@ namespace ImageFolderManager.Views
                 return;
             }
 
-            // Create a FolderInfo and call the ViewModel
+            // 创建 FolderInfo 并调用 ViewModel
             var folderInfo = new FolderInfo(path);
 
             if (ViewModel != null)
             {
                 Debug.WriteLine($"Calling ViewModel.CreateNewFolder for {path}");
-
-                // Call the MainViewModel method for creating a new folder
                 ViewModel.CreateNewFolder(folderInfo);
 
-                // Display status message
-                ViewModel.StatusMessage = $"Creating new folder in '{folderInfo.Name}'...";
+                // CreateNewFolder 方法会自动处理树形结构的更新
+                // 这里我们就不需要手动刷新树了
             }
             else
             {
@@ -1050,26 +1026,12 @@ namespace ImageFolderManager.Views
             string path = GetPathFromShellObject(shellObject);
             if (string.IsNullOrEmpty(path) || !Directory.Exists(path)) return;
 
-            // Create a FolderInfo and call the ViewModel
             var folderInfo = new FolderInfo(path);
 
             if (ViewModel != null)
             {
                 Debug.WriteLine($"Calling ViewModel.CutFolder for {path}");
                 ViewModel.CutFolder(folderInfo);
-
-                // Store locally for drag-drop operations
-                _clipboardFolder = folderInfo;
-                _isCutOperation = true;
-
-                // Display status message
-                ViewModel.StatusMessage = $"Cut folder '{folderInfo.Name}' to clipboard. Select a destination folder and paste.";
-            }
-            else
-            {
-                Debug.WriteLine("ViewModel is null");
-                MessageBox.Show("Could not cut folder: ViewModel is not available.",
-                    "Operation Failed", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -1086,20 +1048,13 @@ namespace ImageFolderManager.Views
             string path = GetPathFromShellObject(shellObject);
             if (string.IsNullOrEmpty(path) || !Directory.Exists(path)) return;
 
-            // Create a FolderInfo and call the ViewModel
             var folderInfo = new FolderInfo(path);
 
             if (ViewModel != null)
             {
                 Debug.WriteLine($"Calling ViewModel.CopyFolder for {path}");
                 ViewModel.CopyFolder(folderInfo);
-
-                // Store locally for drag-drop operations
-                _clipboardFolder = folderInfo;
-                _isCutOperation = false;
-
-                // Display status message
-                ViewModel.StatusMessage = $"Copied folder '{folderInfo.Name}' to clipboard. Select a destination folder and paste.";
+       
             }
             else
             {
@@ -1109,7 +1064,7 @@ namespace ImageFolderManager.Views
             }
         }
 
-        // 在ShellTreeView.xaml.cs中修改Paste_Click方法
+        // 
         private void Paste_Click(object sender, RoutedEventArgs e)
         {
             Debug.WriteLine("Paste_Click handler called");
@@ -1123,7 +1078,7 @@ namespace ImageFolderManager.Views
             string path = GetPathFromShellObject(shellObject);
             if (string.IsNullOrEmpty(path) || !Directory.Exists(path)) return;
 
-            // Store expanded state before paste operation
+            // 存储展开的状态，以在粘贴操作前保存
             var expandedItems = new HashSet<string>();
             foreach (var item in FindVisualChildren<TreeViewItem>(ShellTreeViewControl))
             {
@@ -1137,7 +1092,7 @@ namespace ImageFolderManager.Views
                 }
             }
 
-            // Create a FolderInfo for the target folder
+            // 创建目标文件夹的 FolderInfo
             var folderInfo = new FolderInfo(path);
 
             if (ViewModel != null)
@@ -1146,7 +1101,7 @@ namespace ImageFolderManager.Views
 
                 if (ViewModel.HasClipboardContent())
                 {
-                    
+                    // 保存剪切操作的源路径，用于后续刷新
                     string sourceParentPath = null;
                     FolderInfo sourceFolder = null;
 
@@ -1164,38 +1119,50 @@ namespace ImageFolderManager.Views
                     }
 
                     ViewModel.PasteFolder(folderInfo);
-                    if (treeViewItem.IsExpanded)
-                    {
-                        treeViewItem.Items.Clear();
-                        treeViewItem.Items.Add(new TreeViewItem { Header = "Loading..." });
-                        treeViewItem.IsExpanded = false;
-                        treeViewItem.IsExpanded = true;
-                    }
-                    if (ViewModel.IsCutOperation && !string.IsNullOrEmpty(sourceParentPath) && Directory.Exists(sourceParentPath))
-                    {
-                        Debug.WriteLine($"Refreshing source parent folder: {sourceParentPath}");
 
-                        if (_pathToTreeViewItem.TryGetValue(sourceParentPath, out var sourceParentItem) && sourceParentItem != null)
+                    // 延迟刷新树形视图，让用户看到粘贴操作的状态信息
+                    var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+                    timer.Tick += (s, args) =>
+                    {
+                        timer.Stop();
+
+                        // 如果是剪切操作，刷新源父目录
+                        if (treeViewItem.IsExpanded)
                         {
-                            if (sourceParentItem.IsExpanded)
+                            treeViewItem.Items.Clear();
+                            treeViewItem.Items.Add(new TreeViewItem { Header = "Loading..." });
+                            treeViewItem.IsExpanded = false;
+                            treeViewItem.IsExpanded = true;
+                        }
+
+                        if (ViewModel.IsCutOperation && !string.IsNullOrEmpty(sourceParentPath) && Directory.Exists(sourceParentPath))
+                        {
+                            Debug.WriteLine($"Refreshing source parent folder: {sourceParentPath}");
+
+                            if (_pathToTreeViewItem.TryGetValue(sourceParentPath, out var sourceParentItem) && sourceParentItem != null)
                             {
-                                sourceParentItem.Items.Clear();
-                                sourceParentItem.Items.Add(new TreeViewItem { Header = "Loading..." });
-                                sourceParentItem.IsExpanded = false;
-                                sourceParentItem.IsExpanded = true;
+                                if (sourceParentItem.IsExpanded)
+                                {
+                                    sourceParentItem.Items.Clear();
+                                    sourceParentItem.Items.Add(new TreeViewItem { Header = "Loading..." });
+                                    sourceParentItem.IsExpanded = false;
+                                    sourceParentItem.IsExpanded = true;
+                                }
                             }
                         }
-                    }
 
-                    RefreshTree();
+                        RefreshTree();
 
-                    foreach (var expandedPath in expandedItems)
-                    {
-                        if (_pathToTreeViewItem.TryGetValue(expandedPath, out var item))
+                        // 恢复展开的状态
+                        foreach (var expandedPath in expandedItems)
                         {
-                            item.IsExpanded = true;
+                            if (_pathToTreeViewItem.TryGetValue(expandedPath, out var item))
+                            {
+                                item.IsExpanded = true;
+                            }
                         }
-                    }
+                    };
+                    timer.Start();
                 }
                 else
                 {
@@ -1225,7 +1192,7 @@ namespace ImageFolderManager.Views
             string path = GetPathFromShellObject(shellObject);
             if (string.IsNullOrEmpty(path) || !Directory.Exists(path)) return;
 
-            // Don't allow renaming root directory
+            // 不允许重命名根目录
             if (!string.IsNullOrEmpty(_rootDirectory) &&
                 path.Equals(_rootDirectory, StringComparison.OrdinalIgnoreCase))
             {
@@ -1235,21 +1202,93 @@ namespace ImageFolderManager.Views
                 return;
             }
 
-            // Create a FolderInfo and call the ViewModel
+            // 保存旧路径和树形视图项
+            string oldPath = path;
+            var oldItem = treeViewItem;
+            bool wasExpanded = oldItem.IsExpanded;
+            var parentItem = FindParentTreeViewItem(oldItem);
+
+            // 创建 FolderInfo 并调用 ViewModel
             var folderInfo = new FolderInfo(path);
 
             if (ViewModel != null)
             {
                 Debug.WriteLine($"Calling ViewModel.RenameFolder for {path}");
+
+                // 执行重命名操作
                 ViewModel.RenameFolder(folderInfo);
 
-                // Don't need to refresh tree here as the RenameFolder method should handle it
+                // 重命名完成后更新树形视图
+                Application.Current.Dispatcher.InvokeAsync(() =>
+                {
+                    try
+                    {
+                        // 获取新路径
+                        string newPath = folderInfo.FolderPath;
+
+                        if (!string.IsNullOrEmpty(newPath) && Directory.Exists(newPath))
+                        {
+                            // 更新路径映射
+                            if (_pathToTreeViewItem.ContainsKey(oldPath))
+                            {
+                                _pathToTreeViewItem.Remove(oldPath);
+                                _pathToTreeViewItem[newPath] = oldItem;
+                            }
+
+                            // 创建新的 ShellObject 以防止旧路径引用问题
+                            var newShellObject = ShellObject.FromParsingName(newPath);
+
+                            // 更新 TreeViewItem 的 Tag 和 Header
+                            oldItem.Tag = newShellObject;
+                            oldItem.Header = CreateShellObjectHeader(newShellObject);
+
+                            // 如果父项存在，刷新父项的子节点排序
+                            if (parentItem != null)
+                            {
+                                // 重新对子节点进行排序
+                                var children = parentItem.Items.Cast<TreeViewItem>().ToList();
+                                parentItem.Items.Clear();
+
+                                // 按名称排序
+                                foreach (var child in children.OrderBy(x =>
+                                    (x.Tag as ShellObject)?.Name ?? ""))
+                                {
+                                    parentItem.Items.Add(child);
+                                }
+                            }
+
+                            // 恢复展开状态
+                            oldItem.IsExpanded = wasExpanded;
+
+                            // 确保选中状态
+                            oldItem.IsSelected = true;
+
+                            Debug.WriteLine($"Successfully updated TreeViewItem from {oldPath} to {newPath}");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"Error updating TreeViewItem after rename: {ex.Message}");
+                        // 如果出错，则退回到刷新整个树的方案
+                        RefreshTree();
+                        SelectPath(folderInfo.FolderPath);
+                    }
+                }, DispatcherPriority.Normal);
             }
             else
             {
                 Debug.WriteLine("ViewModel is null");
                 MessageBox.Show("Could not rename folder: ViewModel is not available.",
                     "Operation Failed", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        public void UpdatePathMapping(string oldPath, string newPath)
+        {
+            if (_pathToTreeViewItem.TryGetValue(oldPath, out var treeViewItem))
+            {
+                _pathToTreeViewItem.Remove(oldPath);
+                _pathToTreeViewItem[newPath] = treeViewItem;
             }
         }
 
@@ -1266,7 +1305,6 @@ namespace ImageFolderManager.Views
             string path = GetPathFromShellObject(shellObject);
             if (string.IsNullOrEmpty(path) || !Directory.Exists(path)) return;
 
-            // Don't allow deleting root directory
             if (!string.IsNullOrEmpty(_rootDirectory) &&
                 path.Equals(_rootDirectory, StringComparison.OrdinalIgnoreCase))
             {
@@ -1276,31 +1314,28 @@ namespace ImageFolderManager.Views
                 return;
             }
 
-            // Remember the parent path for later selection
             string parentPath = Path.GetDirectoryName(path);
 
-            // Create a FolderInfo and call the ViewModel
             var folderInfo = new FolderInfo(path);
 
             if (ViewModel != null)
             {
-                Debug.WriteLine($"Calling ViewModel.DeleteFolderCommand for {path}");
+              
+                ViewModel.DeleteFolderCommand.Execute(folderInfo);
 
-                // Execute the delete command and wait for it to complete
-                ViewModel.DeleteFolderCommand.ExecuteAsync(folderInfo).ContinueWith(_ =>
+                var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+                timer.Tick += (s, args) =>
                 {
-                    // After deletion, refresh the tree on the UI thread
-                    Application.Current.Dispatcher.Invoke(() =>
+                    timer.Stop();
+
+                    if (!string.IsNullOrEmpty(parentPath) && Directory.Exists(parentPath))
                     {
-                        // Find and select the parent folder after deletion
-                        if (!string.IsNullOrEmpty(parentPath) && Directory.Exists(parentPath))
-                        {
-                            _pathToTreeViewItem.Remove(path); // Remove deleted path from our lookup
-                            SelectPath(parentPath);
-                            RefreshTree();
-                        }
-                    });
-                });
+                        SelectPath(parentPath);
+                    }
+
+                    RefreshTree();
+                };
+                timer.Start();
             }
             else
             {
@@ -1323,7 +1358,7 @@ namespace ImageFolderManager.Views
             string path = GetPathFromShellObject(shellObject);
             if (string.IsNullOrEmpty(path) || !Directory.Exists(path)) return;
 
-            // Create a FolderInfo and call the ViewModel or directly open Explorer
+            // 创建 FolderInfo 并调用 ViewModel
             var folderInfo = new FolderInfo(path);
 
             if (ViewModel != null)
@@ -1334,7 +1369,7 @@ namespace ImageFolderManager.Views
             else
             {
                 Debug.WriteLine("ViewModel is null, using direct Process.Start instead");
-                // Fallback if ViewModel is not available
+                // 后备方案，如果 ViewModel 不可用直接打开资源管理器
                 try
                 {
                     System.Diagnostics.Process.Start("explorer.exe", path);
@@ -1515,7 +1550,6 @@ namespace ImageFolderManager.Views
             }
             return parent as TreeViewItem;
         }
-
         // Drag & Drop implementation 
         private void TreeView_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
@@ -1685,15 +1719,16 @@ namespace ImageFolderManager.Views
             HighlightDropTarget(targetItem);
         }
 
+        // 修改 TreeView_Drop 方法以使用 ViewModel 的多选操作
         private void TreeView_Drop(object sender, DragEventArgs e)
         {
-            // Clear any highlight
+            // 清除高亮
             ClearDropTargetHighlight();
 
             if (!e.Data.GetDataPresent("FileDrop"))
                 return;
 
-            // Get the drop target
+            // 获取拖放目标
             var targetItem = GetTreeViewItemUnderMouse(e.GetPosition(ShellTreeViewControl));
             if (targetItem == null) return;
 
@@ -1704,15 +1739,14 @@ namespace ImageFolderManager.Views
             if (string.IsNullOrEmpty(targetPath) || !Directory.Exists(targetPath))
                 return;
 
-            // Get the source paths
+            // 获取源路径
             var filePaths = e.Data.GetData("FileDrop") as string[];
             if (filePaths == null || filePaths.Length == 0) return;
 
-            // Create target FolderInfo
+            // 创建目标文件夹的 FolderInfo
             var targetFolder = new FolderInfo(targetPath);
 
-            // Determine if this is a copy or move operation - default to MOVE 
-            // unless Ctrl key is pressed for COPY
+            // 确定是复制还是移动操作
             bool isCopy = (e.KeyStates & DragDropKeyStates.ControlKey) == DragDropKeyStates.ControlKey;
 
             if (ViewModel != null)
@@ -1721,13 +1755,12 @@ namespace ImageFolderManager.Views
 
                 if (filePaths.Length == 1)
                 {
-                    // Single folder operation
+                    // 单个文件夹操作 - 使用现有的单选方法
                     string sourcePath = filePaths[0];
                     if (!Directory.Exists(sourcePath)) return;
 
                     var sourceFolder = new FolderInfo(sourcePath);
 
-                    // Perform the operation
                     if (isCopy)
                     {
                         ViewModel.CopyFolder(sourceFolder);
@@ -1740,7 +1773,7 @@ namespace ImageFolderManager.Views
                 }
                 else
                 {
-                    // Multi-folder operation
+                    // 多文件夹操作 - 使用 ViewModel 的多选方法
                     var sourceFolders = new List<FolderInfo>();
                     foreach (string path in filePaths)
                     {
@@ -1764,7 +1797,7 @@ namespace ImageFolderManager.Views
                     }
                 }
 
-                // Refresh the tree
+                // 刷新树
                 RefreshTree();
             }
             else

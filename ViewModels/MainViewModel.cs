@@ -697,9 +697,7 @@ namespace ImageFolderManager.ViewModels
             }
         }
 
-
         // Add these methods to the MainViewModel class
-
         public async Task RenameTag(string oldTag, string newTag)
         {
             if (string.IsNullOrWhiteSpace(oldTag) || string.IsNullOrWhiteSpace(newTag) || oldTag == newTag)
@@ -1077,6 +1075,7 @@ namespace ImageFolderManager.ViewModels
 
             _clipboardFolder = folder;
             _isCutOperation = true;
+            StatusMessage = $"Cut folder '{folder.Name}' to clipboard. Select a destination folder and paste.";
         }
 
         public void CopyFolder(FolderInfo folder)
@@ -1085,6 +1084,7 @@ namespace ImageFolderManager.ViewModels
 
             _clipboardFolder = folder;
             _isCutOperation = false;
+            StatusMessage = $"Copied folder '{folder.Name}' to clipboard. Select a destination folder and paste.";
         }
 
         // Methods for multiple folders cut/copy/paste operations
@@ -1974,6 +1974,12 @@ namespace ImageFolderManager.ViewModels
                 {
                     await PerformSearch();
                 }
+                if (Application.Current.MainWindow is MainWindow mainWindow &&
+                    mainWindow.ShellTreeViewControl != null)
+                {
+                    mainWindow.ShellTreeViewControl.UpdatePathMapping(oldPath, newPath);
+                }
+                StatusMessage = $"'{oldName}' is renamed to '{newName}'.";
             }
             catch (Exception ex)
             {
@@ -2569,98 +2575,28 @@ namespace ImageFolderManager.ViewModels
             string changedPath = e.FullPath;
             bool isDirectory = Directory.Exists(changedPath);
 
-            switch (changeType)
+            try
             {
-                case WatcherChangeTypes.Created:
-                    if (isDirectory)
-                    {
-                        // A new directory was created
-                        var newFolder = await _folderService.CreateFolderInfoWithoutImagesAsync(changedPath);
-                        if (newFolder != null)
-                        {
-                            newFolder.Parent = folder; // Set parent relationship
-                            folder.Children.Add(newFolder);
-
-                            // Add to _allLoadedFolders for search functionality
-                            _allLoadedFolders.Add(newFolder);
-
-                            // If we're viewing this folder, refresh the UI
-                            if (SelectedFolder == folder)
-                            {
-                                await SetSelectedFolderAsync(folder);
-                            }
-
-                            // Update search results if needed
-                            if (!string.IsNullOrEmpty(SearchText))
-                            {
-                               await PerformSearch();
-                            }
-                        }
-                    }
-                    else
-                    {
-                        // A new file was created
-                        if (SelectedFolder == folder)
-                        {
-                            await LoadImagesForSelectedFolderAsync();
-                        }
-                    }
-                    break;
-
-                case WatcherChangeTypes.Deleted:
-                    if (isDirectory)
-                    {
-                        // A directory was deleted
-                        var deletedFolder = folder.Children.FirstOrDefault(f => f.FolderPath == changedPath);
-                        if (deletedFolder != null)
-                        {
-                            // Stop watching this folder
-                            _fileSystemWatcher.UnwatchFolder(changedPath);
-
-                            // Remove from tree
-                            folder.Children.Remove(deletedFolder);
-
-                            // Remove folder and all subfolders from _allLoadedFolders
-                            RemoveFolderAndSubfoldersFromAllLoaded(changedPath);
-
-                            // Remove from search results
-                            RemoveFolderAndSubfoldersFromSearchResults(changedPath);
-                        }
-                    }
-                    else
-                    {
-                        // A file was deleted
-                        if (SelectedFolder == folder)
-                        {
-                            await LoadImagesForSelectedFolderAsync();
-                        }
-                    }
-                    break;
-
-                case WatcherChangeTypes.Renamed:
-                    if (e is RenamedEventArgs renamedArgs)
-                    {
+                switch (changeType)
+                {
+                    case WatcherChangeTypes.Created:
                         if (isDirectory)
                         {
-                            // A directory was renamed
-                            var renamedFolder = folder.Children.FirstOrDefault(f => f.FolderPath == renamedArgs.OldFullPath);
-                            if (renamedFolder != null)
+                            // A new directory was created
+                            var newFolder = await _folderService.CreateFolderInfoWithoutImagesAsync(changedPath);
+                            if (newFolder != null)
                             {
-                                // Update the path
-                                string oldPath = renamedFolder.FolderPath;
-                                renamedFolder.FolderPath = renamedArgs.FullPath;
+                                newFolder.Parent = folder; // Set parent relationship
+                                folder.Children.Add(newFolder);
 
-                                // Stop watching old path and start watching new path
-                                _fileSystemWatcher.UnwatchFolder(oldPath);
-                                _fileSystemWatcher.WatchFolder(renamedFolder);
+                                // Add to _allLoadedFolders for search functionality
+                                _allLoadedFolders.Add(newFolder);
 
-                                // Force refresh of the folder
-                                var index = folder.Children.IndexOf(renamedFolder);
-                                folder.Children.RemoveAt(index);
-                                folder.Children.Insert(index, renamedFolder);
-
-                                // Update in _allLoadedFolders
-                                UpdateFolderPathsInAllLoadedFolders(oldPath, renamedArgs.FullPath);
+                                // If we're viewing this folder, refresh the UI
+                                if (SelectedFolder == folder)
+                                {
+                                    await SetSelectedFolderAsync(folder);
+                                }
 
                                 // Update search results if needed
                                 if (!string.IsNullOrEmpty(SearchText))
@@ -2671,23 +2607,110 @@ namespace ImageFolderManager.ViewModels
                         }
                         else
                         {
-                            // A file was renamed
+                            // A new file was created
                             if (SelectedFolder == folder)
                             {
                                 await LoadImagesForSelectedFolderAsync();
                             }
                         }
-                    }
-                    break;
+                        break;
 
-                case WatcherChangeTypes.Changed:
-                    // For most changes to directories, we don't need to do anything
-                    // But for changes to files, reload if the current folder is selected
-                    if (!isDirectory && SelectedFolder == folder)
-                    {
-                        await LoadImagesForSelectedFolderAsync();
-                    }
-                    break;
+                    case WatcherChangeTypes.Deleted:
+                        if (isDirectory)
+                        {
+                            // A directory was deleted
+                            var deletedFolder = folder.Children.FirstOrDefault(f => f.FolderPath == changedPath);
+                            if (deletedFolder != null)
+                            {
+                                // Stop watching this folder
+                                _fileSystemWatcher.UnwatchFolder(changedPath);
+
+                                // Remove from tree
+                                folder.Children.Remove(deletedFolder);
+
+                                // Remove folder and all subfolders from _allLoadedFolders
+                                RemoveFolderAndSubfoldersFromAllLoaded(changedPath);
+
+                                // Remove from search results
+                                RemoveFolderAndSubfoldersFromSearchResults(changedPath);
+                            }
+                        }
+                        else
+                        {
+                            // A file was deleted
+                            if (SelectedFolder == folder)
+                            {
+                                await LoadImagesForSelectedFolderAsync();
+                            }
+                        }
+                        break;
+
+                    case WatcherChangeTypes.Renamed:
+                        if (e is RenamedEventArgs renamedArgs && renamedArgs != null)
+                        {
+                            if (isDirectory)
+                            {
+                                if (folder.Children == null)
+                                {
+                                    Debug.WriteLine($"Warning: folder.Children is null for {folder.FolderPath}");
+                                    return;
+                                }
+
+                                // Add null check in LINQ query
+                                var renamedFolder = folder.Children.FirstOrDefault(f =>
+                                    f != null && f.FolderPath != null && f.FolderPath == renamedArgs.OldFullPath);
+
+                                if (renamedFolder != null)
+                                {
+                                    // Update the path
+                                    string oldPath = renamedFolder.FolderPath;
+                                    renamedFolder.FolderPath = renamedArgs.FullPath;
+
+                                    // Stop watching old path and start watching new path
+                                    _fileSystemWatcher.UnwatchFolder(oldPath);
+                                    _fileSystemWatcher.WatchFolder(renamedFolder);
+
+                                    // Force refresh of the folder
+                                    var index = folder.Children.IndexOf(renamedFolder);
+                                    folder.Children.RemoveAt(index);
+                                    folder.Children.Insert(index, renamedFolder);
+
+                                    // Update in _allLoadedFolders
+                                    UpdateFolderPathsInAllLoadedFolders(oldPath, renamedArgs.FullPath);
+
+                                    // Update search results if needed
+                                    if (!string.IsNullOrEmpty(SearchText))
+                                    {
+                                        await PerformSearch();
+                                    }
+                                }
+                            }
+                            else
+                            {
+                                // A file was renamed
+                                if (SelectedFolder == folder)
+                                {
+                                    await LoadImagesForSelectedFolderAsync();
+                                }
+                            }
+                        }
+                        break;
+
+                    case WatcherChangeTypes.Changed:
+                        // For most changes to directories, we don't need to do anything
+                        // But for changes to files, reload if the current folder is selected
+                        if (!isDirectory && SelectedFolder == folder)
+                        {
+                            await LoadImagesForSelectedFolderAsync();
+                        }
+                        break;
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error in HandleFileSystemEvent: {ex.Message}");
+                Debug.WriteLine($"StackTrace: {ex.StackTrace}");
+                // Continue execution even if error occurs
             }
         }
 
