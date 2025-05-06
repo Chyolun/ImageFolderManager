@@ -26,10 +26,8 @@ namespace ImageFolderManager
             DataContext = viewModel;
 
             Debug.WriteLine("MainWindow initialized");
-            Debug.WriteLine($"DataContext is null: {DataContext == null}");
-            Debug.WriteLine($"DataContext type: {DataContext?.GetType().FullName}");
 
-            // Add an event handler to monitor DataContext changes on ShellTreeViewControl
+            // Monitor DataContext changes
             ShellTreeViewControl.DataContextChanged += (s, e) =>
             {
                 Debug.WriteLine("ShellTreeViewControl DataContext changed");
@@ -55,8 +53,8 @@ namespace ImageFolderManager
             }
         }
 
-        // Handle folder selection from tree view
-        private async void OnFolderSelected(FolderInfo folder)
+        // Modified to not load images automatically
+        private void OnFolderSelected(FolderInfo folder)
         {
             Debug.WriteLine($"OnFolderSelected called with folder: {folder?.FolderPath}");
 
@@ -66,11 +64,13 @@ namespace ImageFolderManager
                 return;
             }
 
-            await ViewModel.SetSelectedFolderAsync(folder);
+            // We don't auto-load images anymore - just update selection
+            ViewModel.SetSelectedFolderWithoutLoading(folder);
         }
 
         // Handle selection changed in search results
-        private async void SearchResults_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        // Modified to not load images automatically
+        private void SearchResults_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             if (e.AddedItems.Count > 0 && e.AddedItems[0] is FolderInfo folder)
             {
@@ -82,8 +82,8 @@ namespace ImageFolderManager
                     ShellTreeViewControl.SelectPath(folder.FolderPath);
                 }
 
-                // Load the folder
-                await ViewModel.SetSelectedFolderAsync(folder);
+                // Just update selection without loading images
+                ViewModel.SetSelectedFolderWithoutLoading(folder);
             }
         }
 
@@ -143,6 +143,40 @@ namespace ImageFolderManager
                 MessageBox.Show("Preview size updated. Thumbnail cache has been cleared.",
                     "Settings Updated", MessageBoxButton.OK, MessageBoxImage.Information);
             }
+        }
+
+        // Handle image click - now make sure we're loading thumbnails when user 
+        // interacts with the images panel
+        private void Image_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            // Check if images are loaded; if not, load them
+            if (ViewModel.Images.Count == 0 && ViewModel.SelectedFolder != null)
+            {
+                // If this is the first time user clicks in the images area, load images
+                ViewModel.LoadImagesForSelectedFolderAsync();
+                return;
+            }
+
+            // Regular image handling for double-click
+            if (e.ClickCount == 2 && sender is Image img && img.Tag is string filePath)
+            {
+                try
+                {
+                    Process.Start(new ProcessStartInfo(filePath) { UseShellExecute = true });
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Unable to open image: {ex.Message}");
+                }
+            }
+        }
+        private static T FindVisualParent<T>(DependencyObject child) where T : DependencyObject
+        {
+            DependencyObject parentObject = VisualTreeHelper.GetParent(child);
+            if (parentObject == null) return null;
+            T parent = parentObject as T;
+            if (parent != null) return parent;
+            return FindVisualParent<T>(parentObject);
         }
 
         private async void RefreshAll_Click(object sender, RoutedEventArgs e)
@@ -219,29 +253,5 @@ namespace ImageFolderManager
             item.ContextMenu = contextMenu;
         }
 
-        private void Image_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
-        {
-            if (e.ClickCount == 2 && sender is Image img && img.Tag is string filePath)
-            {
-                try
-                {
-                    Process.Start(new ProcessStartInfo(filePath) { UseShellExecute = true });
-                }
-                catch (Exception ex)
-                {
-                    MessageBox.Show($"Unable to open image: {ex.Message}");
-                }
-            }
-        }
-
-        // Helper method to find parent in visual tree
-        private static T FindVisualParent<T>(DependencyObject child) where T : DependencyObject
-        {
-            DependencyObject parentObject = VisualTreeHelper.GetParent(child);
-            if (parentObject == null) return null;
-            T parent = parentObject as T;
-            if (parent != null) return parent;
-            return FindVisualParent<T>(parentObject);
-        }
     }
 }

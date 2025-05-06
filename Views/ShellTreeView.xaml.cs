@@ -13,9 +13,7 @@ using System.Windows.Threading;
 using ImageFolderManager.Models;
 using ImageFolderManager.Services;
 using ImageFolderManager.ViewModels;
-using Microsoft.VisualBasic.FileIO;
 using Microsoft.WindowsAPICodePack.Shell;
-using Microsoft.WindowsAPICodePack.Shell.PropertySystem;
 
 namespace ImageFolderManager.Views
 {
@@ -24,7 +22,7 @@ namespace ImageFolderManager.Views
         // Event to notify when a folder is selected
         public event Action<FolderInfo> FolderSelected;
 
-        // Reference to the main view model - add debug logging
+        // Reference to the main view model
         private MainViewModel ViewModel
         {
             get
@@ -39,10 +37,6 @@ namespace ImageFolderManager.Views
                     }
 
                     Debug.WriteLine("ERROR: ShellTreeView's DataContext is not MainViewModel");
-                    if (DataContext != null)
-                        Debug.WriteLine($"DataContext is of type: {DataContext.GetType().FullName}");
-                    else
-                        Debug.WriteLine("DataContext is null");
                 }
                 return vm;
             }
@@ -86,6 +80,14 @@ namespace ImageFolderManager.Views
                 if (e.NewValue is MainViewModel)
                 {
                     Debug.WriteLine("ShellTreeView received correct DataContext (MainViewModel)");
+
+                    // Check if root directory has changed
+                    if (!string.IsNullOrEmpty(AppSettings.Instance.DefaultRootDirectory) &&
+                        Directory.Exists(AppSettings.Instance.DefaultRootDirectory) &&
+                        _rootDirectory != AppSettings.Instance.DefaultRootDirectory)
+                    {
+                        ChangeRootDirectory(AppSettings.Instance.DefaultRootDirectory);
+                    }
                 }
                 else
                 {
@@ -97,18 +99,18 @@ namespace ImageFolderManager.Views
                 }
             };
 
-            // Manually bind context menu event in case XAML binding doesn't work
+            // Manually bind context menu event
             ShellTreeViewControl.ContextMenuOpening += ShellTreeViewControl_ContextMenuOpening;
 
-            // Other initialization code
+            // Initialize with default root directory
             LoadDefaultRootDirectoryAsync();
         }
 
         private async void LoadDefaultRootDirectoryAsync()
         {
-            if (!string.IsNullOrEmpty(AppSettings.Instance.DefaultRootDirectory))
+            try
             {
-                try
+                if (!string.IsNullOrEmpty(AppSettings.Instance.DefaultRootDirectory))
                 {
                     await Task.Delay(100); // Brief delay to ensure component is fully loaded
 
@@ -121,31 +123,10 @@ namespace ImageFolderManager.Views
                     // Select the path in the shell tree view
                     SelectPath(AppSettings.Instance.DefaultRootDirectory);
                 }
-                catch (Exception ex)
-                {
-                    Debug.WriteLine($"Error loading default root directory: {ex.Message}");
-                }
             }
-        }
-
-        private void ShellTreeViewControl_DataContextChanged(object sender, DependencyPropertyChangedEventArgs e)
-        {
-            Debug.WriteLine("ShellTreeView DataContext changed");
-            Debug.WriteLine($"Old value: {(e.OldValue != null ? e.OldValue.GetType().FullName : "null")}");
-            Debug.WriteLine($"New value: {(e.NewValue != null ? e.NewValue.GetType().FullName : "null")}");
-
-            if (e.NewValue is MainViewModel)
+            catch (Exception ex)
             {
-                var vm = e.NewValue as MainViewModel;
-                Debug.WriteLine("DataContext is MainViewModel");
-
-                if (!string.IsNullOrEmpty(AppSettings.Instance.DefaultRootDirectory) &&
-                    Directory.Exists(AppSettings.Instance.DefaultRootDirectory) &&
-                    _rootDirectory != AppSettings.Instance.DefaultRootDirectory)
-                {
-                    // Root directory has changed in settings
-                    ChangeRootDirectory(AppSettings.Instance.DefaultRootDirectory);
-                }
+                HandleException("Error loading default root directory", ex);
             }
         }
 
@@ -181,9 +162,7 @@ namespace ImageFolderManager.Views
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"Error initializing shell tree: {ex.Message}");
-                MessageBox.Show($"Error initializing shell tree: {ex.Message}",
-                    "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                HandleException("Error initializing shell tree", ex);
             }
         }
 
@@ -223,18 +202,245 @@ namespace ImageFolderManager.Views
 
                 // Select this path
                 SelectPath(newRootDirectory);
-
-                // Update view
-                RefreshTree();
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"Error changing root directory: {ex.Message}");
-                MessageBox.Show($"Error changing root directory: {ex.Message}",
-                    "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                HandleException("Error changing root directory", ex);
             }
         }
 
+        /// <summary>
+        /// Updates the path mapping when a path is renamed
+        /// </summary>
+        public void UpdatePathMapping(string oldPath, string newPath)
+        {
+            if (_pathToTreeViewItem.TryGetValue(oldPath, out var treeViewItem))
+            {
+                _pathToTreeViewItem.Remove(oldPath);
+                _pathToTreeViewItem[newPath] = treeViewItem;
+            }
+        }
+
+        /// <summary>
+        /// Comprehensive tree refresh method that handles various refresh scenarios
+        /// </summary>
+        public void RefreshTree(string pathToSelect = null, bool preserveExpanded = true)
+        {
+            try
+            {
+                // Store the current selection if not provided
+                if (string.IsNullOrEmpty(pathToSelect))
+                {
+                    var treeViewItem = GetSelectedTreeViewItem();
+                    if (treeViewItem != null && treeViewItem.Tag is ShellObject shellObject)
+                    {
+                        pathToSelect = GetPathFromShellObject(shellObject);
+                    }
+                }
+
+                // Get all expanded paths to restore later if requested
+                var expandedPaths = new HashSet<string>();
+                if (preserveExpanded)
+                {
+                    foreach (var item in FindVisualChildren<TreeViewItem>(ShellTreeViewControl))
+                    {
+                        if (item.IsExpanded && item.Tag is ShellObject so)
+                        {
+                            string path = GetPathFromShellObject(so);
+                            if (!string.IsNullOrEmpty(path))
+                            {
+                                expandedPaths.Add(path);
+                            }
+                        }
+                    }
+                }
+
+                // Find the item to refresh
+                TreeViewItem itemToRefresh = null;
+
+                // If we have a selected path, we'll try to find its parent for refreshing
+                if (!string.IsNullOrEmpty(pathToSelect))
+                {
+                    string parentPath = Path.GetDirectoryName(pathToSelect);
+
+                    // Try to refresh the parent of the selected path
+                    if (!string.IsNullOrEmpty(parentPath) && Directory.Exists(parentPath))
+                    {
+                        if (_pathToTreeViewItem.TryGetValue(parentPath, out itemToRefresh))
+                        {
+                            RefreshTreeItem(itemToRefresh);
+                        }
+                    }
+
+                    // If we couldn't refresh the parent, try refreshing the current path
+                    if (itemToRefresh == null && Directory.Exists(pathToSelect))
+                    {
+                        if (_pathToTreeViewItem.TryGetValue(pathToSelect, out itemToRefresh))
+                        {
+                            RefreshTreeItem(itemToRefresh);
+                        }
+                    }
+                }
+
+                // If we couldn't find an item to refresh, refresh root items
+                if (itemToRefresh == null)
+                {
+                    RefreshRootItems();
+                }
+
+                // Restore expanded state
+                if (preserveExpanded)
+                {
+                    foreach (var path in expandedPaths)
+                    {
+                        if (Directory.Exists(path) && _pathToTreeViewItem.TryGetValue(path, out var item))
+                        {
+                            item.IsExpanded = true;
+                        }
+                    }
+                }
+
+                // Restore selection
+                if (!string.IsNullOrEmpty(pathToSelect) && Directory.Exists(pathToSelect))
+                {
+                    SelectPath(pathToSelect);
+                }
+                else if (!string.IsNullOrEmpty(pathToSelect))
+                {
+                    // If the selected path doesn't exist anymore, try to select its parent
+                    string parentPath = Path.GetDirectoryName(pathToSelect);
+                    if (!string.IsNullOrEmpty(parentPath) && Directory.Exists(parentPath))
+                    {
+                        SelectPath(parentPath);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                HandleException("Error refreshing tree", ex, false);
+            }
+        }
+
+        /// <summary>
+        /// Helper method to refresh a specific TreeViewItem
+        /// </summary>
+        private void RefreshTreeItem(TreeViewItem item)
+        {
+            if (item == null) return;
+
+            bool wasExpanded = item.IsExpanded;
+
+            // Clear and add dummy item to force reload
+            item.Items.Clear();
+            item.Items.Add(new TreeViewItem { Header = "Loading..." });
+
+            // Force a refresh by toggling IsExpanded if it was already expanded
+            if (wasExpanded)
+            {
+                item.IsExpanded = false;
+                item.IsExpanded = true; // This will trigger TreeViewItem_Expanded event
+            }
+        }
+
+        /// <summary>
+        /// Helper method to refresh root items
+        /// </summary>
+        private void RefreshRootItems()
+        {
+            // Store expanded state to restore later
+            var expandedPaths = new HashSet<string>();
+            foreach (var item in FindVisualChildren<TreeViewItem>(ShellTreeViewControl))
+            {
+                if (item.IsExpanded && item.Tag is ShellObject so)
+                {
+                    string path = GetPathFromShellObject(so);
+                    if (!string.IsNullOrEmpty(path))
+                    {
+                        expandedPaths.Add(path);
+                    }
+                }
+            }
+
+            // Remember current selection
+            string selectedPath = _selectedPath;
+
+            // Re-initialize the tree with the same root
+            InitializeShellTree();
+
+            // Expand previously expanded paths
+            foreach (var path in expandedPaths)
+            {
+                if (Directory.Exists(path) && _pathToTreeViewItem.TryGetValue(path, out var item))
+                {
+                    item.IsExpanded = true;
+                }
+            }
+
+            // Restore selection
+            if (!string.IsNullOrEmpty(selectedPath) && Directory.Exists(selectedPath))
+            {
+                SelectPath(selectedPath);
+            }
+        }
+
+        /// <summary>
+        /// Selects a path in the tree view, expanding all necessary nodes
+        /// </summary>
+        public void SelectPath(string path)
+        {
+            if (string.IsNullOrEmpty(path) || !Directory.Exists(path))
+                return;
+
+            try
+            {
+                // If the path isn't within our tree, consider changing the root directory
+                bool isWithinTree = IsPathWithinTreeScope(path);
+                if (!isWithinTree)
+                {
+                    // Ask user if they want to change the root
+                    var result = MessageBox.Show(
+                        $"The selected path '{path}' is not within the current tree view. Do you want to change the root directory to this path?",
+                        "Change Root Directory",
+                        MessageBoxButton.YesNo,
+                        MessageBoxImage.Question);
+
+                    if (result == MessageBoxResult.Yes)
+                    {
+                        // Change root to this path
+                        ChangeRootDirectory(path);
+                        return;
+                    }
+                }
+
+                // Create a shell object from the path
+                var shellObject = ShellObject.FromParsingName(path);
+
+                // Expand all parent folders
+                ExpandPathToShellObject(shellObject);
+
+                // If we already have a TreeViewItem for this path, select it
+                if (_pathToTreeViewItem.TryGetValue(path, out var treeViewItem))
+                {
+                    // Clear previous selections
+                    ClearSelectedItems();
+
+                    // Select the item
+                    SelectItem(treeViewItem);
+                    treeViewItem.BringIntoView();
+
+                    // Notify about the selection
+                    NotifyFolderSelection(treeViewItem);
+                }
+            }
+            catch (Exception ex)
+            {
+                HandleException("Error selecting path", ex, false);
+            }
+        }
+
+        /// <summary>
+        /// Creates a TreeViewItem for a ShellObject
+        /// </summary>
         private TreeViewItem CreateShellTreeViewItem(ShellObject shellObject)
         {
             // Create the tree item
@@ -250,7 +456,7 @@ namespace ImageFolderManager.Views
             try
             {
                 // Only add a dummy node if this is a folder AND it contains subfolders
-                if (shellObject is ShellFolder shellFolder)
+                if (shellObject is ShellFolder)
                 {
                     string path = GetPathFromShellObject(shellObject);
 
@@ -292,30 +498,9 @@ namespace ImageFolderManager.Views
             return item;
         }
 
-        // Helper method to safely check if a directory has subdirectories
-        // Compatible with .NET Framework 4.8
-        private bool DirectoryHasSubdirectories(string path)
-        {
-            try
-            {
-                // Use GetDirectories with explicit System.IO.SearchOption.TopDirectoryOnly
-                // We only need to know if there's at least one subdirectory
-                var dirs = Directory.GetDirectories(path, "*", System.IO.SearchOption.TopDirectoryOnly);
-                return dirs.Length > 0;
-            }
-            catch (UnauthorizedAccessException)
-            {
-                // For unauthorized directories, assume they might have subdirectories
-                // This gives a visual cue that the folder might contain something even if we can't access it
-                return true;
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"Error checking for subdirectories in {path}: {ex.Message}");
-                return false;
-            }
-        }
-
+        /// <summary>
+        /// Creates a header for a ShellObject with an icon and text
+        /// </summary>
         private StackPanel CreateShellObjectHeader(ShellObject shellObject)
         {
             var panel = new StackPanel { Orientation = Orientation.Horizontal };
@@ -360,6 +545,444 @@ namespace ImageFolderManager.Views
             return panel;
         }
 
+        /// <summary>
+        /// Helper method to safely check if a directory has subdirectories
+        /// </summary>
+        private bool DirectoryHasSubdirectories(string path)
+        {
+            try
+            {
+                // Use GetDirectories with explicit System.IO.SearchOption.TopDirectoryOnly
+                // We only need to know if there's at least one subdirectory
+                var dirs = Directory.GetDirectories(path, "*", System.IO.SearchOption.TopDirectoryOnly);
+                return dirs.Length > 0;
+            }
+            catch (UnauthorizedAccessException)
+            {
+                // For unauthorized directories, assume they might have subdirectories
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error checking for subdirectories in {path}: {ex.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Checks if a path is within the current tree scope
+        /// </summary>
+        private bool IsPathWithinTreeScope(string path)
+        {
+            if (string.IsNullOrEmpty(_rootDirectory))
+                return true; // No root restriction, anything is in scope
+
+            // Check if path is within the root directory
+            return path.StartsWith(_rootDirectory, StringComparison.OrdinalIgnoreCase) ||
+                   path.Equals(_rootDirectory, StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
+        /// Gets the file system path from a ShellObject
+        /// </summary>
+        private string GetPathFromShellObject(ShellObject shellObject)
+        {
+            try
+            {
+                if (shellObject.IsFileSystemObject)
+                {
+                    return shellObject.ParsingName;
+                }
+            }
+            catch { }
+            return null;
+        }
+
+        /// <summary>
+        /// Expands all parent folders to a given ShellObject
+        /// </summary>
+        private void ExpandPathToShellObject(ShellObject shellObject)
+        {
+            if (shellObject == null) return;
+
+            try
+            {
+                // Get the full path
+                string path = GetPathFromShellObject(shellObject);
+                if (string.IsNullOrEmpty(path)) return;
+
+                // Build a list of parent directories that need to be expanded
+                var directoriesToExpand = new List<string>();
+                var currentDir = new DirectoryInfo(path).Parent;
+
+                while (currentDir != null)
+                {
+                    // Stop when we reach the root directory level
+                    if (!string.IsNullOrEmpty(_rootDirectory) &&
+                        currentDir.FullName.Equals(_rootDirectory, StringComparison.OrdinalIgnoreCase))
+                        break;
+
+                    directoriesToExpand.Insert(0, currentDir.FullName);
+                    currentDir = currentDir.Parent;
+                }
+
+                // Expand the root item first
+                if (ShellTreeViewControl.Items.Count > 0)
+                {
+                    var rootItem = ShellTreeViewControl.Items[0] as TreeViewItem;
+                    if (rootItem != null)
+                    {
+                        rootItem.IsExpanded = true;
+
+                        // Now find and expand each parent directory
+                        foreach (var dir in directoriesToExpand)
+                        {
+                            // Try to find the folder in the tree
+                            try
+                            {
+                                if (_pathToTreeViewItem.TryGetValue(dir, out var treeViewItem))
+                                {
+                                    treeViewItem.IsExpanded = true;
+                                }
+                            }
+                            catch
+                            {
+                                // Skip if we can't find this folder
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error expanding path: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Notifies listeners about a folder selection
+        /// </summary>
+        private void NotifyFolderSelection(TreeViewItem treeViewItem)
+        {
+            try
+            {
+                var shellObject = treeViewItem.Tag as ShellObject;
+                if (shellObject == null) return;
+
+                string path = GetPathFromShellObject(shellObject);
+                if (string.IsNullOrEmpty(path) || !Directory.Exists(path)) return;
+
+                _selectedPath = path;
+
+                Debug.WriteLine($"Selected folder: {path}");
+
+                // Create a FolderInfo for the selected path
+                var folderInfo = new FolderInfo(path);
+
+                // Notify listeners
+                FolderSelected?.Invoke(folderInfo);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error in folder selection notification: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Gets a list of FolderInfo objects for all selected items
+        /// </summary>
+        private List<FolderInfo> GetSelectedFolderInfos()
+        {
+            var selectedFolders = new List<FolderInfo>();
+
+            foreach (var item in _selectedItems)
+            {
+                var shellObject = item.Tag as ShellObject;
+                if (shellObject != null)
+                {
+                    string path = GetPathFromShellObject(shellObject);
+                    if (!string.IsNullOrEmpty(path) && Directory.Exists(path))
+                    {
+                        selectedFolders.Add(new FolderInfo(path));
+                    }
+                }
+            }
+
+            return selectedFolders;
+        }
+
+        /// <summary>
+        /// Gets the currently selected TreeViewItem
+        /// </summary>
+        private TreeViewItem GetSelectedTreeViewItem()
+        {
+            // Return the first selected item or the selected item from the TreeView
+            if (_selectedItems.Count > 0)
+            {
+                return _selectedItems[0];
+            }
+
+            return ShellTreeViewControl.SelectedItem as TreeViewItem;
+        }
+
+        #region Selection Management
+
+        /// <summary>
+        /// Selects a TreeViewItem
+        /// </summary>
+        private void SelectItem(TreeViewItem item)
+        {
+            if (item == null) return;
+
+            // Apply visual selection style
+            item.Background = new SolidColorBrush(Color.FromArgb(120, 0, 120, 215));
+
+            if (!_selectedItems.Contains(item))
+            {
+                _selectedItems.Add(item);
+            }
+
+            _lastSelectedItem = item;
+        }
+
+        /// <summary>
+        /// Checks if a TreeViewItem is selected
+        /// </summary>
+        private bool IsItemSelected(TreeViewItem item)
+        {
+            return _selectedItems.Contains(item);
+        }
+
+        /// <summary>
+        /// Unselects a TreeViewItem
+        /// </summary>
+        private void UnselectItem(TreeViewItem item)
+        {
+            if (item == null) return;
+
+            // Remove visual selection style
+            item.Background = null;
+
+            if (_selectedItems.Contains(item))
+            {
+                _selectedItems.Remove(item);
+            }
+        }
+
+        /// <summary>
+        /// Clears all selected items
+        /// </summary>
+        private void ClearSelectedItems()
+        {
+            foreach (var item in _selectedItems.ToList())
+            {
+                item.Background = null;
+            }
+
+            _selectedItems.Clear();
+        }
+
+        /// <summary>
+        /// Selects a range of TreeViewItems
+        /// </summary>
+        private void SelectItemRange(TreeViewItem start, TreeViewItem end)
+        {
+            // First, get all tree view items in the visible tree
+            var allItems = GetAllVisibleTreeViewItems();
+
+            // Find the indices of start and end items
+            int startIndex = allItems.IndexOf(start);
+            int endIndex = allItems.IndexOf(end);
+
+            if (startIndex == -1 || endIndex == -1) return;
+
+            // Ensure startIndex <= endIndex
+            if (startIndex > endIndex)
+            {
+                int temp = startIndex;
+                startIndex = endIndex;
+                endIndex = temp;
+            }
+
+            // Clear previous selection
+            ClearSelectedItems();
+
+            // Select all items in the range
+            for (int i = startIndex; i <= endIndex; i++)
+            {
+                SelectItem(allItems[i]);
+            }
+        }
+
+        /// <summary>
+        /// Gets all visible TreeViewItems
+        /// </summary>
+        private List<TreeViewItem> GetAllVisibleTreeViewItems()
+        {
+            var items = new List<TreeViewItem>();
+            CollectVisibleTreeViewItems(ShellTreeViewControl, items);
+            return items;
+        }
+
+        /// <summary>
+        /// Collects all visible TreeViewItems recursively
+        /// </summary>
+        private void CollectVisibleTreeViewItems(ItemsControl container, List<TreeViewItem> items)
+        {
+            foreach (var item in container.Items)
+            {
+                var treeViewItem = container.ItemContainerGenerator.ContainerFromItem(item) as TreeViewItem;
+                if (treeViewItem != null)
+                {
+                    items.Add(treeViewItem);
+
+                    if (treeViewItem.IsExpanded)
+                    {
+                        CollectVisibleTreeViewItems(treeViewItem, items);
+                    }
+                }
+            }
+        }
+
+        private void SelectAllVisibleItems()
+        {
+            // Clear current selection
+            ClearSelectedItems();
+
+            // Get all visible items and select them
+            var allVisibleItems = GetAllVisibleTreeViewItems();
+            foreach (var item in allVisibleItems)
+            {
+                SelectItem(item);
+            }
+
+            // Set the last selected item
+            if (allVisibleItems.Count > 0)
+            {
+                _lastSelectedItem = allVisibleItems.Last();
+            }
+        }
+
+        #endregion
+
+        #region Drag & Drop Support
+
+        /// <summary>
+        /// Gets the TreeViewItem under the mouse
+        /// </summary>
+        private TreeViewItem GetTreeViewItemUnderMouse(Point mousePosition)
+        {
+            HitTestResult result = VisualTreeHelper.HitTest(ShellTreeViewControl, mousePosition);
+
+            if (result != null)
+            {
+                DependencyObject obj = result.VisualHit;
+
+                while (obj != null && !(obj is TreeViewItem))
+                {
+                    obj = VisualTreeHelper.GetParent(obj);
+                }
+
+                return obj as TreeViewItem;
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// Highlights a TreeViewItem as a drop target
+        /// </summary>
+        private void HighlightDropTarget(TreeViewItem item)
+        {
+            // Clear previous highlights
+            ClearDropTargetHighlight();
+
+            if (item != null)
+            {
+                // Add drop target highlight style
+                item.Background = new SolidColorBrush(Color.FromArgb(80, 0, 120, 215));
+            }
+        }
+
+        /// <summary>
+        /// Clears all drop target highlights
+        /// </summary>
+        private void ClearDropTargetHighlight()
+        {
+            // Find all TreeViewItems and clear their background
+            var allItems = FindVisualChildren<TreeViewItem>(ShellTreeViewControl);
+            foreach (var item in allItems)
+            {
+                // Skip items that are in the selection
+                if (!_selectedItems.Contains(item))
+                {
+                    item.Background = null;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Finds a parent of type T in the visual tree
+        /// </summary>
+        private T FindAncestor<T>(DependencyObject current) where T : DependencyObject
+        {
+            while (current != null && !(current is T))
+            {
+                current = VisualTreeHelper.GetParent(current);
+            }
+            return current as T;
+        }
+
+        /// <summary>
+        /// Finds all visual children of type T in the visual tree
+        /// </summary>
+        public static IEnumerable<T> FindVisualChildren<T>(DependencyObject parent) where T : DependencyObject
+        {
+            if (parent == null) yield break;
+
+            for (int i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
+            {
+                DependencyObject child = VisualTreeHelper.GetChild(parent, i);
+
+                if (child != null && child is T)
+                    yield return (T)child;
+
+                foreach (T descendant in FindVisualChildren<T>(child))
+                    yield return descendant;
+            }
+        }
+
+        private TreeViewItem FindParentTreeViewItem(TreeViewItem item)
+        {
+            DependencyObject parent = VisualTreeHelper.GetParent(item);
+            while (parent != null && !(parent is TreeViewItem))
+            {
+                parent = VisualTreeHelper.GetParent(parent);
+            }
+            return parent as TreeViewItem;
+        }
+
+        /// <summary>
+        /// Standardized exception handling
+        /// </summary>
+        private void HandleException(string operation, Exception ex, bool showMessageBox = true)
+        {
+            Debug.WriteLine($"{operation}: {ex.Message}");
+
+            if (showMessageBox)
+            {
+                MessageBox.Show($"{operation}: {ex.Message}",
+                    "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        #endregion
+
+        #region Event Handlers
+
+        /// <summary>
+        /// Handles the TreeViewItem.Expanded event
+        /// </summary>
         private void TreeViewItem_Expanded(object sender, RoutedEventArgs e)
         {
             var treeViewItem = sender as TreeViewItem;
@@ -409,7 +1032,8 @@ namespace ImageFolderManager.Views
                             var folder = new FolderInfo(path);
                             if (ViewModel != null)
                             {
-                                ViewModel._fileSystemWatcher.WatchFolder(folder);
+                                // Tell ViewModel that folder was expanded
+                                ViewModel.FolderExpanded(folder);
 
                                 // Watch all immediate child folders
                                 foreach (var childItem in treeViewItem.Items)
@@ -442,6 +1066,9 @@ namespace ImageFolderManager.Views
             e.Handled = true; // Prevent event bubbling
         }
 
+        /// <summary>
+        /// Handles the TreeView.SelectedItemChanged event
+        /// </summary>
         private void ShellTreeView_SelectedItemChanged(object sender, RoutedPropertyChangedEventArgs<object> e)
         {
             // This event is still useful for keyboard navigation
@@ -458,149 +1085,28 @@ namespace ImageFolderManager.Views
             }
         }
 
-        private string GetPathFromShellObject(ShellObject shellObject)
-        {
-            try
-            {
-                if (shellObject.IsFileSystemObject)
-                {
-                    return shellObject.ParsingName;
-                }
-            }
-            catch { }
-            return null;
-        }
-
-        public void SelectPath(string path)
-        {
-            if (string.IsNullOrEmpty(path) || !Directory.Exists(path))
-                return;
-
-            try
-            {
-                // If the path isn't within our tree (might be outside root directory),
-                // consider changing the root directory
-                bool isWithinTree = IsPathWithinTreeScope(path);
-                if (!isWithinTree)
-                {
-                    // Ask user if they want to change the root
-                    var result = MessageBox.Show(
-                        $"The selected path '{path}' is not within the current tree view. Do you want to change the root directory to this path?",
-                        "Change Root Directory",
-                        MessageBoxButton.YesNo,
-                        MessageBoxImage.Question);
-
-                    if (result == MessageBoxResult.Yes)
-                    {
-                        // Change root to this path
-                        ChangeRootDirectory(path);
-                        return;
-                    }
-                    else
-                    {
-                        // User doesn't want to change root, we'll attempt to expand to this path anyway
-                    }
-                }
-
-                // Create a shell object from the path
-                var shellObject = ShellObject.FromParsingName(path);
-
-                // Expand all parent folders
-                ExpandPathToShellObject(shellObject);
-
-                // If we already have a TreeViewItem for this path, select it
-                if (_pathToTreeViewItem.TryGetValue(path, out var treeViewItem))
-                {
-                    // Clear previous selections
-                    ClearSelectedItems();
-
-                    // Select the item
-                    SelectItem(treeViewItem);
-                    treeViewItem.BringIntoView();
-
-                    // Notify about the selection
-                    NotifyFolderSelection(treeViewItem);
-                }
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"Error selecting path: {ex.Message}");
-            }
-        }
-
-        private bool IsPathWithinTreeScope(string path)
-        {
-            if (string.IsNullOrEmpty(_rootDirectory))
-                return true; // No root restriction, anything is in scope
-
-            // Check if path is within the root directory
-            return path.StartsWith(_rootDirectory, StringComparison.OrdinalIgnoreCase) ||
-                   path.Equals(_rootDirectory, StringComparison.OrdinalIgnoreCase);
-        }
-
-        private void ExpandPathToShellObject(ShellObject shellObject)
-        {
-            if (shellObject == null) return;
-
-            try
-            {
-                // Get the full path
-                string path = GetPathFromShellObject(shellObject);
-                if (string.IsNullOrEmpty(path)) return;
-
-                // Build a list of parent directories that need to be expanded
-                var directoriesToExpand = new List<string>();
-                var currentDir = new DirectoryInfo(path).Parent;
-
-                while (currentDir != null)
-                {
-                    // Stop when we reach the root directory level
-                    if (!string.IsNullOrEmpty(_rootDirectory) &&
-                        currentDir.FullName.Equals(_rootDirectory, StringComparison.OrdinalIgnoreCase))
-                        break;
-
-                    directoriesToExpand.Insert(0, currentDir.FullName);
-                    currentDir = currentDir.Parent;
-                }
-
-                // Expand the root item first
-                if (ShellTreeViewControl.Items.Count > 0)
-                {
-                    var rootItem = ShellTreeViewControl.Items[0] as TreeViewItem;
-                    if (rootItem != null)
-                    {
-                        rootItem.IsExpanded = true;
-
-                        // Now find and expand each parent directory
-                        foreach (var dir in directoriesToExpand)
-                        {
-                            // Try to find the folder in the tree
-                            try
-                            {
-                                var dirShellObject = ShellObject.FromParsingName(dir);
-                                if (_pathToTreeViewItem.TryGetValue(dir, out var treeViewItem))
-                                {
-                                    treeViewItem.IsExpanded = true;
-                                }
-                            }
-                            catch
-                            {
-                                // Skip if we can't find this folder
-                            }
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"Error expanding path: {ex.Message}");
-            }
-        }
-
-        // Multi-select support - Custom mouse event handlers
-
+        /// <summary>
+        /// Modified mouse handling with double-click support
+        /// </summary>
         private void TreeView_PreviewMouseDown(object sender, MouseButtonEventArgs e)
         {
+            // Handle double-click to load images
+            if (e.ClickCount == 2 && e.ChangedButton == MouseButton.Left)
+            {
+                var hitTestResult = VisualTreeHelper.HitTest(ShellTreeViewControl, e.GetPosition(ShellTreeViewControl));
+                if (hitTestResult != null)
+                {
+                    var treeViewItem = FindAncestor<TreeViewItem>(hitTestResult.VisualHit);
+                    if (treeViewItem != null)
+                    {
+                        HandleFolderDoubleClick(treeViewItem);
+                        e.Handled = true;
+                        return;
+                    }
+                }
+            }
+
+            // Regular single-click handling
             if (e.ChangedButton == MouseButton.Left)
             {
                 // Get the TreeViewItem under the mouse
@@ -643,8 +1149,8 @@ namespace ImageFolderManager.Views
                                 SelectItem(treeViewItem);
                                 _lastSelectedItem = treeViewItem;
 
-                                // Notify about the selection
-                                NotifyFolderSelection(treeViewItem);
+                                // Notify about selection (but don't load images)
+                                NotifyFolderSelectionWithoutLoading(treeViewItem);
                             }
 
                             // Don't mark as handled to allow drag operations
@@ -656,153 +1162,97 @@ namespace ImageFolderManager.Views
             }
         }
 
-        // Helper methods for multi-selection
-
-        private bool IsItemSelected(TreeViewItem item)
+        /// <summary>
+        /// Handles double-click on a folder
+        /// </summary>
+        private void HandleFolderDoubleClick(TreeViewItem treeViewItem)
         {
-            return _selectedItems.Contains(item);
-        }
-
-        private void SelectItem(TreeViewItem item)
-        {
-            if (item == null) return;
-
-            // Apply visual selection style
-            item.Background = new SolidColorBrush(Color.FromArgb(120, 0, 120, 215));
-
-            if (!_selectedItems.Contains(item))
+            try
             {
-                _selectedItems.Add(item);
-            }
+                var shellObject = treeViewItem.Tag as ShellObject;
+                if (shellObject == null) return;
 
-            _lastSelectedItem = item;
-        }
+                string path = GetPathFromShellObject(shellObject);
+                if (string.IsNullOrEmpty(path)) return;
 
-        private void UnselectItem(TreeViewItem item)
-        {
-            if (item == null) return;
-
-            // Remove visual selection style
-            item.Background = null;
-
-            if (_selectedItems.Contains(item))
-            {
-                _selectedItems.Remove(item);
-            }
-        }
-
-        private void ClearSelectedItems()
-        {
-            foreach (var item in _selectedItems.ToList())
-            {
-                item.Background = null;
-            }
-
-            _selectedItems.Clear();
-        }
-
-        private void SelectItemRange(TreeViewItem start, TreeViewItem end)
-        {
-            // First, get all tree view items in the visible tree
-            var allItems = GetAllVisibleTreeViewItems();
-
-            // Find the indices of start and end items
-            int startIndex = allItems.IndexOf(start);
-            int endIndex = allItems.IndexOf(end);
-
-            if (startIndex == -1 || endIndex == -1) return;
-
-            // Ensure startIndex <= endIndex
-            if (startIndex > endIndex)
-            {
-                int temp = startIndex;
-                startIndex = endIndex;
-                endIndex = temp;
-            }
-
-            // Clear previous selection
-            ClearSelectedItems();
-
-            // Select all items in the range
-            for (int i = startIndex; i <= endIndex; i++)
-            {
-                SelectItem(allItems[i]);
-            }
-        }
-
-        private List<TreeViewItem> GetAllVisibleTreeViewItems()
-        {
-            var items = new List<TreeViewItem>();
-            CollectVisibleTreeViewItems(ShellTreeViewControl, items);
-            return items;
-        }
-
-        private void CollectVisibleTreeViewItems(ItemsControl container, List<TreeViewItem> items)
-        {
-            foreach (var item in container.Items)
-            {
-                var treeViewItem = container.ItemContainerGenerator.ContainerFromItem(item) as TreeViewItem;
-                if (treeViewItem != null)
+                // Make sure the item is selected
+                if (!IsItemSelected(treeViewItem))
                 {
-                    items.Add(treeViewItem);
+                    ClearSelectedItems();
+                    SelectItem(treeViewItem);
+                    _lastSelectedItem = treeViewItem;
+                }
 
-                    if (treeViewItem.IsExpanded)
-                    {
-                        CollectVisibleTreeViewItems(treeViewItem, items);
-                    }
+                // Create FolderInfo and load images
+                var folderInfo = new FolderInfo(path);
+                LoadImagesForFolder(folderInfo);
+            }
+            catch (Exception ex)
+            {
+                HandleException("Error handling folder double-click", ex);
+            }
+        }
+
+        /// <summary>
+        /// Notifies about folder selection without loading images
+        /// </summary>
+        private void NotifyFolderSelectionWithoutLoading(TreeViewItem treeViewItem)
+        {
+            try
+            {
+                var shellObject = treeViewItem.Tag as ShellObject;
+                if (shellObject == null) return;
+
+                string path = GetPathFromShellObject(shellObject);
+                if (string.IsNullOrEmpty(path)) return;
+
+                _selectedPath = path;
+
+                Debug.WriteLine($"Selected folder (without loading images): {path}");
+
+                // Create a FolderInfo for the selected path
+                var folderInfo = new FolderInfo(path);
+
+                // Notify listeners to update without loading images
+                if (ViewModel != null)
+                {
+                    // Update UI without loading images
+                    ViewModel.SetSelectedFolderWithoutLoading(folderInfo);
+                }
+                else
+                {
+                    // Fallback to regular notification
+                    FolderSelected?.Invoke(folderInfo);
                 }
             }
-        }
-
-        private void NotifyFolderSelection(TreeViewItem treeViewItem)
-        {
-            var shellObject = treeViewItem.Tag as ShellObject;
-            if (shellObject == null) return;
-
-            string path = GetPathFromShellObject(shellObject);
-            if (string.IsNullOrEmpty(path) || !Directory.Exists(path)) return;
-
-            _selectedPath = path;
-
-            Debug.WriteLine($"Selected folder: {path}");
-
-            // Create a FolderInfo for the selected path
-            var folderInfo = new FolderInfo(path);
-
-            // Notify listeners
-            FolderSelected?.Invoke(folderInfo);
-        }
-
-        private List<FolderInfo> GetSelectedFolderInfos()
-        {
-            var selectedFolders = new List<FolderInfo>();
-
-            foreach (var item in _selectedItems)
+            catch (Exception ex)
             {
-                var shellObject = item.Tag as ShellObject;
-                if (shellObject != null)
-                {
-                    string path = GetPathFromShellObject(shellObject);
-                    if (!string.IsNullOrEmpty(path) && Directory.Exists(path))
-                    {
-                        selectedFolders.Add(new FolderInfo(path));
-                    }
-                }
+                Debug.WriteLine($"Error in folder selection notification: {ex.Message}");
             }
-
-            return selectedFolders;
         }
 
-        private T FindAncestor<T>(DependencyObject current) where T : DependencyObject
+        /// <summary>
+        /// Loads images for the specified folder
+        /// </summary>
+        private void LoadImagesForFolder(FolderInfo folder)
         {
-            while (current != null && !(current is T))
+            if (folder == null) return;
+
+            if (ViewModel != null)
             {
-                current = VisualTreeHelper.GetParent(current);
+                // Call the ViewModel method to load images
+                ViewModel.LoadImagesForSelectedFolderAsync();
             }
-            return current as T;
+            else
+            {
+                // Fallback to just selecting folder if ViewModel is not available
+                FolderSelected?.Invoke(folder);
+            }
         }
 
-        // Context menu handlers with multi-selection support
+        /// <summary>
+        /// Modified context menu creation to include "Load Images" option
+        /// </summary>
         private void ShellTreeViewControl_ContextMenuOpening(object sender, ContextMenuEventArgs e)
         {
             Debug.WriteLine("Context menu opening");
@@ -822,6 +1272,9 @@ namespace ImageFolderManager.Views
             {
                 ClearSelectedItems();
                 SelectItem(item);
+                
+                // Update selected folder but don't load images
+                NotifyFolderSelectionWithoutLoading(item);
             }
 
             // Get the selected folders
@@ -835,13 +1288,24 @@ namespace ImageFolderManager.Views
             // Create context menu
             var contextMenu = new ContextMenu();
 
+            // Add "Load Images" option for single selection
+            if (selectedFolders.Count == 1)
+            {
+                var loadImagesItem = new MenuItem { Header = "Load Images" };
+                loadImagesItem.Click += (s, args) => {
+                    Debug.WriteLine("Load Images clicked");
+                    LoadImagesForFolder(selectedFolders[0]);
+                };
+                contextMenu.Items.Add(loadImagesItem);
+                contextMenu.Items.Add(new Separator());
+            }
+
             // Add menu items for both single and multi-selection
             if (selectedFolders.Count == 1)
             {
                 // Single selection menu
                 var newFolderItem = new MenuItem { Header = "New Folder" };
-                newFolderItem.Click += (s, args) =>
-                {
+                newFolderItem.Click += (s, args) => {
                     Debug.WriteLine("New Folder clicked");
                     NewFolder_Click(s, args);
                 };
@@ -850,24 +1314,21 @@ namespace ImageFolderManager.Views
 
             // Common operations for both single and multi-selections
             var cutItem = new MenuItem { Header = "Cut" };
-            cutItem.Click += (s, args) =>
-            {
+            cutItem.Click += (s, args) => {
                 Debug.WriteLine("Cut clicked");
                 MultiFolderCut_Click(s, args);
             };
             contextMenu.Items.Add(cutItem);
 
             var copyItem = new MenuItem { Header = "Copy" };
-            copyItem.Click += (s, args) =>
-            {
+            copyItem.Click += (s, args) => {
                 Debug.WriteLine("Copy clicked");
                 MultiFolderCopy_Click(s, args);
             };
             contextMenu.Items.Add(copyItem);
 
             var pasteItem = new MenuItem { Header = "Paste" };
-            pasteItem.Click += (s, args) =>
-            {
+            pasteItem.Click += (s, args) => {
                 Debug.WriteLine("Paste clicked");
                 Paste_Click(s, args);
             };
@@ -880,8 +1341,7 @@ namespace ImageFolderManager.Views
             {
                 // Single selection specific actions
                 var renameItem = new MenuItem { Header = "Rename" };
-                renameItem.Click += (s, args) =>
-                {
+                renameItem.Click += (s, args) => {
                     Debug.WriteLine("Rename clicked");
                     Rename_Click(s, args);
                 };
@@ -890,8 +1350,7 @@ namespace ImageFolderManager.Views
 
             var deleteItemText = selectedFolders.Count > 1 ? $"Delete ({selectedFolders.Count} items)" : "Delete";
             var deleteItem = new MenuItem { Header = deleteItemText };
-            deleteItem.Click += (s, args) =>
-            {
+            deleteItem.Click += (s, args) => {
                 Debug.WriteLine("Delete clicked");
                 MultiFolderDelete_Click(s, args);
             };
@@ -903,8 +1362,7 @@ namespace ImageFolderManager.Views
             {
                 // Show in Explorer only for single selection
                 var showItem = new MenuItem { Header = "Show in Explorer" };
-                showItem.Click += (s, args) =>
-                {
+                showItem.Click += (s, args) => {
                     Debug.WriteLine("Show in Explorer clicked");
                     ShowInExplorer_Click(s, args);
                 };
@@ -915,474 +1373,9 @@ namespace ImageFolderManager.Views
             ShellTreeViewControl.ContextMenu = contextMenu;
         }
 
-        // Multi-selection operations
-        private void MultiFolderCut_Click(object sender, RoutedEventArgs e)
-        {
-            var selectedFolders = GetSelectedFolderInfos();
-            if (selectedFolders.Count == 0) return;
-
-            if (ViewModel != null)
-            {
-                ViewModel.CutMultipleFolders(selectedFolders);
-            }
-            else
-            {
-                MessageBox.Show("Could not cut folders: ViewModel is not available.",
-                    "Operation Failed", MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-        }
-
-        private void MultiFolderCopy_Click(object sender, RoutedEventArgs e)
-        {
-            var selectedFolders = GetSelectedFolderInfos();
-            if (selectedFolders.Count == 0) return;
-
-            if (ViewModel != null)
-            {
-                ViewModel.CopyMultipleFolders(selectedFolders);
-            }
-            else
-            {
-                MessageBox.Show("Could not copy folders: ViewModel is not available.",
-                    "Operation Failed", MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-        }
-
-        private void MultiFolderDelete_Click(object sender, RoutedEventArgs e)
-        {
-            var selectedFolders = GetSelectedFolderInfos();
-            if (selectedFolders.Count == 0) return;
-
-            if (ViewModel != null)
-            {
-                // ViewModel.DeleteMultipleFolders 已经包含确认对话框和所有业务逻辑
-                ViewModel.DeleteMultipleFolders(selectedFolders);
-
-                // 清空选择并刷新树
-                ClearSelectedItems();
-                RefreshTree();
-            }
-            else
-            {
-                MessageBox.Show("Could not delete folders: ViewModel is not available.",
-                    "Operation Failed", MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-        }
-
-        private void NewFolder_Click(object sender, RoutedEventArgs e)
-        {
-            Debug.WriteLine("NewFolder_Click handler called");
-
-            var treeViewItem = GetSelectedTreeViewItem();
-            if (treeViewItem == null)
-            {
-                Debug.WriteLine("No TreeViewItem selected");
-                return;
-            }
-
-            var shellObject = treeViewItem.Tag as ShellObject;
-            if (shellObject == null)
-            {
-                Debug.WriteLine("Selected item has no ShellObject");
-                return;
-            }
-
-            string path = GetPathFromShellObject(shellObject);
-            if (string.IsNullOrEmpty(path) || !Directory.Exists(path))
-            {
-                Debug.WriteLine($"Invalid path: {path}");
-                return;
-            }
-
-            // 创建 FolderInfo 并调用 ViewModel
-            var folderInfo = new FolderInfo(path);
-
-            if (ViewModel != null)
-            {
-                Debug.WriteLine($"Calling ViewModel.CreateNewFolder for {path}");
-                ViewModel.CreateNewFolder(folderInfo);
-
-                // CreateNewFolder 方法会自动处理树形结构的更新
-                // 这里我们就不需要手动刷新树了
-            }
-            else
-            {
-                Debug.WriteLine("ViewModel is null");
-                MessageBox.Show("Could not create folder: ViewModel is not available.",
-                    "Operation Failed", MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-        }
-
-        private void Cut_Click(object sender, RoutedEventArgs e)
-        {
-            Debug.WriteLine("Cut_Click handler called");
-
-            var treeViewItem = GetSelectedTreeViewItem();
-            if (treeViewItem == null) return;
-
-            var shellObject = treeViewItem.Tag as ShellObject;
-            if (shellObject == null) return;
-
-            string path = GetPathFromShellObject(shellObject);
-            if (string.IsNullOrEmpty(path) || !Directory.Exists(path)) return;
-
-            var folderInfo = new FolderInfo(path);
-
-            if (ViewModel != null)
-            {
-                Debug.WriteLine($"Calling ViewModel.CutFolder for {path}");
-                ViewModel.CutFolder(folderInfo);
-            }
-        }
-
-        private void Copy_Click(object sender, RoutedEventArgs e)
-        {
-            Debug.WriteLine("Copy_Click handler called");
-
-            var treeViewItem = GetSelectedTreeViewItem();
-            if (treeViewItem == null) return;
-
-            var shellObject = treeViewItem.Tag as ShellObject;
-            if (shellObject == null) return;
-
-            string path = GetPathFromShellObject(shellObject);
-            if (string.IsNullOrEmpty(path) || !Directory.Exists(path)) return;
-
-            var folderInfo = new FolderInfo(path);
-
-            if (ViewModel != null)
-            {
-                Debug.WriteLine($"Calling ViewModel.CopyFolder for {path}");
-                ViewModel.CopyFolder(folderInfo);
-       
-            }
-            else
-            {
-                Debug.WriteLine("ViewModel is null");
-                MessageBox.Show("Could not copy folder: ViewModel is not available.",
-                    "Operation Failed", MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-        }
-
-        // 
-        private void Paste_Click(object sender, RoutedEventArgs e)
-        {
-            Debug.WriteLine("Paste_Click handler called");
-
-            var treeViewItem = GetSelectedTreeViewItem();
-            if (treeViewItem == null) return;
-
-            var shellObject = treeViewItem.Tag as ShellObject;
-            if (shellObject == null) return;
-
-            string path = GetPathFromShellObject(shellObject);
-            if (string.IsNullOrEmpty(path) || !Directory.Exists(path)) return;
-
-            // 存储展开的状态，以在粘贴操作前保存
-            var expandedItems = new HashSet<string>();
-            foreach (var item in FindVisualChildren<TreeViewItem>(ShellTreeViewControl))
-            {
-                if (item.IsExpanded && item.Tag is ShellObject so)
-                {
-                    string expandedPath = GetPathFromShellObject(so);
-                    if (!string.IsNullOrEmpty(expandedPath))
-                    {
-                        expandedItems.Add(expandedPath);
-                    }
-                }
-            }
-
-            // 创建目标文件夹的 FolderInfo
-            var folderInfo = new FolderInfo(path);
-
-            if (ViewModel != null)
-            {
-                Debug.WriteLine($"Calling ViewModel.PasteFolder for {path}");
-
-                if (ViewModel.HasClipboardContent())
-                {
-                    // 保存剪切操作的源路径，用于后续刷新
-                    string sourceParentPath = null;
-                    FolderInfo sourceFolder = null;
-
-                    if (ViewModel.ClipboardFolder != null)
-                    {
-                        sourceFolder = ViewModel.ClipboardFolder;
-                        if (sourceFolder.Parent != null)
-                        {
-                            sourceParentPath = sourceFolder.Parent.FolderPath;
-                        }
-                        else
-                        {
-                            sourceParentPath = Path.GetDirectoryName(sourceFolder.FolderPath);
-                        }
-                    }
-
-                    ViewModel.PasteFolder(folderInfo);
-
-                    // 延迟刷新树形视图，让用户看到粘贴操作的状态信息
-                    var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
-                    timer.Tick += (s, args) =>
-                    {
-                        timer.Stop();
-
-                        // 如果是剪切操作，刷新源父目录
-                        if (treeViewItem.IsExpanded)
-                        {
-                            treeViewItem.Items.Clear();
-                            treeViewItem.Items.Add(new TreeViewItem { Header = "Loading..." });
-                            treeViewItem.IsExpanded = false;
-                            treeViewItem.IsExpanded = true;
-                        }
-
-                        if (ViewModel.IsCutOperation && !string.IsNullOrEmpty(sourceParentPath) && Directory.Exists(sourceParentPath))
-                        {
-                            Debug.WriteLine($"Refreshing source parent folder: {sourceParentPath}");
-
-                            if (_pathToTreeViewItem.TryGetValue(sourceParentPath, out var sourceParentItem) && sourceParentItem != null)
-                            {
-                                if (sourceParentItem.IsExpanded)
-                                {
-                                    sourceParentItem.Items.Clear();
-                                    sourceParentItem.Items.Add(new TreeViewItem { Header = "Loading..." });
-                                    sourceParentItem.IsExpanded = false;
-                                    sourceParentItem.IsExpanded = true;
-                                }
-                            }
-                        }
-
-                        RefreshTree();
-
-                        // 恢复展开的状态
-                        foreach (var expandedPath in expandedItems)
-                        {
-                            if (_pathToTreeViewItem.TryGetValue(expandedPath, out var item))
-                            {
-                                item.IsExpanded = true;
-                            }
-                        }
-                    };
-                    timer.Start();
-                }
-                else
-                {
-                    Debug.WriteLine("No clipboard content available");
-                    MessageBox.Show("No folder is currently in clipboard. Please copy or cut a folder first.",
-                        "Paste Error", MessageBoxButton.OK, MessageBoxImage.Warning);
-                }
-            }
-            else
-            {
-                Debug.WriteLine("ViewModel is null");
-                MessageBox.Show("Could not paste folder: ViewModel is not available.",
-                    "Operation Failed", MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-        }
-
-        private void Rename_Click(object sender, RoutedEventArgs e)
-        {
-            Debug.WriteLine("Rename_Click handler called");
-
-            var treeViewItem = GetSelectedTreeViewItem();
-            if (treeViewItem == null) return;
-
-            var shellObject = treeViewItem.Tag as ShellObject;
-            if (shellObject == null) return;
-
-            string path = GetPathFromShellObject(shellObject);
-            if (string.IsNullOrEmpty(path) || !Directory.Exists(path)) return;
-
-            // 不允许重命名根目录
-            if (!string.IsNullOrEmpty(_rootDirectory) &&
-                path.Equals(_rootDirectory, StringComparison.OrdinalIgnoreCase))
-            {
-                Debug.WriteLine("Cannot rename root directory");
-                MessageBox.Show("Cannot rename the root directory.",
-                    "Rename Error", MessageBoxButton.OK, MessageBoxImage.Warning);
-                return;
-            }
-
-            // 保存旧路径和树形视图项
-            string oldPath = path;
-            var oldItem = treeViewItem;
-            bool wasExpanded = oldItem.IsExpanded;
-            var parentItem = FindParentTreeViewItem(oldItem);
-
-            // 创建 FolderInfo 并调用 ViewModel
-            var folderInfo = new FolderInfo(path);
-
-            if (ViewModel != null)
-            {
-                Debug.WriteLine($"Calling ViewModel.RenameFolder for {path}");
-
-                // 执行重命名操作
-                ViewModel.RenameFolder(folderInfo);
-
-                // 重命名完成后更新树形视图
-                Application.Current.Dispatcher.InvokeAsync(() =>
-                {
-                    try
-                    {
-                        // 获取新路径
-                        string newPath = folderInfo.FolderPath;
-
-                        if (!string.IsNullOrEmpty(newPath) && Directory.Exists(newPath))
-                        {
-                            // 更新路径映射
-                            if (_pathToTreeViewItem.ContainsKey(oldPath))
-                            {
-                                _pathToTreeViewItem.Remove(oldPath);
-                                _pathToTreeViewItem[newPath] = oldItem;
-                            }
-
-                            // 创建新的 ShellObject 以防止旧路径引用问题
-                            var newShellObject = ShellObject.FromParsingName(newPath);
-
-                            // 更新 TreeViewItem 的 Tag 和 Header
-                            oldItem.Tag = newShellObject;
-                            oldItem.Header = CreateShellObjectHeader(newShellObject);
-
-                            // 如果父项存在，刷新父项的子节点排序
-                            if (parentItem != null)
-                            {
-                                // 重新对子节点进行排序
-                                var children = parentItem.Items.Cast<TreeViewItem>().ToList();
-                                parentItem.Items.Clear();
-
-                                // 按名称排序
-                                foreach (var child in children.OrderBy(x =>
-                                    (x.Tag as ShellObject)?.Name ?? ""))
-                                {
-                                    parentItem.Items.Add(child);
-                                }
-                            }
-
-                            // 恢复展开状态
-                            oldItem.IsExpanded = wasExpanded;
-
-                            // 确保选中状态
-                            oldItem.IsSelected = true;
-
-                            Debug.WriteLine($"Successfully updated TreeViewItem from {oldPath} to {newPath}");
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        Debug.WriteLine($"Error updating TreeViewItem after rename: {ex.Message}");
-                        // 如果出错，则退回到刷新整个树的方案
-                        RefreshTree();
-                        SelectPath(folderInfo.FolderPath);
-                    }
-                }, DispatcherPriority.Normal);
-            }
-            else
-            {
-                Debug.WriteLine("ViewModel is null");
-                MessageBox.Show("Could not rename folder: ViewModel is not available.",
-                    "Operation Failed", MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-        }
-
-        public void UpdatePathMapping(string oldPath, string newPath)
-        {
-            if (_pathToTreeViewItem.TryGetValue(oldPath, out var treeViewItem))
-            {
-                _pathToTreeViewItem.Remove(oldPath);
-                _pathToTreeViewItem[newPath] = treeViewItem;
-            }
-        }
-
-        private void Delete_Click(object sender, RoutedEventArgs e)
-        {
-            Debug.WriteLine("Delete_Click handler called");
-
-            var treeViewItem = GetSelectedTreeViewItem();
-            if (treeViewItem == null) return;
-
-            var shellObject = treeViewItem.Tag as ShellObject;
-            if (shellObject == null) return;
-
-            string path = GetPathFromShellObject(shellObject);
-            if (string.IsNullOrEmpty(path) || !Directory.Exists(path)) return;
-
-            if (!string.IsNullOrEmpty(_rootDirectory) &&
-                path.Equals(_rootDirectory, StringComparison.OrdinalIgnoreCase))
-            {
-                Debug.WriteLine("Cannot delete root directory");
-                MessageBox.Show("Cannot delete the root directory.",
-                    "Delete Error", MessageBoxButton.OK, MessageBoxImage.Warning);
-                return;
-            }
-
-            string parentPath = Path.GetDirectoryName(path);
-
-            var folderInfo = new FolderInfo(path);
-
-            if (ViewModel != null)
-            {
-              
-                ViewModel.DeleteFolderCommand.Execute(folderInfo);
-
-                var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
-                timer.Tick += (s, args) =>
-                {
-                    timer.Stop();
-
-                    if (!string.IsNullOrEmpty(parentPath) && Directory.Exists(parentPath))
-                    {
-                        SelectPath(parentPath);
-                    }
-
-                    RefreshTree();
-                };
-                timer.Start();
-            }
-            else
-            {
-                Debug.WriteLine("ViewModel is null");
-                MessageBox.Show("Could not delete folder: ViewModel is not available.",
-                    "Operation Failed", MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-        }
-
-        private void ShowInExplorer_Click(object sender, RoutedEventArgs e)
-        {
-            Debug.WriteLine("ShowInExplorer_Click handler called");
-
-            var treeViewItem = GetSelectedTreeViewItem();
-            if (treeViewItem == null) return;
-
-            var shellObject = treeViewItem.Tag as ShellObject;
-            if (shellObject == null) return;
-
-            string path = GetPathFromShellObject(shellObject);
-            if (string.IsNullOrEmpty(path) || !Directory.Exists(path)) return;
-
-            // 创建 FolderInfo 并调用 ViewModel
-            var folderInfo = new FolderInfo(path);
-
-            if (ViewModel != null)
-            {
-                Debug.WriteLine($"Calling ViewModel.ShowInExplorer for {path}");
-                ViewModel.ShowInExplorer(folderInfo);
-            }
-            else
-            {
-                Debug.WriteLine("ViewModel is null, using direct Process.Start instead");
-                // 后备方案，如果 ViewModel 不可用直接打开资源管理器
-                try
-                {
-                    System.Diagnostics.Process.Start("explorer.exe", path);
-                }
-                catch (Exception ex)
-                {
-                    Debug.WriteLine($"Error opening explorer: {ex.Message}");
-                    MessageBox.Show($"Error opening folder in Explorer: {ex.Message}",
-                        "Operation Failed", MessageBoxButton.OK, MessageBoxImage.Error);
-                }
-            }
-        }
-
+        /// <summary>
+        /// Handles the TreeView.KeyDown event for keyboard shortcuts
+        /// </summary>
         private void ShellTreeView_KeyDown(object sender, KeyEventArgs e)
         {
             if (e.Key == Key.Delete)
@@ -1428,129 +1421,9 @@ namespace ImageFolderManager.Views
             }
         }
 
-        private void SelectAllVisibleItems()
-        {
-            // Clear current selection
-            ClearSelectedItems();
-
-            // Get all visible items and select them
-            var allVisibleItems = GetAllVisibleTreeViewItems();
-            foreach (var item in allVisibleItems)
-            {
-                SelectItem(item);
-            }
-
-            // Set the last selected item
-            if (allVisibleItems.Count > 0)
-            {
-                _lastSelectedItem = allVisibleItems.Last();
-            }
-        }
-
-        private TreeViewItem GetSelectedTreeViewItem()
-        {
-            // Return the first selected item or the selected item from the TreeView
-            if (_selectedItems.Count > 0)
-            {
-                return _selectedItems[0];
-            }
-
-            return ShellTreeViewControl.SelectedItem as TreeViewItem;
-        }
-
-        // Method to refresh the tree after operations that modify the file system
-        public void RefreshTree()
-        {
-            try
-            {
-                var treeViewItem = GetSelectedTreeViewItem();
-                if (treeViewItem == null) return;
-
-                var shellObject = treeViewItem.Tag as ShellObject;
-                if (shellObject == null) return;
-
-                // Remember current selection path and all expanded paths
-                string currentPath = GetPathFromShellObject(shellObject);
-                var expandedItems = new HashSet<string>();
-
-                // Store all currently expanded items
-                foreach (var item in FindVisualChildren<TreeViewItem>(ShellTreeViewControl))
-                {
-                    if (item.IsExpanded && item.Tag is ShellObject so)
-                    {
-                        string path = GetPathFromShellObject(so);
-                        if (!string.IsNullOrEmpty(path))
-                        {
-                            expandedItems.Add(path);
-                        }
-                    }
-                }
-
-                // Find the parent path to refresh
-                string parentPath = Path.GetDirectoryName(currentPath);
-
-                // Try to find the parent item
-                TreeViewItem parentItem = null;
-                if (!string.IsNullOrEmpty(parentPath) && Directory.Exists(parentPath))
-                {
-                    if (_pathToTreeViewItem.TryGetValue(parentPath, out parentItem))
-                    {
-                        // Refresh the parent (will rebuild all children)
-                        if (parentItem.IsExpanded)
-                        {
-                            parentItem.Items.Clear();
-                            parentItem.Items.Add(new TreeViewItem { Header = "Loading..." });
-                            parentItem.IsExpanded = false;
-                            parentItem.IsExpanded = true; // This will trigger TreeViewItem_Expanded
-                        }
-                    }
-                }
-
-                // If we couldn't refresh the parent, try refreshing the current item
-                if (parentItem == null && treeViewItem.IsExpanded)
-                {
-                    treeViewItem.Items.Clear();
-                    treeViewItem.Items.Add(new TreeViewItem { Header = "Loading..." });
-                    treeViewItem.IsExpanded = false;
-                    treeViewItem.IsExpanded = true;
-                }
-
-                // Re-expand all previously expanded items that still exist
-                foreach (var path in expandedItems)
-                {
-                    if (Directory.Exists(path) && _pathToTreeViewItem.TryGetValue(path, out var item))
-                    {
-                        item.IsExpanded = true;
-                    }
-                }
-
-                // Try to restore selection to the current path if it still exists
-                // or to the parent path if current path was deleted
-                if (Directory.Exists(currentPath))
-                {
-                    SelectPath(currentPath);
-                }
-                else if (!string.IsNullOrEmpty(parentPath) && Directory.Exists(parentPath))
-                {
-                    SelectPath(parentPath);
-                }
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"Error refreshing tree: {ex.Message}");
-            }
-        }
-
-        private TreeViewItem FindParentTreeViewItem(TreeViewItem item)
-        {
-            DependencyObject parent = VisualTreeHelper.GetParent(item);
-            while (parent != null && !(parent is TreeViewItem))
-            {
-                parent = VisualTreeHelper.GetParent(parent);
-            }
-            return parent as TreeViewItem;
-        }
-        // Drag & Drop implementation 
+        /// <summary>
+        /// Handles the TreeView.PreviewMouseLeftButtonDown event for drag & drop
+        /// </summary>
         private void TreeView_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
             // Store the mouse position for potential drag operation
@@ -1560,6 +1433,9 @@ namespace ImageFolderManager.Views
             TreeView_PreviewMouseDown(sender, e);
         }
 
+        /// <summary>
+        /// Handles the TreeView.PreviewMouseMove event for drag & drop
+        /// </summary>
         private void TreeView_PreviewMouseMove(object sender, MouseEventArgs e)
         {
             if (e.LeftButton == MouseButtonState.Pressed && !_isDragging)
@@ -1575,11 +1451,17 @@ namespace ImageFolderManager.Views
             }
         }
 
+        /// <summary>
+        /// Handles the TreeView.PreviewMouseLeftButtonUp event for drag & drop
+        /// </summary>
         private void TreeView_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
         {
             _isDragging = false;
         }
 
+        /// <summary>
+        /// Starts a drag operation
+        /// </summary>
         private void StartDrag(MouseEventArgs e)
         {
             // For multi-selection, we'll need to handle dragging multiple items
@@ -1645,6 +1527,9 @@ namespace ImageFolderManager.Views
             }
         }
 
+        /// <summary>
+        /// Handles the TreeView.DragOver event
+        /// </summary>
         private void TreeView_DragOver(object sender, DragEventArgs e)
         {
             // Check if the data format is supported
@@ -1719,16 +1604,18 @@ namespace ImageFolderManager.Views
             HighlightDropTarget(targetItem);
         }
 
-        // 修改 TreeView_Drop 方法以使用 ViewModel 的多选操作
+        /// <summary>
+        /// Handles the TreeView.Drop event
+        /// </summary>
         private void TreeView_Drop(object sender, DragEventArgs e)
         {
-            // 清除高亮
+            // Clear highlight
             ClearDropTargetHighlight();
 
             if (!e.Data.GetDataPresent("FileDrop"))
                 return;
 
-            // 获取拖放目标
+            // Get the drop target
             var targetItem = GetTreeViewItemUnderMouse(e.GetPosition(ShellTreeViewControl));
             if (targetItem == null) return;
 
@@ -1739,27 +1626,27 @@ namespace ImageFolderManager.Views
             if (string.IsNullOrEmpty(targetPath) || !Directory.Exists(targetPath))
                 return;
 
-            // 获取源路径
+            // Get the source paths
             var filePaths = e.Data.GetData("FileDrop") as string[];
             if (filePaths == null || filePaths.Length == 0) return;
 
-            // 创建目标文件夹的 FolderInfo
+            // Create target folder FolderInfo
             var targetFolder = new FolderInfo(targetPath);
 
-            // 确定是复制还是移动操作
+            // Determine if this is a copy or move operation
             bool isCopy = (e.KeyStates & DragDropKeyStates.ControlKey) == DragDropKeyStates.ControlKey;
 
             if (ViewModel != null)
             {
                 Debug.WriteLine($"Performing drag & drop operation: {(isCopy ? "Copy" : "Move")} to {targetPath}");
 
-                // 保存源文件夹的父路径，用于后续刷新
+                // Save source parent paths for later refresh
                 var sourceParentPaths = new HashSet<string>();
                 foreach (string sourcePath in filePaths)
                 {
                     if (Directory.Exists(sourcePath))
                     {
-                        // 获取源文件夹的父目录
+                        // Get source folder's parent directory
                         string parentPath = Path.GetDirectoryName(sourcePath);
                         if (!string.IsNullOrEmpty(parentPath))
                         {
@@ -1768,120 +1655,66 @@ namespace ImageFolderManager.Views
                     }
                 }
 
-                // 执行操作
-                if (filePaths.Length == 1)
+                try
                 {
-                    // 单个文件夹操作
-                    string sourcePath = filePaths[0];
-                    if (!Directory.Exists(sourcePath)) return;
+                    // Perform operation based on number of items
+                    if (filePaths.Length == 1)
+                    {
+                        // Single folder operation
+                        string sourcePath = filePaths[0];
+                        if (!Directory.Exists(sourcePath)) return;
 
-                    var sourceFolder = new FolderInfo(sourcePath);
+                        var sourceFolder = new FolderInfo(sourcePath);
 
-                    if (isCopy)
-                    {
-                        ViewModel.CopyFolder(sourceFolder);
-                        ViewModel.PasteFolder(targetFolder);
-                    }
-                    else
-                    {
-                        ViewModel.MoveFolder(sourceFolder, targetFolder);
-                    }
-                }
-                else
-                {
-                    // 多文件夹操作
-                    var sourceFolders = new List<FolderInfo>();
-                    foreach (string path in filePaths)
-                    {
-                        if (Directory.Exists(path))
-                        {
-                            sourceFolders.Add(new FolderInfo(path));
-                        }
-                    }
-
-                    if (sourceFolders.Count > 0)
-                    {
                         if (isCopy)
                         {
-                            ViewModel.CopyMultipleFolders(sourceFolders);
+                            ViewModel.CopyFolder(sourceFolder);
                             ViewModel.PasteFolder(targetFolder);
                         }
                         else
                         {
-                            ViewModel.MoveMultipleFolders(sourceFolders, targetFolder);
+                            ViewModel.MoveFolder(sourceFolder, targetFolder);
                         }
-                    }
-                }
-
-                // 使用延迟刷新，确保操作完成后再刷新UI
-                var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
-                timer.Tick += (s, args) =>
-                {
-                    timer.Stop();
-
-                    // 获取所有已展开的路径
-                    var expandedPaths = new HashSet<string>();
-                    foreach (var item in FindVisualChildren<TreeViewItem>(ShellTreeViewControl))
-                    {
-                        if (item.IsExpanded && item.Tag is ShellObject so)
-                        {
-                            string path = GetPathFromShellObject(so);
-                            if (!string.IsNullOrEmpty(path))
-                            {
-                                expandedPaths.Add(path);
-                            }
-                        }
-                    }
-
-                    // 刷新目标文件夹项
-                    if (targetItem.IsExpanded)
-                    {
-                        // 强制刷新目标文件夹子项
-                        targetItem.Items.Clear();
-                        targetItem.Items.Add(new TreeViewItem { Header = "Loading..." });
-                        targetItem.IsExpanded = false;
-                        targetItem.IsExpanded = true;
                     }
                     else
                     {
-                        // 如果目标未展开，至少添加一个加载项以表明有子项
-                        if (targetItem.Items.Count == 0)
+                        // Multi-folder operation
+                        var sourceFolders = new List<FolderInfo>();
+                        foreach (string path in filePaths)
                         {
-                            targetItem.Items.Add(new TreeViewItem { Header = "Loading..." });
-                        }
-                    }
-
-                    // 刷新所有源文件夹的父目录
-                    foreach (string parentPath in sourceParentPaths)
-                    {
-                        if (Directory.Exists(parentPath) && _pathToTreeViewItem.TryGetValue(parentPath, out var parentItem))
-                        {
-                            if (parentItem.IsExpanded)
+                            if (Directory.Exists(path))
                             {
-                                parentItem.Items.Clear();
-                                parentItem.Items.Add(new TreeViewItem { Header = "Loading..." });
-                                parentItem.IsExpanded = false;
-                                parentItem.IsExpanded = true;
+                                sourceFolders.Add(new FolderInfo(path));
+                            }
+                        }
+
+                        if (sourceFolders.Count > 0)
+                        {
+                            if (isCopy)
+                            {
+                                ViewModel.CopyMultipleFolders(sourceFolders);
+                                ViewModel.PasteFolder(targetFolder);
+                            }
+                            else
+                            {
+                                ViewModel.MoveMultipleFolders(sourceFolders, targetFolder);
                             }
                         }
                     }
 
-                    // 恢复所有展开的路径
-                    foreach (string path in expandedPaths)
+                    // Delay refresh to ensure operation completes first
+                    var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
+                    timer.Tick += (s, args) =>
                     {
-                        if (_pathToTreeViewItem.TryGetValue(path, out var item))
-                        {
-                            item.IsExpanded = true;
-                        }
-                    }
-
-                    // 确保目标文件夹仍然被选中
-                    if (_pathToTreeViewItem.TryGetValue(targetPath, out var selectedItem))
-                    {
-                        selectedItem.IsSelected = true;
-                    }
-                };
-                timer.Start();
+                        timer.Stop();
+                        RefreshTree(targetPath, true);
+                    };
+                    timer.Start();
+                }
+                catch (Exception ex)
+                {
+                    HandleException("Error during drag and drop operation", ex);
+                }
             }
             else
             {
@@ -1890,128 +1723,385 @@ namespace ImageFolderManager.Views
             }
         }
 
-        // Add helper method to refresh a specific TreeViewItem
-        private void RefreshTreeItem(TreeViewItem item)
+        #endregion
+
+        #region Context Menu Action Handlers
+
+        /// <summary>
+        /// Handles the "New Folder" context menu item click
+        /// </summary>
+        private void NewFolder_Click(object sender, RoutedEventArgs e)
         {
-            if (item == null) return;
-
-            bool wasExpanded = item.IsExpanded;
-
-            // Clear and add dummy item to force reload
-            item.Items.Clear();
-            item.Items.Add(new TreeViewItem { Header = "Loading..." });
-
-            // Force a refresh by toggling IsExpanded if it was already expanded
-            if (wasExpanded)
+            try
             {
-                item.IsExpanded = false;
-                item.IsExpanded = true; // This will trigger TreeViewItem_Expanded event
-            }
+                Debug.WriteLine("NewFolder_Click handler called");
 
-            // Ensure it's expanded after the refresh if it was expanded before
-            item.IsExpanded = wasExpanded;
+                var treeViewItem = GetSelectedTreeViewItem();
+                if (treeViewItem == null)
+                {
+                    Debug.WriteLine("No TreeViewItem selected");
+                    return;
+                }
+
+                var shellObject = treeViewItem.Tag as ShellObject;
+                if (shellObject == null)
+                {
+                    Debug.WriteLine("Selected item has no ShellObject");
+                    return;
+                }
+
+                string path = GetPathFromShellObject(shellObject);
+                if (string.IsNullOrEmpty(path) || !Directory.Exists(path))
+                {
+                    Debug.WriteLine($"Invalid path: {path}");
+                    return;
+                }
+
+                // Create FolderInfo and call ViewModel
+                var folderInfo = new FolderInfo(path);
+
+                if (ViewModel != null)
+                {
+                    Debug.WriteLine($"Calling ViewModel.CreateNewFolder for {path}");
+                    ViewModel.CreateNewFolder(folderInfo);
+                }
+                else
+                {
+                    Debug.WriteLine("ViewModel is null");
+                    MessageBox.Show("Could not create folder: ViewModel is not available.",
+                        "Operation Failed", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
+            catch (Exception ex)
+            {
+                HandleException("Error creating new folder", ex);
+            }
         }
 
-        // Add helper method to refresh root items
-        private void RefreshRootItems()
+        /// <summary>
+        /// Handles the "Cut" context menu item click for multiple folders
+        /// </summary>
+        private void MultiFolderCut_Click(object sender, RoutedEventArgs e)
         {
-            // Store expanded state to restore later
-            var expandedPaths = new HashSet<string>();
-            foreach (var item in FindVisualChildren<TreeViewItem>(ShellTreeViewControl))
+            try
             {
-                if (item.IsExpanded && item.Tag is ShellObject so)
+                var selectedFolders = GetSelectedFolderInfos();
+                if (selectedFolders.Count == 0) return;
+
+                if (ViewModel != null)
                 {
-                    string path = GetPathFromShellObject(so);
-                    if (!string.IsNullOrEmpty(path))
+                    ViewModel.CutMultipleFolders(selectedFolders);
+                }
+                else
+                {
+                    MessageBox.Show("Could not cut folders: ViewModel is not available.",
+                        "Operation Failed", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
+            catch (Exception ex)
+            {
+                HandleException("Error cutting folders", ex);
+            }
+        }
+
+        /// <summary>
+        /// Handles the "Copy" context menu item click for multiple folders
+        /// </summary>
+        private void MultiFolderCopy_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var selectedFolders = GetSelectedFolderInfos();
+                if (selectedFolders.Count == 0) return;
+
+                if (ViewModel != null)
+                {
+                    ViewModel.CopyMultipleFolders(selectedFolders);
+                }
+                else
+                {
+                    MessageBox.Show("Could not copy folders: ViewModel is not available.",
+                        "Operation Failed", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
+            catch (Exception ex)
+            {
+                HandleException("Error copying folders", ex);
+            }
+        }
+
+        /// <summary>
+        /// Handles the "Paste" context menu item click
+        /// </summary>
+        private void Paste_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                Debug.WriteLine("Paste_Click handler called");
+
+                var treeViewItem = GetSelectedTreeViewItem();
+                if (treeViewItem == null) return;
+
+                var shellObject = treeViewItem.Tag as ShellObject;
+                if (shellObject == null) return;
+
+                string path = GetPathFromShellObject(shellObject);
+                if (string.IsNullOrEmpty(path) || !Directory.Exists(path)) return;
+
+                // Store expanded state
+                var expandedItems = new HashSet<string>();
+                foreach (var item in FindVisualChildren<TreeViewItem>(ShellTreeViewControl))
+                {
+                    if (item.IsExpanded && item.Tag is ShellObject so)
                     {
-                        expandedPaths.Add(path);
+                        string expandedPath = GetPathFromShellObject(so);
+                        if (!string.IsNullOrEmpty(expandedPath))
+                        {
+                            expandedItems.Add(expandedPath);
+                        }
+                    }
+                }
+
+                // Create target folder FolderInfo
+                var folderInfo = new FolderInfo(path);
+
+                if (ViewModel != null)
+                {
+                    Debug.WriteLine($"Calling ViewModel.PasteFolder for {path}");
+
+                    if (ViewModel.HasClipboardContent())
+                    {
+                        // Execute paste operation
+                        ViewModel.PasteFolder(folderInfo);
+
+                        // Delay refresh to ensure UI updates properly
+                        var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+                        timer.Tick += (s, args) =>
+                        {
+                            timer.Stop();
+                            RefreshTree(path, true);
+                        };
+                        timer.Start();
+                    }
+                    else
+                    {
+                        Debug.WriteLine("No clipboard content available");
+                        MessageBox.Show("No folder is currently in clipboard. Please copy or cut a folder first.",
+                            "Paste Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    }
+                }
+                else
+                {
+                    Debug.WriteLine("ViewModel is null");
+                    MessageBox.Show("Could not paste folder: ViewModel is not available.",
+                        "Operation Failed", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
+            catch (Exception ex)
+            {
+                HandleException("Error pasting folder", ex);
+            }
+        }
+
+        /// <summary>
+        /// Handles the "Rename" context menu item click
+        /// </summary>
+        private void Rename_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                Debug.WriteLine("Rename_Click handler called");
+
+                var treeViewItem = GetSelectedTreeViewItem();
+                if (treeViewItem == null) return;
+
+                var shellObject = treeViewItem.Tag as ShellObject;
+                if (shellObject == null) return;
+
+                string path = GetPathFromShellObject(shellObject);
+                if (string.IsNullOrEmpty(path) || !Directory.Exists(path)) return;
+
+                // Don't allow renaming root directory
+                if (!string.IsNullOrEmpty(_rootDirectory) &&
+                    path.Equals(_rootDirectory, StringComparison.OrdinalIgnoreCase))
+                {
+                    Debug.WriteLine("Cannot rename root directory");
+                    MessageBox.Show("Cannot rename the root directory.",
+                        "Rename Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+
+                // Save old path and tree view item
+                string oldPath = path;
+                var oldItem = treeViewItem;
+                bool wasExpanded = oldItem.IsExpanded;
+                var parentItem = FindParentTreeViewItem(oldItem);
+
+                // Create FolderInfo and call ViewModel
+                var folderInfo = new FolderInfo(path);
+
+                if (ViewModel != null)
+                {
+                    Debug.WriteLine($"Calling ViewModel.RenameFolder for {path}");
+
+                    // Execute rename operation through ViewModel
+                    ViewModel.RenameFolder(folderInfo);
+
+                    // Update tree after rename
+                    Application.Current.Dispatcher.InvokeAsync(() =>
+                    {
+                        RefreshTree(folderInfo.FolderPath, true);
+                    }, DispatcherPriority.Normal);
+                }
+                else
+                {
+                    Debug.WriteLine("ViewModel is null");
+                    MessageBox.Show("Could not rename folder: ViewModel is not available.",
+                        "Operation Failed", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
+            catch (Exception ex)
+            {
+                HandleException("Error renaming folder", ex);
+            }
+        }
+
+        /// <summary>
+        /// Handles the "Delete" context menu item click
+        /// </summary>
+        private void Delete_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                Debug.WriteLine("Delete_Click handler called");
+
+                var treeViewItem = GetSelectedTreeViewItem();
+                if (treeViewItem == null) return;
+
+                var shellObject = treeViewItem.Tag as ShellObject;
+                if (shellObject == null) return;
+
+                string path = GetPathFromShellObject(shellObject);
+                if (string.IsNullOrEmpty(path) || !Directory.Exists(path)) return;
+
+                if (!string.IsNullOrEmpty(_rootDirectory) &&
+                    path.Equals(_rootDirectory, StringComparison.OrdinalIgnoreCase))
+                {
+                    Debug.WriteLine("Cannot delete root directory");
+                    MessageBox.Show("Cannot delete the root directory.",
+                        "Delete Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+
+                string parentPath = Path.GetDirectoryName(path);
+                var folderInfo = new FolderInfo(path);
+
+                if (ViewModel != null)
+                {
+                    // Execute delete command through ViewModel
+                    ViewModel.DeleteFolderCommand.Execute(folderInfo);
+
+                    // Refresh tree after a delay
+                    var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+                    timer.Tick += (s, args) =>
+                    {
+                        timer.Stop();
+                        RefreshTree(parentPath, true);
+                    };
+                    timer.Start();
+                }
+                else
+                {
+                    Debug.WriteLine("ViewModel is null");
+                    MessageBox.Show("Could not delete folder: ViewModel is not available.",
+                        "Operation Failed", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
+            catch (Exception ex)
+            {
+                HandleException("Error deleting folder", ex);
+            }
+        }
+
+        /// <summary>
+        /// Handles the "Delete" context menu item click for multiple folders
+        /// </summary>
+        private void MultiFolderDelete_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var selectedFolders = GetSelectedFolderInfos();
+                if (selectedFolders.Count == 0) return;
+
+                if (ViewModel != null)
+                {
+                    // Execute delete operation through ViewModel
+                    ViewModel.DeleteMultipleFolders(selectedFolders);
+
+                    // Clear selection and refresh tree
+                    ClearSelectedItems();
+                    RefreshTree();
+                }
+                else
+                {
+                    MessageBox.Show("Could not delete folders: ViewModel is not available.",
+                        "Operation Failed", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
+            catch (Exception ex)
+            {
+                HandleException("Error deleting folders", ex);
+            }
+        }
+
+        /// <summary>
+        /// Handles the "Show in Explorer" context menu item click
+        /// </summary>
+        private void ShowInExplorer_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                Debug.WriteLine("ShowInExplorer_Click handler called");
+
+                var treeViewItem = GetSelectedTreeViewItem();
+                if (treeViewItem == null) return;
+
+                var shellObject = treeViewItem.Tag as ShellObject;
+                if (shellObject == null) return;
+
+                string path = GetPathFromShellObject(shellObject);
+                if (string.IsNullOrEmpty(path) || !Directory.Exists(path)) return;
+
+                // Create FolderInfo and call ViewModel
+                var folderInfo = new FolderInfo(path);
+
+                if (ViewModel != null)
+                {
+                    Debug.WriteLine($"Calling ViewModel.ShowInExplorer for {path}");
+                    ViewModel.ShowInExplorer(folderInfo);
+                }
+                else
+                {
+                    Debug.WriteLine("ViewModel is null, using direct Process.Start instead");
+                    // Fallback if ViewModel is unavailable
+                    try
+                    {
+                        System.Diagnostics.Process.Start("explorer.exe", path);
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"Error opening explorer: {ex.Message}");
+                        MessageBox.Show($"Error opening folder in Explorer: {ex.Message}",
+                            "Operation Failed", MessageBoxButton.OK, MessageBoxImage.Error);
                     }
                 }
             }
-
-            // Remember current selection
-            string selectedPath = _selectedPath;
-
-            // Re-initialize the tree with the same root
-            InitializeShellTree();
-
-            // Expand previously expanded paths
-            foreach (var path in expandedPaths)
+            catch (Exception ex)
             {
-                if (Directory.Exists(path) && _pathToTreeViewItem.TryGetValue(path, out var item))
-                {
-                    item.IsExpanded = true;
-                }
-            }
-
-            // Restore selection
-            if (!string.IsNullOrEmpty(selectedPath) && Directory.Exists(selectedPath))
-            {
-                SelectPath(selectedPath);
+                HandleException("Error showing folder in Explorer", ex);
             }
         }
 
-        private TreeViewItem GetTreeViewItemUnderMouse(Point mousePosition)
-        {
-            HitTestResult result = VisualTreeHelper.HitTest(ShellTreeViewControl, mousePosition);
-
-            if (result != null)
-            {
-                DependencyObject obj = result.VisualHit;
-
-                while (obj != null && !(obj is TreeViewItem))
-                {
-                    obj = VisualTreeHelper.GetParent(obj);
-                }
-
-                return obj as TreeViewItem;
-            }
-
-            return null;
-        }
-
-        private void HighlightDropTarget(TreeViewItem item)
-        {
-            // Clear previous highlights
-            ClearDropTargetHighlight();
-
-            if (item != null)
-            {
-                // Add drop target highlight style
-                item.Background = new SolidColorBrush(Color.FromArgb(80, 0, 120, 215));
-            }
-        }
-
-        private void ClearDropTargetHighlight()
-        {
-            // Find all TreeViewItems and clear their background
-            var allItems = FindVisualChildren<TreeViewItem>(ShellTreeViewControl);
-            foreach (var item in allItems)
-            {
-                // Skip items that are in the selection
-                if (!_selectedItems.Contains(item))
-                {
-                    item.Background = null;
-                }
-            }
-        }
-
-        // Helper method to find all visual children
-        public static IEnumerable<T> FindVisualChildren<T>(DependencyObject parent) where T : DependencyObject
-        {
-            if (parent == null) yield break;
-
-            for (int i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
-            {
-
-                DependencyObject child = VisualTreeHelper.GetChild(parent, i);
-
-                if (child != null && child is T)
-                    yield return (T)child;
-
-                foreach (T descendant in FindVisualChildren<T>(child))
-                    yield return descendant;
-            }
-        }
+        #endregion
     }
 }
