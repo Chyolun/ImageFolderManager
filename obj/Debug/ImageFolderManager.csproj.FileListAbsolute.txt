@@ -34,11 +34,13 @@ D:\ImageFolderManager\bin\Debug\System.Runtime.CompilerServices.Unsafe.xml
 D:\ImageFolderManager\bin\Debug\System.Threading.Tasks.Extensions.xml
 D:\ImageFolderManager\bin\Debug\de\MahApps.Metro.resources.dll
 D:\ImageFolderManager\obj\Debug\ImageFolderManager.csproj.AssemblyReference.cache
+D:\ImageFolderManager\obj\Debug\Views\BatchTagsDialog.baml
 D:\ImageFolderManager\obj\Debug\Views\PreviewSizeDialog.baml
 D:\ImageFolderManager\obj\Debug\Views\ProgressDialog.baml
 D:\ImageFolderManager\obj\Debug\Views\RenameTagDialog.baml
 D:\ImageFolderManager\obj\Debug\Views\TagCloudControl.baml
 D:\ImageFolderManager\obj\Debug\App.baml
+D:\ImageFolderManager\obj\Debug\Views\BatchTagsDialog.g.cs
 D:\ImageFolderManager\obj\Debug\Views\MainWindow.g.cs
 D:\ImageFolderManager\obj\Debug\Views\PreviewSizeDialog.g.cs
 D:\ImageFolderManager\obj\Debug\Views\ProgressDialog.g.cs

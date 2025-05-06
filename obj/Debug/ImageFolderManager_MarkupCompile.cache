@@ -10,11 +10,11 @@ none
 false
 DEBUG;TRACE
 D:\ImageFolderManager\App.xaml
-6-1808163004
+7-808528899
 
-21-2107918732
+221383636003
 381031350233
-Views\MainWindow.xaml;Views\PreviewSizeDialog.xaml;Views\ProgressDialog.xaml;Views\RenameTagDialog.xaml;Views\ShellTreeView.xaml;Views\TagCloudControl.xaml;
+Views\BatchTagsDialog.xaml;Views\MainWindow.xaml;Views\PreviewSizeDialog.xaml;Views\ProgressDialog.xaml;Views\RenameTagDialog.xaml;Views\ShellTreeView.xaml;Views\TagCloudControl.xaml;
 
 False
 

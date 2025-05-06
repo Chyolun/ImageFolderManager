@@ -1197,6 +1197,213 @@ namespace ImageFolderManager.ViewModels
             StatusMessage = $"Copied folder '{folder.Name}' to clipboard. Select a destination folder and paste.";
         }
 
+        /// <summary>
+        /// Performs batch tag operations on multiple folders
+        /// </summary>
+        public async Task BatchUpdateTags(List<FolderInfo> folders)
+        {
+            if (folders == null || folders.Count <= 1)
+                return;
+
+            try
+            {
+                // Find common tags among selected folders
+                var commonTags = FindCommonTags(folders);
+
+                // Create and show the batch tags dialog
+                var dialog = new Views.BatchTagsDialog(folders.Count, commonTags);
+                dialog.Owner = Application.Current.MainWindow;
+
+                var result = dialog.ShowDialog();
+
+                // If user confirmed the operation
+                if (result == true)
+                {
+                    // Get tags to add and remove
+                    var tagsToAdd = dialog.TagsToAdd;
+                    var tagsToRemove = dialog.TagsToRemove;
+
+                    // If both are empty, nothing to do
+                    if (tagsToAdd.Count == 0 && tagsToRemove.Count == 0)
+                        return;
+
+                    // Create progress dialog
+                    var progressDialog = new Views.ProgressDialog(
+                        "Updating Tags",
+                        $"Updating tags for {folders.Count} folders...");
+
+                    progressDialog.Owner = Application.Current.MainWindow;
+
+                    using (var cts = new CancellationTokenSource())
+                    {
+                        // Handle cancellation request
+                        progressDialog.CancelRequested += (s, e) =>
+                        {
+                            cts.Cancel();
+                            StatusMessage = "Tag update cancelled.";
+                        };
+
+                        // Create background task for tag update
+                        var updateTask = Task.Run(async () =>
+                        {
+                            try
+                            {
+                                int total = folders.Count;
+                                int processed = 0;
+
+                                foreach (var folder in folders)
+                                {
+                                    // Check for cancellation
+                                    if (cts.Token.IsCancellationRequested)
+                                        break;
+
+                                    try
+                                    {
+                                        // Update progress
+                                        double progress = (double)processed / total;
+                                        progressDialog.UpdateProgress(progress, $"Updating folder {processed + 1} of {total}: {folder.Name}");
+
+                                        // Get current tags
+                                        var currentTags = await _tagService.GetTagsForFolderAsync(folder.FolderPath);
+                                        var updatedTags = new List<string>(currentTags);
+
+                                        // Remove specified tags
+                                        if (tagsToRemove.Count > 0)
+                                        {
+                                            updatedTags.RemoveAll(tag => tagsToRemove.Contains(tag, StringComparer.OrdinalIgnoreCase));
+                                        }
+
+                                        // Add new tags without duplicates
+                                        if (tagsToAdd.Count > 0)
+                                        {
+                                            foreach (var tag in tagsToAdd)
+                                            {
+                                                // Check if tag already exists (case-insensitive)
+                                                if (!updatedTags.Any(t => string.Equals(t, tag, StringComparison.OrdinalIgnoreCase)))
+                                                {
+                                                    updatedTags.Add(tag);
+                                                }
+                                            }
+                                        }
+
+                                        // Get current rating
+                                        int rating = await _tagService.GetRatingForFolderAsync(folder.FolderPath);
+
+                                        // Save updated tags and rating
+                                        await _tagService.SetTagsAndRatingForFolderAsync(
+                                            folder.FolderPath,
+                                            updatedTags,
+                                            rating);
+
+                                        // Update folder object
+                                        folder.Tags = new ObservableCollection<string>(updatedTags);
+
+                                        // Small delay to prevent UI freezing
+                                        await Task.Delay(10, cts.Token);
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        Debug.WriteLine($"Error updating tags for folder {folder.FolderPath}: {ex.Message}");
+                                    }
+
+                                    processed++;
+                                }
+
+                                // Update final progress
+                                progressDialog.UpdateProgress(1.0, "Tag update completed");
+
+                                // Update tag cloud
+                                TagCloud.InvalidateCache();
+                                await UpdateTagCloudAsync();
+
+                                // If the current folder was affected, refresh its tags in the UI
+                                if (SelectedFolder != null && folders.Any(f => f.FolderPath == SelectedFolder.FolderPath))
+                                {
+                                    await Application.Current.Dispatcher.InvokeAsync(() =>
+                                    {
+                                        UpdateFolderTagsAndRating(SelectedFolder);
+                                    });
+                                }
+
+                                return true;
+                            }
+                            catch (OperationCanceledException)
+                            {
+                                return false;
+                            }
+                            catch (Exception ex)
+                            {
+                                Debug.WriteLine($"Error in batch tag update: {ex.Message}");
+                                await Application.Current.Dispatcher.InvokeAsync(() =>
+                                {
+                                    MessageBox.Show($"Error updating tags: {ex.Message}",
+                                        "Update Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                                });
+                                return false;
+                            }
+                        }, cts.Token);
+
+                        // Show modal progress dialog
+                        progressDialog.ShowDialog();
+
+                        // If dialog closes due to cancel button, ensure operation is cancelled
+                        if (progressDialog.IsCancelled && !cts.IsCancellationRequested)
+                        {
+                            cts.Cancel();
+                        }
+
+                        // Wait for update task to complete
+                        bool success = await updateTask;
+
+                        // Update status
+                        if (success && !cts.IsCancellationRequested)
+                        {
+                            StatusMessage = $"Successfully updated tags for {folders.Count} folders";
+                        }
+                        else if (cts.IsCancellationRequested)
+                        {
+                            StatusMessage = "Tag update cancelled";
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error during batch tag operation: {ex.Message}",
+                    "Operation Failed", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        /// <summary>
+        /// Finds tags that are common to all selected folders
+        /// </summary>
+        private List<string> FindCommonTags(List<FolderInfo> folders)
+        {
+            if (folders == null || folders.Count == 0)
+                return new List<string>();
+
+            // Start with the first folder's tags
+            var commonTags = new HashSet<string>(
+                folders[0].Tags.Select(t => t.ToLowerInvariant()),
+                StringComparer.OrdinalIgnoreCase);
+
+            // Intersect with all other folders' tags
+            for (int i = 1; i < folders.Count; i++)
+            {
+                var folderTags = new HashSet<string>(
+                    folders[i].Tags.Select(t => t.ToLowerInvariant()),
+                    StringComparer.OrdinalIgnoreCase);
+
+                commonTags.IntersectWith(folderTags);
+
+                // If no common tags left, we can exit early
+                if (commonTags.Count == 0)
+                    break;
+            }
+
+            return commonTags.ToList();
+        }
+
         // Methods for multiple folders cut/copy/paste operations
         public void CutMultipleFolders(List<FolderInfo> folders)
         {

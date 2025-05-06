@@ -1312,6 +1312,20 @@ namespace ImageFolderManager.Views
                 contextMenu.Items.Add(newFolderItem);
             }
 
+            if (selectedFolders.Count > 1)
+            {
+                // Add separator before batch operations
+                contextMenu.Items.Add(new Separator());
+
+                // Add "Batch Tags" option
+                var batchTagsItem = new MenuItem { Header = "Batch Tags..." };
+                batchTagsItem.Click += (s, args) => {
+                    Debug.WriteLine("Batch Tags clicked");
+                    BatchTags_Click(s, args);
+                };
+                contextMenu.Items.Add(batchTagsItem);
+            }
+
             // Common operations for both single and multi-selections
             var cutItem = new MenuItem { Header = "Cut" };
             cutItem.Click += (s, args) => {
@@ -1337,15 +1351,16 @@ namespace ImageFolderManager.Views
 
             contextMenu.Items.Add(new Separator());
 
+
             if (selectedFolders.Count == 1)
             {
-                // Single selection specific actions
-                var renameItem = new MenuItem { Header = "Rename" };
-                renameItem.Click += (s, args) => {
-                    Debug.WriteLine("Rename clicked");
-                    Rename_Click(s, args);
+                // Show in Explorer only for single selection
+                var showItem = new MenuItem { Header = "Show in Explorer" };
+                showItem.Click += (s, args) => {
+                    Debug.WriteLine("Show in Explorer clicked");
+                    ShowInExplorer_Click(s, args);
                 };
-                contextMenu.Items.Add(renameItem);
+                contextMenu.Items.Add(showItem);
             }
 
             var deleteItemText = selectedFolders.Count > 1 ? $"Delete ({selectedFolders.Count} items)" : "Delete";
@@ -1360,13 +1375,13 @@ namespace ImageFolderManager.Views
 
             if (selectedFolders.Count == 1)
             {
-                // Show in Explorer only for single selection
-                var showItem = new MenuItem { Header = "Show in Explorer" };
-                showItem.Click += (s, args) => {
-                    Debug.WriteLine("Show in Explorer clicked");
-                    ShowInExplorer_Click(s, args);
+                // Single selection specific actions
+                var renameItem = new MenuItem { Header = "Rename" };
+                renameItem.Click += (s, args) => {
+                    Debug.WriteLine("Rename clicked");
+                    Rename_Click(s, args);
                 };
-                contextMenu.Items.Add(showItem);
+                contextMenu.Items.Add(renameItem);
             }
 
             // Set the context menu
@@ -1779,6 +1794,36 @@ namespace ImageFolderManager.Views
         }
 
         /// <summary>
+        /// Handles the "Batch Tags" context menu item click
+        /// </summary>
+        private void BatchTags_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                Debug.WriteLine("BatchTags_Click handler called");
+
+                var selectedFolders = GetSelectedFolderInfos();
+                if (selectedFolders.Count <= 1) return;
+
+                if (ViewModel != null)
+                {
+                    Debug.WriteLine($"Calling ViewModel.BatchUpdateTags for {selectedFolders.Count} folders");
+                    ViewModel.BatchUpdateTags(selectedFolders);
+                }
+                else
+                {
+                    Debug.WriteLine("ViewModel is null");
+                    MessageBox.Show("Could not perform batch tag operation: ViewModel is not available.",
+                        "Operation Failed", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
+            catch (Exception ex)
+            {
+                HandleException("Error performing batch tag operation", ex);
+            }
+        }
+
+        /// <summary>
         /// Handles the "Cut" context menu item click for multiple folders
         /// </summary>
         private void MultiFolderCut_Click(object sender, RoutedEventArgs e)
@@ -2103,10 +2148,5 @@ namespace ImageFolderManager.Views
         }
 
         #endregion
-
-        private void ShellTreeViewControl_ScrollChanged(object sender, ScrollChangedEventArgs e)
-        {
-
-        }
     }
 }

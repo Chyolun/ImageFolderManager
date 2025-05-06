@@ -17,11 +17,6 @@
                    FontSize="13" Foreground="LightGreen" 
                    FontWeight="Bold" Margin="5,2,5,0"/>
         
-        <ScrollViewer Grid.Row="1" 
-              HorizontalScrollBarVisibility="Auto" 
-              VerticalScrollBarVisibility="Auto"
-              PanningMode="Both"
-              x:Name="CustomScrollViewer">
 
         <TreeView x:Name="ShellTreeViewControl" 
                   Grid.Row="1"
