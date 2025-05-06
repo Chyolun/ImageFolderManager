@@ -442,13 +442,15 @@ namespace ImageFolderManager.ViewModels
                 var supportedExtensions = new[] { ".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp" };
                 var imageFiles = new List<string>();
 
-                if (System.IO.Directory.Exists(path))
+                if (Directory.Exists(path))
                 {
                     try
                     {
-                        foreach (var file in System.IO.Directory.GetFiles(path))
+                        var allFiles = Directory.GetFiles(path);
+                        Debug.WriteLine($"Found {allFiles.Length} total files");
+                        foreach (var file in allFiles)
                         {
-                            string ext = System.IO.Path.GetExtension(file).ToLowerInvariant();
+                            string ext = Path.GetExtension(file).ToLowerInvariant();
                             if (Array.Exists(supportedExtensions, e => e == ext))
                             {
                                 imageFiles.Add(file);
@@ -485,21 +487,136 @@ namespace ImageFolderManager.ViewModels
                         StatusMessage = "Image loading cancelled.";
                     }
                 };
+                var loadingTask = Task.Run(async () =>
+                {
+                    try
+                    {
+                        // Create progress tracking variables
+                        int totalImages = imageFiles.Count;
+                        int processedImages = 0;
+                        var cancellationToken = _imageLoadingCts.Token;
+                        var loadedImages = new List<ImageInfo>();
 
-                // Show dialog and start loading process
-                // Code for loading images remains the same as before
-                // ...
+                        // Create progress reporter
+                        var progressReporter = new Progress<double>(value =>
+                        {
+                            // Calculate overall progress
+                            double overallProgress = (processedImages + value) / totalImages;
 
-                // Execution continues with existing image loading logic
-                // ...
+                            // Update progress dialog
+                            progressDialog.UpdateProgress(
+                                overallProgress,
+                                $"Loading image {processedImages + 1} of {totalImages}...");
+                        });
 
-                // After loading completes
-                StatusMessage = $"Loaded {Images.Count} images from '{folderName}'";
+                        // Load each image
+                        foreach (var file in imageFiles)
+                        {
+                            // Check for cancellation
+                            if (cancellationToken.IsCancellationRequested)
+                            {
+                                break;
+                            }
+
+                            var imageInfo = new ImageInfo { FilePath = file };
+
+                            // Load thumbnail with progress reporting
+                            bool success = await imageInfo.LoadThumbnailAsync(cancellationToken, progressReporter);
+
+                            if (cancellationToken.IsCancellationRequested)
+                            {
+                                // Clean up resources
+                                imageInfo.Dispose();
+                                break;
+                            }
+
+                            if (success)
+                            {
+                                loadedImages.Add(imageInfo);
+                            }
+                            else
+                            {
+                                imageInfo.Dispose();
+                            }
+
+                            processedImages++;
+
+                            // Update progress
+                            progressDialog.UpdateProgress(
+                                (double)processedImages / totalImages,
+                                $"Loaded {processedImages} of {totalImages} images");
+                        }
+
+                        // If not cancelled, update UI
+                        if (!cancellationToken.IsCancellationRequested)
+                        {
+                            // Final update to progress dialog
+                            progressDialog.UpdateProgress(1.0, "Loading complete!");
+
+                            // Add images to collection on UI thread
+                            Application.Current.Dispatcher.Invoke(() =>
+                            {
+                                foreach (var img in loadedImages)
+                                {
+                                    Images.Add(img);
+                                }
+
+                                // Update status
+                                StatusMessage = $"Loaded {loadedImages.Count} images from '{SelectedFolder.Name}'";
+                            });
+                        }
+                        else
+                        {
+                            // Handle case where image loading was cancelled
+                            foreach (var img in loadedImages)
+                            {
+                                img.Dispose();
+                            }
+
+                            Application.Current.Dispatcher.Invoke(() =>
+                            {
+                                StatusMessage = "Image loading cancelled.";
+                            });
+                        }
+
+                        return loadedImages;
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"Image loading error: {ex.Message}");
+                        return new List<ImageInfo>();
+                    }
+                });
+
+                // Show modal progress dialog
+                // Note: This will block the UI thread until the dialog is closed
+                progressDialog.ShowDialog();
+
+                // When dialog closes (possibly due to cancel button), ensure loading operation is cancelled
+                if (progressDialog.IsCancelled && !_imageLoadingCts.IsCancellationRequested)
+                {
+                    _imageLoadingCts.Cancel();
+                }
+
+                // Wait for loading task to complete
+                var result = await loadingTask;
+
+                // If operation was cancelled, clean up resources if necessary
+                if (_imageLoadingCts.IsCancellationRequested)
+                {
+                    foreach (var img in result)
+                    {
+                        img.Dispose();
+                    }
+
+                    StatusMessage = "Image loading cancelled.";
+                }
+
             }
             catch (Exception ex)
             {
                 StatusMessage = $"Error loading images: {ex.Message}";
-                Debug.WriteLine($"Error loading images: {ex.Message}");
+   
             }
             finally
             {

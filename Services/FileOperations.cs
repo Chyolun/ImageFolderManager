@@ -6,7 +6,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using ImageFolderManager.Models;
-using ImageFolderManager.Services;
 using ImageFolderManager.Views;
 using Microsoft.VisualBasic.FileIO;
 
