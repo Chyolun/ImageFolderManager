@@ -16,6 +16,12 @@
         <TextBlock Grid.Row="0" Text="Folder Tree" 
                    FontSize="13" Foreground="LightGreen" 
                    FontWeight="Bold" Margin="5,2,5,0"/>
+        
+        <ScrollViewer Grid.Row="1" 
+              HorizontalScrollBarVisibility="Auto" 
+              VerticalScrollBarVisibility="Auto"
+              PanningMode="Both"
+              x:Name="CustomScrollViewer">
 
         <TreeView x:Name="ShellTreeViewControl" 
                   Grid.Row="1"
@@ -23,7 +29,7 @@
                   BorderThickness="0"
                   SelectedItemChanged="ShellTreeView_SelectedItemChanged"
                   ContextMenuOpening="ShellTreeViewControl_ContextMenuOpening"
-                  KeyDown="ShellTreeView_KeyDown"
+                  KeyDown="ShellTreeView_KeyDown"          
                   AllowDrop="True"
                   Drop="TreeView_Drop"
                   DragOver="TreeView_DragOver"
@@ -37,6 +43,7 @@
                     <EventSetter Event="Expanded" Handler="TreeViewItem_Expanded"/>
                     <Setter Property="Foreground" Value="White"/>
                     <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+                    <Setter Property="HorizontalAlignment" Value="Left" />
                     <!-- Add a custom template for the selection state -->
                     <Setter Property="Template">
                         <Setter.Value>
@@ -63,17 +70,19 @@
                                             Background="{TemplateBinding Background}"
                                             BorderBrush="{TemplateBinding BorderBrush}" 
                                             BorderThickness="{TemplateBinding BorderThickness}" 
-                                            Padding="{TemplateBinding Padding}">
+                                            Padding="{TemplateBinding Padding}"
+                                            HorizontalAlignment="Left">
                                         <ContentPresenter x:Name="PART_Header" 
                                                           ContentSource="Header" 
-                                                          HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"/>
+                                                          HorizontalAlignment="Left"/>
                                     </Border>
 
                                     <!-- Child items -->
                                     <ItemsPresenter x:Name="ItemsHost" 
                                                     Grid.Row="1" 
                                                     Grid.Column="1" 
-                                                    Visibility="Collapsed"/>
+                                                    Visibility="Collapsed"
+                                                    HorizontalAlignment="Left"/>
                                 </Grid>
                                 <ControlTemplate.Triggers>
                                     <!-- Handle expansion state -->

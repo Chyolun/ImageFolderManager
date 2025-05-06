@@ -426,7 +426,7 @@ namespace ImageFolderManager.Views
 
                     // Select the item
                     SelectItem(treeViewItem);
-                    treeViewItem.BringIntoView();
+                    //treeViewItem.BringIntoView();
 
                     // Notify about the selection
                     NotifyFolderSelection(treeViewItem);
@@ -2103,5 +2103,10 @@ namespace ImageFolderManager.Views
         }
 
         #endregion
+
+        private void ShellTreeViewControl_ScrollChanged(object sender, ScrollChangedEventArgs e)
+        {
+
+        }
     }
 }

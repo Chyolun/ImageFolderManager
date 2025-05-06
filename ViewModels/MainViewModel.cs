@@ -306,7 +306,7 @@ namespace ImageFolderManager.ViewModels
                     UpdateFolderTagsAndRating(folder);
 
                     // Clear images collection (but don't load new images)
-                    Images.Clear();
+                   // Images.Clear();
                 }
             }
             catch (Exception ex)
@@ -324,9 +324,6 @@ namespace ImageFolderManager.ViewModels
             {
                 if (folder == null) return;
 
-                // Clear existing tags
-                FolderTags.Clear();
-
                 // Get tags and rating from file
                 string path = folder.FolderPath;
                 int rating = await _tagService.GetRatingForFolderAsync(path);
@@ -335,15 +332,23 @@ namespace ImageFolderManager.ViewModels
                 // Update the UI
                 Rating = rating;
 
-                // Create a HashSet to prevent duplicate tags
+                // Create a new collection to avoid duplication issues
                 var uniqueTags = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 foreach (var tag in tags)
                 {
-                    if (!string.IsNullOrEmpty(tag) && !uniqueTags.Contains(tag))
+                    if (!string.IsNullOrEmpty(tag))
                     {
-                        uniqueTags.Add(tag);
-                        FolderTags.Add(tag);
+                        uniqueTags.Add(tag.Trim());
                     }
+                }
+
+                // Clear existing tags only after we've processed the new ones
+                FolderTags.Clear();
+
+                // Add unique tags to the collection
+                foreach (var tag in uniqueTags)
+                {
+                    FolderTags.Add(tag);
                 }
 
                 // Update the display
