@@ -1753,9 +1753,25 @@ namespace ImageFolderManager.Views
             {
                 Debug.WriteLine($"Performing drag & drop operation: {(isCopy ? "Copy" : "Move")} to {targetPath}");
 
+                // 保存源文件夹的父路径，用于后续刷新
+                var sourceParentPaths = new HashSet<string>();
+                foreach (string sourcePath in filePaths)
+                {
+                    if (Directory.Exists(sourcePath))
+                    {
+                        // 获取源文件夹的父目录
+                        string parentPath = Path.GetDirectoryName(sourcePath);
+                        if (!string.IsNullOrEmpty(parentPath))
+                        {
+                            sourceParentPaths.Add(parentPath);
+                        }
+                    }
+                }
+
+                // 执行操作
                 if (filePaths.Length == 1)
                 {
-                    // 单个文件夹操作 - 使用现有的单选方法
+                    // 单个文件夹操作
                     string sourcePath = filePaths[0];
                     if (!Directory.Exists(sourcePath)) return;
 
@@ -1773,7 +1789,7 @@ namespace ImageFolderManager.Views
                 }
                 else
                 {
-                    // 多文件夹操作 - 使用 ViewModel 的多选方法
+                    // 多文件夹操作
                     var sourceFolders = new List<FolderInfo>();
                     foreach (string path in filePaths)
                     {
@@ -1797,8 +1813,75 @@ namespace ImageFolderManager.Views
                     }
                 }
 
-                // 刷新树
-                RefreshTree();
+                // 使用延迟刷新，确保操作完成后再刷新UI
+                var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
+                timer.Tick += (s, args) =>
+                {
+                    timer.Stop();
+
+                    // 获取所有已展开的路径
+                    var expandedPaths = new HashSet<string>();
+                    foreach (var item in FindVisualChildren<TreeViewItem>(ShellTreeViewControl))
+                    {
+                        if (item.IsExpanded && item.Tag is ShellObject so)
+                        {
+                            string path = GetPathFromShellObject(so);
+                            if (!string.IsNullOrEmpty(path))
+                            {
+                                expandedPaths.Add(path);
+                            }
+                        }
+                    }
+
+                    // 刷新目标文件夹项
+                    if (targetItem.IsExpanded)
+                    {
+                        // 强制刷新目标文件夹子项
+                        targetItem.Items.Clear();
+                        targetItem.Items.Add(new TreeViewItem { Header = "Loading..." });
+                        targetItem.IsExpanded = false;
+                        targetItem.IsExpanded = true;
+                    }
+                    else
+                    {
+                        // 如果目标未展开，至少添加一个加载项以表明有子项
+                        if (targetItem.Items.Count == 0)
+                        {
+                            targetItem.Items.Add(new TreeViewItem { Header = "Loading..." });
+                        }
+                    }
+
+                    // 刷新所有源文件夹的父目录
+                    foreach (string parentPath in sourceParentPaths)
+                    {
+                        if (Directory.Exists(parentPath) && _pathToTreeViewItem.TryGetValue(parentPath, out var parentItem))
+                        {
+                            if (parentItem.IsExpanded)
+                            {
+                                parentItem.Items.Clear();
+                                parentItem.Items.Add(new TreeViewItem { Header = "Loading..." });
+                                parentItem.IsExpanded = false;
+                                parentItem.IsExpanded = true;
+                            }
+                        }
+                    }
+
+                    // 恢复所有展开的路径
+                    foreach (string path in expandedPaths)
+                    {
+                        if (_pathToTreeViewItem.TryGetValue(path, out var item))
+                        {
+                            item.IsExpanded = true;
+                        }
+                    }
+
+                    // 确保目标文件夹仍然被选中
+                    if (_pathToTreeViewItem.TryGetValue(targetPath, out var selectedItem))
+                    {
+                        selectedItem.IsSelected = true;
+                    }
+                };
+                timer.Start();
             }
             else
             {

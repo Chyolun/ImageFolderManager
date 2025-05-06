@@ -79,8 +79,7 @@
               "RelativeToolTip": "Views\\MainWindow.xaml.cs",
               "ViewState": "AgIAAHgAAAAAAAAAAAAwwIoAAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2025-04-30T06:09:37.422Z",
-              "EditorCaption": ""
+              "WhenOpened": "2025-04-30T06:09:37.422Z"
             },
             {
               "$type": "Document",
@@ -91,8 +90,7 @@
               "ToolTip": "D:\\ImageFolderManager\\Views\\ProgressDialog.xaml",
               "RelativeToolTip": "Views\\ProgressDialog.xaml",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003549|",
-              "WhenOpened": "2025-04-30T15:02:12.427Z",
-              "EditorCaption": ""
+              "WhenOpened": "2025-04-30T15:02:12.427Z"
             },
             {
               "$type": "Document",
@@ -100,9 +98,9 @@
               "Title": "ShellTreeView.xaml.cs",
               "DocumentMoniker": "D:\\ImageFolderManager\\Views\\ShellTreeView.xaml.cs",
               "RelativeDocumentMoniker": "Views\\ShellTreeView.xaml.cs",
-              "ToolTip": "D:\\ImageFolderManager\\Views\\ShellTreeView.xaml.cs",
-              "RelativeToolTip": "Views\\ShellTreeView.xaml.cs",
-              "ViewState": "AgIAAPEGAAAAAAAAAAAUwA8HAAAJAAAAAAAAAA==",
+              "ToolTip": "D:\\ImageFolderManager\\Views\\ShellTreeView.xaml.cs*",
+              "RelativeToolTip": "Views\\ShellTreeView.xaml.cs*",
+              "ViewState": "AgIAAEQHAAAAAAAAAAAqwGIHAAAJAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
               "WhenOpened": "2025-04-30T06:09:50.042Z",
               "EditorCaption": ""
