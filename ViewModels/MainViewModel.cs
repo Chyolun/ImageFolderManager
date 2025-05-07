@@ -941,6 +941,9 @@ namespace ImageFolderManager.ViewModels
                     Microsoft.VisualBasic.FileIO.UIOption.OnlyErrorDialogs,
                     Microsoft.VisualBasic.FileIO.RecycleOption.SendToRecycleBin);
 
+                // Invalidate path cache after deletion
+                PathService.InvalidatePathCache(folderPath, true);
+
                 // Remove from _allLoadedFolders
                 RemoveFolderAndSubfoldersFromAllLoaded(folderPath);
 
@@ -1016,15 +1019,20 @@ namespace ImageFolderManager.ViewModels
 
             return false;
         }
+
         private bool RecursiveRemoveFolderByPath(ObservableCollection<FolderInfo> folders, string targetPath)
         {
             if (folders == null) return false;
 
+            // Normalize target path
+            string normalizedTarget = PathService.NormalizePath(targetPath);
+
             // Use ToList() to avoid collection modification exceptions during enumeration
             foreach (var folder in folders.ToList())
             {
-                // Check if this is the folder we want to remove
-                if (folder?.FolderPath == targetPath)
+                // Check if this is the folder we want to remove using PathService
+                if (folder != null && folder.FolderPath != null &&
+                    PathService.PathsEqual(folder.FolderPath, normalizedTarget))
                 {
                     folders.Remove(folder);
                     return true;
@@ -1033,7 +1041,7 @@ namespace ImageFolderManager.ViewModels
                 // Check children
                 if (folder?.Children != null)
                 {
-                    if (RecursiveRemoveFolderByPath(folder.Children, targetPath))
+                    if (RecursiveRemoveFolderByPath(folder.Children, normalizedTarget))
                     {
                         return true;
                     }
@@ -1043,21 +1051,40 @@ namespace ImageFolderManager.ViewModels
             return false;
         }
 
+
         // Remove folder and all its subfolders from _allLoadedFolders list
         public void RemoveFolderAndSubfoldersFromAllLoaded(string folderPath)
         {
+            if (string.IsNullOrEmpty(folderPath))
+                return;
+
+            // Normalize the path
+            string normalizedPath = PathService.NormalizePath(folderPath);
+
             // Remove the folder itself and all subfolders that start with this path
-            _allLoadedFolders.RemoveAll(f => f.FolderPath == folderPath ||
-                                            f.FolderPath.StartsWith(folderPath + Path.DirectorySeparatorChar));
+            _allLoadedFolders.RemoveAll(f =>
+                PathService.PathsEqual(f.FolderPath, normalizedPath) ||
+                PathService.IsPathWithin(normalizedPath, f.FolderPath));
+
+            // Invalidate path cache for this path
+            PathService.InvalidatePathCache(normalizedPath, true);
         }
+
 
         // Remove folder and all its subfolders from search results
         public void RemoveFolderAndSubfoldersFromSearchResults(string folderPath)
         {
-            // Create a temporary list to store items to remove (can't modify collection during enumeration)
+            if (string.IsNullOrEmpty(folderPath))
+                return;
+
+            // Normalize the path
+            string normalizedPath = PathService.NormalizePath(folderPath);
+
+            // Create a temporary list to store items to remove
             var itemsToRemove = SearchResultFolders
-                .Where(f => f.FolderPath == folderPath ||
-                           f.FolderPath.StartsWith(folderPath + Path.DirectorySeparatorChar))
+                .Where(f =>
+                    PathService.PathsEqual(f.FolderPath, normalizedPath) ||
+                    PathService.IsPathWithin(normalizedPath, f.FolderPath))
                 .ToList();
 
             // Remove all found items from the search results
@@ -1069,19 +1096,23 @@ namespace ImageFolderManager.ViewModels
 
         private void UpdateFolderMetadataInAllLoadedFolders(string folderPath, List<string> newTags, int newRating)
         {
+            if (string.IsNullOrEmpty(folderPath))
+                return;
 
-            var folder = _allLoadedFolders.FirstOrDefault(f => f.FolderPath == folderPath);
+            // Normalize the path
+            string normalizedPath = PathService.NormalizePath(folderPath);
+
+            // Use FirstOrDefault with a more efficient path comparison
+            var folder = _allLoadedFolders.FirstOrDefault(f =>
+                PathService.PathsEqual(f.FolderPath, normalizedPath));
+
             if (folder != null)
             {
-             
                 // Create a new collection instead of modifying the existing one
                 folder.Tags = new ObservableCollection<string>(newTags);
                 folder.Rating = newRating;
-
             }
-            
         }
-
 
         // Updated PerformSearch method with proper thread synchronization
         public async Task PerformSearch()
@@ -2042,7 +2073,15 @@ namespace ImageFolderManager.ViewModels
                 double progressEnd = 1,
                 CancellationToken cancellationToken = default)
         {
-            // Get all subdirectories
+            // Check if sourceDir exists using PathService
+            if (!PathService.DirectoryExists(sourceDir))
+                return;
+
+            // Normalize paths
+            sourceDir = PathService.NormalizePath(sourceDir);
+            destinationDir = PathService.NormalizePath(destinationDir);
+
+            // Get directory info
             var directory = new DirectoryInfo(sourceDir);
 
             // Create destination directory if it doesn't exist
@@ -2102,12 +2141,20 @@ namespace ImageFolderManager.ViewModels
                     progressDialog.UpdateProgress(progress, $"Copying folder: {subDir.Name}");
                 }
 
-                CopyDirectory(subDir.FullName, newDestinationDir, progressDialog,
+                // Use our recursive method
+                CopyDirectory(
+                    subDir.FullName,
+                    newDestinationDir,
+                    progressDialog,
                     progressStart + (progressEnd - progressStart) * (processedItems / (double)totalItems),
                     progressStart + (progressEnd - progressStart) * ((processedItems + 1) / (double)totalItems),
                     cancellationToken);
             }
+
+            // Invalidate path cache for the destination directory
+            PathService.InvalidatePathCache(destinationDir, false);
         }
+
 
         public async Task CreateNewFolder(FolderInfo parentFolder)
         {

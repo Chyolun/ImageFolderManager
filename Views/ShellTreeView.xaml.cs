@@ -234,7 +234,7 @@ namespace ImageFolderManager.Views
                     var treeViewItem = GetSelectedTreeViewItem();
                     if (treeViewItem != null && treeViewItem.Tag is ShellObject shellObject)
                     {
-                        pathToSelect = GetPathFromShellObject(shellObject);
+                        pathToSelect = PathService.GetPathFromShellObject(shellObject);
                     }
                 }
 
@@ -246,7 +246,7 @@ namespace ImageFolderManager.Views
                     {
                         if (item.IsExpanded && item.Tag is ShellObject so)
                         {
-                            string path = GetPathFromShellObject(so);
+                            string path = PathService.GetPathFromShellObject(so);
                             if (!string.IsNullOrEmpty(path))
                             {
                                 expandedPaths.Add(path);
@@ -353,7 +353,7 @@ namespace ImageFolderManager.Views
             {
                 if (item.IsExpanded && item.Tag is ShellObject so)
                 {
-                    string path = GetPathFromShellObject(so);
+                    string path = PathService.GetPathFromShellObject(so);
                     if (!string.IsNullOrEmpty(path))
                     {
                         expandedPaths.Add(path);
@@ -458,13 +458,13 @@ namespace ImageFolderManager.Views
                 // Only add a dummy node if this is a folder AND it contains subfolders
                 if (shellObject is ShellFolder)
                 {
-                    string path = GetPathFromShellObject(shellObject);
+                    string path = PathService.GetPathFromShellObject(shellObject);
 
                     // Only check for subfolders if we have a valid file system path
-                    if (!string.IsNullOrEmpty(path) && Directory.Exists(path))
+                    if (!string.IsNullOrEmpty(path) && PathService.DirectoryExists(path))
                     {
-                        // Check if this folder actually has any subfolders before adding the dummy node
-                        bool hasSubfolders = DirectoryHasSubdirectories(path);
+                        // Use PathService to check for subdirectories
+                        bool hasSubfolders = PathService.DirectoryHasSubdirectories(path);
 
                         if (hasSubfolders)
                         {
@@ -488,7 +488,7 @@ namespace ImageFolderManager.Views
             // Store in dictionary for quick lookups
             if (!string.IsNullOrEmpty(shellObject.ParsingName))
             {
-                string path = GetPathFromShellObject(shellObject);
+                string path = PathService.GetPathFromShellObject(shellObject);
                 if (!string.IsNullOrEmpty(path))
                 {
                     _pathToTreeViewItem[path] = item;
@@ -577,25 +577,8 @@ namespace ImageFolderManager.Views
             if (string.IsNullOrEmpty(_rootDirectory))
                 return true; // No root restriction, anything is in scope
 
-            // Check if path is within the root directory
-            return path.StartsWith(_rootDirectory, StringComparison.OrdinalIgnoreCase) ||
-                   path.Equals(_rootDirectory, StringComparison.OrdinalIgnoreCase);
-        }
-
-        /// <summary>
-        /// Gets the file system path from a ShellObject
-        /// </summary>
-        private string GetPathFromShellObject(ShellObject shellObject)
-        {
-            try
-            {
-                if (shellObject.IsFileSystemObject)
-                {
-                    return shellObject.ParsingName;
-                }
-            }
-            catch { }
-            return null;
+            // Use PathService for efficient comparison
+            return PathService.IsPathWithin(_rootDirectory, path);
         }
 
         /// <summary>
@@ -607,8 +590,8 @@ namespace ImageFolderManager.Views
 
             try
             {
-                // Get the full path
-                string path = GetPathFromShellObject(shellObject);
+                // Get the full path using PathService
+                string path = PathService.GetPathFromShellObject(shellObject);
                 if (string.IsNullOrEmpty(path)) return;
 
                 // Build a list of parent directories that need to be expanded
@@ -619,7 +602,7 @@ namespace ImageFolderManager.Views
                 {
                     // Stop when we reach the root directory level
                     if (!string.IsNullOrEmpty(_rootDirectory) &&
-                        currentDir.FullName.Equals(_rootDirectory, StringComparison.OrdinalIgnoreCase))
+                        PathService.PathsEqual(currentDir.FullName, _rootDirectory))
                         break;
 
                     directoriesToExpand.Insert(0, currentDir.FullName);
@@ -669,7 +652,7 @@ namespace ImageFolderManager.Views
                 var shellObject = treeViewItem.Tag as ShellObject;
                 if (shellObject == null) return;
 
-                string path = GetPathFromShellObject(shellObject);
+                string path = PathService.GetPathFromShellObject(shellObject);
                 if (string.IsNullOrEmpty(path) || !Directory.Exists(path)) return;
 
                 _selectedPath = path;
@@ -700,7 +683,7 @@ namespace ImageFolderManager.Views
                 var shellObject = item.Tag as ShellObject;
                 if (shellObject != null)
                 {
-                    string path = GetPathFromShellObject(shellObject);
+                    string path = PathService.GetPathFromShellObject(shellObject);
                     if (!string.IsNullOrEmpty(path) && Directory.Exists(path))
                     {
                         selectedFolders.Add(new FolderInfo(path));
@@ -1026,7 +1009,7 @@ namespace ImageFolderManager.Views
                         }
 
                         // Watch this folder for changes
-                        string path = GetPathFromShellObject(shellObject);
+                        string path = PathService.GetPathFromShellObject(shellObject);
                         if (!string.IsNullOrEmpty(path) && Directory.Exists(path))
                         {
                             var folder = new FolderInfo(path);
@@ -1044,7 +1027,7 @@ namespace ImageFolderManager.Views
                                         var childShellObject = childTreeItem.Tag as ShellObject;
                                         if (childShellObject != null)
                                         {
-                                            string childPath = GetPathFromShellObject(childShellObject);
+                                            string childPath = PathService.GetPathFromShellObject(childShellObject);
                                             if (!string.IsNullOrEmpty(childPath) && Directory.Exists(childPath))
                                             {
                                                 var childFolder = new FolderInfo(childPath);
@@ -1173,7 +1156,7 @@ namespace ImageFolderManager.Views
                 var shellObject = treeViewItem.Tag as ShellObject;
                 if (shellObject == null) return;
 
-                string path = GetPathFromShellObject(shellObject);
+                string path = PathService.GetPathFromShellObject(shellObject);
                 if (string.IsNullOrEmpty(path)) return;
 
                 // Make sure the item is selected
@@ -1204,7 +1187,7 @@ namespace ImageFolderManager.Views
                 var shellObject = treeViewItem.Tag as ShellObject;
                 if (shellObject == null) return;
 
-                string path = GetPathFromShellObject(shellObject);
+                string path = PathService.GetPathFromShellObject(shellObject);
                 if (string.IsNullOrEmpty(path)) return;
 
                 _selectedPath = path;
@@ -1495,7 +1478,7 @@ namespace ImageFolderManager.Views
 
                 if (_draggedShellObject == null) return;
 
-                string path = GetPathFromShellObject(_draggedShellObject);
+                string path = PathService.GetPathFromShellObject(_draggedShellObject);
                 if (string.IsNullOrEmpty(path) || !Directory.Exists(path)) return;
 
                 // Don't allow dragging the root directory
@@ -1519,7 +1502,7 @@ namespace ImageFolderManager.Views
                     var shellObject = item.Tag as ShellObject;
                     if (shellObject != null)
                     {
-                        string path = GetPathFromShellObject(shellObject);
+                        string path = PathService.GetPathFromShellObject(shellObject);
                         if (!string.IsNullOrEmpty(path) && Directory.Exists(path))
                         {
                             // Don't allow dragging the root directory
@@ -1573,8 +1556,8 @@ namespace ImageFolderManager.Views
                 return;
             }
 
-            string targetPath = GetPathFromShellObject(targetShellObject);
-            if (string.IsNullOrEmpty(targetPath) || !Directory.Exists(targetPath))
+            string targetPath = PathService.GetPathFromShellObject(targetShellObject);
+            if (string.IsNullOrEmpty(targetPath) || !PathService.DirectoryExists(targetPath))
             {
                 e.Effects = DragDropEffects.None;
                 e.Handled = true;
@@ -1593,9 +1576,9 @@ namespace ImageFolderManager.Views
             // Check each source path against the target
             foreach (string sourcePath in filePaths)
             {
-                // Check if we're trying to drop into itself or its child
-                if (sourcePath == targetPath ||
-                    targetPath.StartsWith(sourcePath + Path.DirectorySeparatorChar))
+                // Check if we're trying to drop into itself or its child using PathService
+                if (PathService.PathsEqual(sourcePath, targetPath) ||
+                    PathService.IsPathWithin(sourcePath, targetPath))
                 {
                     e.Effects = DragDropEffects.None;
                     e.Handled = true;
@@ -1638,7 +1621,7 @@ namespace ImageFolderManager.Views
             var targetShellObject = targetItem.Tag as ShellObject;
             if (targetShellObject == null) return;
 
-            string targetPath = GetPathFromShellObject(targetShellObject);
+            string targetPath = PathService.GetPathFromShellObject(targetShellObject);
             if (string.IsNullOrEmpty(targetPath) || !Directory.Exists(targetPath))
                 return;
 
@@ -1766,7 +1749,7 @@ namespace ImageFolderManager.Views
                     return;
                 }
 
-                string path = GetPathFromShellObject(shellObject);
+                string path = PathService.GetPathFromShellObject(shellObject);
                 if (string.IsNullOrEmpty(path) || !Directory.Exists(path))
                 {
                     Debug.WriteLine($"Invalid path: {path}");
@@ -1891,7 +1874,7 @@ namespace ImageFolderManager.Views
                 var shellObject = treeViewItem.Tag as ShellObject;
                 if (shellObject == null) return;
 
-                string path = GetPathFromShellObject(shellObject);
+                string path = PathService.GetPathFromShellObject(shellObject);
                 if (string.IsNullOrEmpty(path) || !Directory.Exists(path)) return;
 
                 // Store expanded state
@@ -1900,7 +1883,7 @@ namespace ImageFolderManager.Views
                 {
                     if (item.IsExpanded && item.Tag is ShellObject so)
                     {
-                        string expandedPath = GetPathFromShellObject(so);
+                        string expandedPath = PathService.GetPathFromShellObject(so);
                         if (!string.IsNullOrEmpty(expandedPath))
                         {
                             expandedItems.Add(expandedPath);
@@ -1964,7 +1947,7 @@ namespace ImageFolderManager.Views
                 var shellObject = treeViewItem.Tag as ShellObject;
                 if (shellObject == null) return;
 
-                string path = GetPathFromShellObject(shellObject);
+                string path = PathService.GetPathFromShellObject(shellObject);
                 if (string.IsNullOrEmpty(path) || !Directory.Exists(path)) return;
 
                 // Don't allow renaming root directory
@@ -2027,7 +2010,7 @@ namespace ImageFolderManager.Views
                 var shellObject = treeViewItem.Tag as ShellObject;
                 if (shellObject == null) return;
 
-                string path = GetPathFromShellObject(shellObject);
+                string path = PathService.GetPathFromShellObject(shellObject);
                 if (string.IsNullOrEmpty(path) || !Directory.Exists(path)) return;
 
                 if (!string.IsNullOrEmpty(_rootDirectory) &&
@@ -2115,7 +2098,7 @@ namespace ImageFolderManager.Views
                 var shellObject = treeViewItem.Tag as ShellObject;
                 if (shellObject == null) return;
 
-                string path = GetPathFromShellObject(shellObject);
+                string path = PathService.GetPathFromShellObject(shellObject);
                 if (string.IsNullOrEmpty(path) || !Directory.Exists(path)) return;
 
                 // Create FolderInfo and call ViewModel

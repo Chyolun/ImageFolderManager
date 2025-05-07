@@ -261,7 +261,7 @@ namespace ImageFolderManager.Services
         /// </summary>
         private async Task TraverseDirectoriesAsync(string path, FolderInfo parent, List<FolderInfo> result, bool watchFolders)
         {
-            if (!Directory.Exists(path))
+            if (!PathService.DirectoryExists(path))
             {
                 return;
             }
@@ -326,10 +326,11 @@ namespace ImageFolderManager.Services
             if (_fileSystemEventCallback == null)
                 return; // No callback, no need to watch
 
-            if (folder == null || string.IsNullOrEmpty(folder.FolderPath) || !Directory.Exists(folder.FolderPath))
+            if (folder == null || string.IsNullOrEmpty(folder.FolderPath) ||
+                !PathService.DirectoryExists(folder.FolderPath))
                 return;
 
-            string normalizedPath = NormalizePath(folder.FolderPath);
+            string normalizedPath = PathService.NormalizePath(folder.FolderPath);
 
             lock (_watcherLock)
             {
@@ -569,7 +570,7 @@ namespace ImageFolderManager.Services
             if (string.IsNullOrEmpty(folderPath))
                 return;
 
-            string normalizedPath = NormalizePath(folderPath);
+            string normalizedPath = PathService.NormalizePath(folderPath);
 
             lock (_watcherLock)
             {
@@ -594,7 +595,7 @@ namespace ImageFolderManager.Services
 
                 // Also unwatch any subfolders
                 var subfoldersToUnwatch = _watchers.Keys
-                    .Where(path => path.StartsWith(normalizedPath + Path.DirectorySeparatorChar))
+                    .Where(path => PathService.IsPathWithin(normalizedPath, path))
                     .ToList();
 
                 foreach (var subPath in subfoldersToUnwatch)
@@ -603,6 +604,7 @@ namespace ImageFolderManager.Services
                 }
             }
         }
+
 
         /// <summary>
         /// Stops watching all folders
@@ -628,14 +630,6 @@ namespace ImageFolderManager.Services
 
                 _watchers.Clear();
             }
-        }
-
-        /// <summary>
-        /// Normalizes a path for consistent comparison
-        /// </summary>
-        private string NormalizePath(string path)
-        {
-            return path?.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
         }
 
         /// <summary>
