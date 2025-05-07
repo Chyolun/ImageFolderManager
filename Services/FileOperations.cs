@@ -16,13 +16,12 @@ namespace ImageFolderManager.Services
     /// </summary>
     public class FileOperations
     {
-        private readonly FolderService _folderService;
-        private readonly FileSystemWatcherService _fileSystemWatcher;
+  
+        private readonly FolderManagementService _folderManager;
 
-        public FileOperations(FolderService folderService, FileSystemWatcherService fileSystemWatcher)
+        public FileOperations(FolderManagementService folderManager)
         {
-            _folderService = folderService ?? throw new ArgumentNullException(nameof(folderService));
-            _fileSystemWatcher = fileSystemWatcher ?? throw new ArgumentNullException(nameof(fileSystemWatcher));
+            _folderManager = folderManager ?? throw new ArgumentNullException(nameof(folderManager));
         }
 
         /// <summary>
@@ -55,13 +54,13 @@ namespace ImageFolderManager.Services
                 parentFolder.LoadChildren();
 
                 // Start watching the parent folder to detect changes
-                _fileSystemWatcher.WatchFolder(parentFolder);
+                _folderManager.WatchFolder(parentFolder);
 
                 // Create a FolderInfo for the new folder
                 var newFolder = new FolderInfo(newPath, parentFolder);
 
                 // Watch the new folder
-                _fileSystemWatcher.WatchFolder(newFolder);
+                _folderManager.WatchFolder(newFolder);
 
                 return newFolder;
             }
@@ -129,7 +128,7 @@ namespace ImageFolderManager.Services
                         }
 
                         // Stop watching this folder before deletion
-                        _fileSystemWatcher.UnwatchFolder(folder.FolderPath);
+                        _folderManager.UnwatchFolder(folder.FolderPath);
 
                         // Delete to recycle bin
                         FileSystem.DeleteDirectory(
@@ -208,7 +207,7 @@ namespace ImageFolderManager.Services
             try
             {
                 // Stop watching the folder before renaming
-                _fileSystemWatcher.UnwatchFolder(oldPath);
+                _folderManager.UnwatchFolder(oldPath);
 
                 // Rename the directory
                 Directory.Move(oldPath, newPath);
@@ -217,7 +216,7 @@ namespace ImageFolderManager.Services
                 folder.FolderPath = newPath;
 
                 // Start watching the renamed folder
-                _fileSystemWatcher.WatchFolder(folder);
+                _folderManager.WatchFolder(folder);
 
                 return newPath;
             }
@@ -308,8 +307,8 @@ namespace ImageFolderManager.Services
                         }
 
                         // Temporarily disable FileSystemWatcher
-                        _fileSystemWatcher.UnwatchFolder(sourcePath);
-                        _fileSystemWatcher.UnwatchFolder(targetPath);
+                        _folderManager.UnwatchFolder(sourcePath);
+                        _folderManager.UnwatchFolder(targetPath);
 
                         // Move directory
                         Directory.Move(sourcePath, destinationPath);
@@ -318,13 +317,13 @@ namespace ImageFolderManager.Services
                         var movedFolder = new FolderInfo(destinationPath, targetFolder);
 
                         // Re-enable file monitoring
-                        _fileSystemWatcher.WatchFolder(targetFolder);
-                        _fileSystemWatcher.WatchFolder(movedFolder);
+                        _folderManager.WatchFolder(targetFolder);
+                        _folderManager.WatchFolder(movedFolder);
 
                         // Also watch source parent if available
                         if (sourceFolder.Parent != null)
                         {
-                            _fileSystemWatcher.WatchFolder(sourceFolder.Parent);
+                            _folderManager.WatchFolder(sourceFolder.Parent);
                         }
 
                         // Brief delay to prevent UI freezing
@@ -454,7 +453,7 @@ namespace ImageFolderManager.Services
                         var newFolder = new FolderInfo(destinationPath, targetFolder);
 
                         // Watch the new folder
-                        _fileSystemWatcher.WatchFolder(newFolder);
+                        _folderManager.WatchFolder(newFolder);
 
                         // Brief delay to prevent UI freezing
                         await Task.Delay(50, token);

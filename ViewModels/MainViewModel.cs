@@ -23,6 +23,7 @@ using Application = System.Windows.Application;
 using System.Threading;
 using System.Windows.Media;
 
+
 namespace ImageFolderManager.ViewModels
 {
     public class MainViewModel : INotifyPropertyChanged
@@ -33,12 +34,8 @@ namespace ImageFolderManager.ViewModels
 
         public List<FolderInfo> _allLoadedFolders = new();
         private FolderInfo _selectedFolder;
-
-        public FileSystemWatcherService _fileSystemWatcher;
-
         private bool _isSavingTags = false;
-
-        private readonly FolderService _folderService = new FolderService();
+        private readonly FolderManagementService _folderManager;
         private bool _isLoadingImages = false;
         private CancellationTokenSource _imageLoadingCts;
         public FolderInfo SelectedFolder
@@ -54,6 +51,11 @@ namespace ImageFolderManager.ViewModels
                 }
             }
         }
+        public void WatchFolder(FolderInfo folder)
+        {
+            _folderManager.WatchFolder(folder);
+        }
+
 
         private bool _isSearching;
         public bool IsSearching
@@ -172,7 +174,7 @@ namespace ImageFolderManager.ViewModels
             SearchCommand = new AsyncRelayCommand(async () => await Task.Run(() => PerformSearch()));
             ShowInExplorerCommand = new RelayCommand<FolderInfo>(ShowInExplorer);
             DeleteFolderCommand = new AsyncRelayCommand<FolderInfo>(DeleteFolderAsync);
-            _fileSystemWatcher = new FileSystemWatcherService(_folderService, HandleFileSystemEvent);
+            _folderManager = new FolderManagementService(HandleFileSystemEvent);
             EditTagsCommand = new RelayCommand(_ => EditTags());
 
             UpdateStars();
@@ -206,10 +208,10 @@ namespace ImageFolderManager.ViewModels
         public async Task LoadDirectoryAsync(string path)
         {
             // Stop watching previous folders
-            _fileSystemWatcher.UnwatchAllFolders();
-
-            var folders = await _folderService.LoadFoldersRecursivelyAsync(path);
-
+       
+            _folderManager.UnwatchAllFolders();
+           var folders = await _folderManager.LoadFoldersRecursivelyAsync(path);
+            
             _allLoadedFolders = folders;
 
             RootFolders.Clear();
@@ -220,7 +222,7 @@ namespace ImageFolderManager.ViewModels
                 RootFolders.Add(root);
 
                 // Start watching the root folder
-                _fileSystemWatcher.WatchFolder(root);
+                _folderManager.WatchFolder(root);
             }
 
             // Update tag cloud after loading folders;
@@ -271,12 +273,12 @@ namespace ImageFolderManager.ViewModels
             folder.IsExpanded = true;
 
             // Start watching this folder for changes
-            _fileSystemWatcher.WatchFolder(folder);
+            _folderManager.WatchFolder(folder);
 
             // Also watch all immediate child folders
             foreach (var child in folder.Children)
             {
-                _fileSystemWatcher.WatchFolder(child);
+                _folderManager.WatchFolder(child);
             }
         }
 
@@ -694,35 +696,31 @@ namespace ImageFolderManager.ViewModels
             {
                 _isSavingTags = true;
 
-                // Get the old tags for comparison to detect removed tags
+                // Get the old tags for comparison
                 var oldTags = new List<string>(FolderTags);
 
-                // Check if the TagInputText is empty or only contains whitespace/# characters
+                // Check if input is empty
                 bool isTagInputEmpty = string.IsNullOrWhiteSpace(TagInputText) ||
                                        TagInputText.Replace("#", "").Trim().Length == 0;
 
                 if (!isTagInputEmpty)
                 {
-                    // Process new tags from input only if there's actual content
-                    FolderTags.Clear();
-                    var parts = TagInputText.Split(new[] { '#' }, StringSplitOptions.RemoveEmptyEntries);
-                    foreach (var tag in parts)
-                    {
-                        var trimmed = tag.Trim();
-                        if (!string.IsNullOrEmpty(trimmed))
-                            FolderTags.Add(trimmed);
-                    }
+                    // Use TagHelper to update the collection
+                    bool tagsChanged = TagHelper.UpdateObservableCollection(FolderTags, TagInputText);
 
-                    // Log tag changes for debugging
-                    System.Diagnostics.Debug.WriteLine($"Tags changed from: {string.Join(", ", oldTags)} to: {string.Join(", ", FolderTags)}");
+                    if (tagsChanged)
+                    {
+                        // Log tag changes for debugging
+                        Debug.WriteLine($"Tags changed from: {string.Join(", ", oldTags)} to: {string.Join(", ", FolderTags)}");
+                    }
                 }
                 else
                 {
                     // If tag input is empty, keep existing tags
-                    System.Diagnostics.Debug.WriteLine($"Tag input is empty, preserving existing tags: {string.Join(", ", FolderTags)}");
+                    Debug.WriteLine($"Tag input is empty, preserving existing tags: {string.Join(", ", FolderTags)}");
                 }
 
-                // Save the tags to the folder
+                // Save tags to the folder
                 await _tagService.SetTagsAndRatingForFolderAsync(
                     SelectedFolder.FolderPath,
                     new List<string>(FolderTags),
@@ -771,7 +769,7 @@ namespace ImageFolderManager.ViewModels
                 System.Diagnostics.Debug.WriteLine("Starting tag cloud update...");
 
                 // First, ensure we have fresh folder data by re-reading from disk
-                var freshFolders = await _folderService.LoadFoldersRecursivelyAsync(
+                var freshFolders = await _folderManager.LoadFoldersRecursivelyAsync(
                     AppSettings.Instance.DefaultRootDirectory);
 
                 // Replace _allLoadedFolders with fresh data to ensure tag changes are reflected
@@ -935,7 +933,7 @@ namespace ImageFolderManager.ViewModels
                 string folderPath = folder.FolderPath;
 
                 // Stop watching this folder before deletion
-                _fileSystemWatcher.UnwatchFolder(folderPath);
+                _folderManager.UnwatchFolder(folderPath);
 
                 // Delete to recycle bin
                 Microsoft.VisualBasic.FileIO.FileSystem.DeleteDirectory(
@@ -1119,7 +1117,7 @@ namespace ImageFolderManager.ViewModels
                         });
 
                         // Load latest data from file system
-                        _allLoadedFolders = await _folderService.LoadFoldersRecursivelyAsync(
+                        _allLoadedFolders = await _folderManager.LoadFoldersRecursivelyAsync(
                             AppSettings.Instance.DefaultRootDirectory);
 
                         // Update tag cloud with fresh data
@@ -1382,26 +1380,8 @@ namespace ImageFolderManager.ViewModels
             if (folders == null || folders.Count == 0)
                 return new List<string>();
 
-            // Start with the first folder's tags
-            var commonTags = new HashSet<string>(
-                folders[0].Tags.Select(t => t.ToLowerInvariant()),
-                StringComparer.OrdinalIgnoreCase);
-
-            // Intersect with all other folders' tags
-            for (int i = 1; i < folders.Count; i++)
-            {
-                var folderTags = new HashSet<string>(
-                    folders[i].Tags.Select(t => t.ToLowerInvariant()),
-                    StringComparer.OrdinalIgnoreCase);
-
-                commonTags.IntersectWith(folderTags);
-
-                // If no common tags left, we can exit early
-                if (commonTags.Count == 0)
-                    break;
-            }
-
-            return commonTags.ToList();
+            // Use TagHelper to find common tags
+            return TagHelper.FindCommonTags(folders.Select(f => f.Tags)).ToList();
         }
 
         // Methods for multiple folders cut/copy/paste operations
@@ -1492,7 +1472,7 @@ namespace ImageFolderManager.ViewModels
                                     string folderPath = folder.FolderPath;
 
                                     // Stop watching this folder before deletion
-                                    _fileSystemWatcher.UnwatchFolder(folderPath);
+                                    _folderManager.UnwatchFolder(folderPath);
 
                                     // Delete to recycle bin
                                     Microsoft.VisualBasic.FileIO.FileSystem.DeleteDirectory(
@@ -1855,7 +1835,7 @@ namespace ImageFolderManager.ViewModels
                                 targetFolder.LoadChildren();
 
                                 // Start watching the target folder
-                                _fileSystemWatcher.WatchFolder(targetFolder);
+                                _folderManager.WatchFolder(targetFolder);
                             });
 
                             return true;
@@ -1972,8 +1952,8 @@ namespace ImageFolderManager.ViewModels
                         progressDialog.UpdateProgress(0.3, "Temporarily disabling file monitoring...");
 
                         // Temporarily disable FileSystemWatcher for these folders
-                        _fileSystemWatcher.UnwatchFolder(sourcePath);
-                        _fileSystemWatcher.UnwatchFolder(targetFolder.FolderPath);
+                        _folderManager.UnwatchFolder(sourcePath);
+                        _folderManager.UnwatchFolder(targetFolder.FolderPath);
 
                         try
                         {
@@ -2036,13 +2016,13 @@ namespace ImageFolderManager.ViewModels
                             });
 
                             // Start watching folders again
-                            _fileSystemWatcher.WatchFolder(targetFolder);
-                            _fileSystemWatcher.WatchFolder(newFolder);
+                            _folderManager.WatchFolder(targetFolder);
+                            _folderManager.WatchFolder(newFolder);
 
                             // If cut operation, also watch source parent
                             if (isCut && sourceFolder.Parent != null)
                             {
-                                _fileSystemWatcher.WatchFolder(sourceFolder.Parent);
+                                _folderManager.WatchFolder(sourceFolder.Parent);
                             }
                             progressDialog.UpdateProgress(1.0, "Moving folder complete!");
                             return true;
@@ -2050,7 +2030,7 @@ namespace ImageFolderManager.ViewModels
                         finally
                         {
                             // Make sure we're watching target folder even if error occurred
-                            _fileSystemWatcher.WatchFolder(targetFolder);
+                            _folderManager.WatchFolder(targetFolder);
                         }
                     }
 
@@ -2171,7 +2151,7 @@ namespace ImageFolderManager.ViewModels
                 parentFolder.LoadChildren();
 
                 // Start watching the parent folder to detect changes
-                _fileSystemWatcher.WatchFolder(parentFolder);
+                _folderManager.WatchFolder(parentFolder);
                 // Add this: Notify ShellTreeView to refresh
                 if (Application.Current.MainWindow is MainWindow mainWindow &&
                     mainWindow.ShellTreeViewControl != null)
@@ -2189,7 +2169,7 @@ namespace ImageFolderManager.ViewModels
                     _allLoadedFolders.Add(newFolder);
 
                     // Watch the new folder
-                    _fileSystemWatcher.WatchFolder(newFolder);
+                    _folderManager.WatchFolder(newFolder);
                 }
 
                 // Update tag cloud
@@ -2243,7 +2223,7 @@ namespace ImageFolderManager.ViewModels
             try
             {
                 // Stop watching the folder before renaming
-                _fileSystemWatcher.UnwatchFolder(oldPath);
+                _folderManager.UnwatchFolder(oldPath);
 
                 // Rename the directory
                 Directory.Move(oldPath, newPath);
@@ -2281,7 +2261,7 @@ namespace ImageFolderManager.ViewModels
                 folder.FolderPath = currentPath;
 
                 // Start watching the renamed folder
-                _fileSystemWatcher.WatchFolder(folder);
+                _folderManager.WatchFolder(folder);
 
                 // Update tag cloud
                 await UpdateTagCloudAsync();
@@ -2378,8 +2358,8 @@ namespace ImageFolderManager.ViewModels
                             progressDialog.UpdateProgress(0.2, "Preparing to move...");
 
                             // Temporarily disable FileSystemWatcher
-                            _fileSystemWatcher.UnwatchFolder(sourcePath);
-                            _fileSystemWatcher.UnwatchFolder(targetFolder.FolderPath);
+                            _folderManager.UnwatchFolder(sourcePath);
+                            _folderManager.UnwatchFolder(targetFolder.FolderPath);
 
                             // Check if cancelled
                             if (cts.Token.IsCancellationRequested)
@@ -2413,8 +2393,8 @@ namespace ImageFolderManager.ViewModels
                             // Update progress
                             progressDialog.UpdateProgress(0.9, "Re-enabling file monitoring...");
                             // Start watching folders again
-                            _fileSystemWatcher.WatchFolder(targetFolder);
-                            _fileSystemWatcher.WatchFolder(new FolderInfo(destinationPath));
+                            _folderManager.WatchFolder(targetFolder);
+                            _folderManager.WatchFolder(new FolderInfo(destinationPath));
                             // Refresh target folder's children
                             await Application.Current.Dispatcher.InvokeAsync(() =>
                             {
@@ -2441,7 +2421,7 @@ namespace ImageFolderManager.ViewModels
                         finally
                         {
                             // Make sure we're watching the target folder
-                            _fileSystemWatcher.WatchFolder(targetFolder);
+                            _folderManager.WatchFolder(targetFolder);
                         }
                     }, cts.Token);
 
@@ -2555,8 +2535,8 @@ namespace ImageFolderManager.ViewModels
                                     }
 
                                     // Temporarily disable FileSystemWatcher
-                                    _fileSystemWatcher.UnwatchFolder(sourcePath);
-                                    _fileSystemWatcher.UnwatchFolder(targetPath);
+                                    _folderManager.UnwatchFolder(sourcePath);
+                                    _folderManager.UnwatchFolder(targetPath);
 
                                     // Move directory
                                     Directory.Move(sourcePath, destinationPath);
@@ -2577,13 +2557,13 @@ namespace ImageFolderManager.ViewModels
                                     _allLoadedFolders.Add(newFolder);
 
                                     // Re-enable file monitoring
-                                    _fileSystemWatcher.WatchFolder(targetFolder);
-                                    _fileSystemWatcher.WatchFolder(newFolder);
+                                    _folderManager.WatchFolder(targetFolder);
+                                    _folderManager.WatchFolder(newFolder);
 
                                     // Also watch source parent if available
                                     if (sourceFolder.Parent != null)
                                     {
-                                        _fileSystemWatcher.WatchFolder(sourceFolder.Parent);
+                                        _folderManager.WatchFolder(sourceFolder.Parent);
                                     }
 
                                     // Brief delay to prevent UI freezing
@@ -2628,7 +2608,7 @@ namespace ImageFolderManager.ViewModels
                         finally
                         {
                             // Make sure we're watching the target folder
-                            _fileSystemWatcher.WatchFolder(targetFolder);
+                            _folderManager.WatchFolder(targetFolder);
                         }
                     }, cts.Token);
 
@@ -2672,14 +2652,22 @@ namespace ImageFolderManager.ViewModels
             }
         }
 
-
-        // Separate method to parse search criteria and find matches
+        /// <summary>
+        /// Parses search criteria and finds matching folders
+        /// </summary>
+        /// <returns>List of folders matching the search criteria</returns>
         private List<FolderInfo> ParseSearchCriteria()
         {
             var matchingFolders = new List<FolderInfo>();
 
             // Trim the input and normalize whitespace
-            var input = SearchText.Trim();
+            var input = SearchText?.Trim() ?? string.Empty;
+
+            if (string.IsNullOrWhiteSpace(input))
+            {
+                Debug.WriteLine("Search text is empty");
+                return matchingFolders;
+            }
 
             // Split by '&' (AND operator)
             var andGroups = input.Split(new[] { '&' }, StringSplitOptions.RemoveEmptyEntries)
@@ -2698,109 +2686,44 @@ namespace ImageFolderManager.ViewModels
 
             foreach (var group in andGroups)
             {
-                // Split by space (OR operator) and trim each condition
-                var orConditions = group.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries)
-                                       .Select(c => c.Trim())
-                                       .Where(c => !string.IsNullOrWhiteSpace(c))
-                                       .ToList();
-
-                // Skip empty groups
-                if (orConditions.Count == 0) continue;
-
                 // Create OR predicates for this group
                 var orPredicates = new List<Func<FolderInfo, bool>>();
                 bool hasValidCondition = false;
 
-                foreach (var condition in orConditions)
+                // Extract tag search terms using TagHelper
+                var tagSearchTerms = TagHelper.ParseTagSearchTerms(group);
+
+                if (tagSearchTerms.Any())
                 {
-                    // Tag search condition (must start with #)
-                    if (condition.StartsWith("#"))
-                    {
-                        if (condition.Length > 1)
-                        {
-                            string tag = condition.Substring(1).Trim().ToLowerInvariant();
-                            if (!string.IsNullOrEmpty(tag))
-                            {
-                                orPredicates.Add(folder => folder.Tags.Any(t =>
-                                    t.ToLowerInvariant().Contains(tag)));
-                                hasValidCondition = true;
-                                Debug.WriteLine($"Added tag condition: {tag}");
-                            }
-                        }
-                    }
-                    // Rating search condition (must start with *)
-                    else if (condition.StartsWith("*"))
-                    {
-                        // Rating pattern must be exactly * followed by comparison operator
-                        string ratingPattern = condition.Substring(1).Trim();
+                    // Create and add tag search predicate
+                    var tagPredicate = TagHelper.CreateTagSearchPredicate(tagSearchTerms);
+                    orPredicates.Add(folder => tagPredicate(folder.Tags));
 
-                        // Check if pattern is valid (*[operator][value])
-                        if (ratingPattern.StartsWith(">=") || ratingPattern.StartsWith("<=") ||
-                            ratingPattern.StartsWith("=") || ratingPattern.StartsWith(">") ||
-                            ratingPattern.StartsWith("<"))
-                        {
-                            string comparisonOperator;
-                            string valueStr;
+                    hasValidCondition = true;
+                    Debug.WriteLine($"Added tag search conditions: {string.Join(", ", tagSearchTerms)}");
+                }
 
-                            if (ratingPattern.StartsWith(">=") || ratingPattern.StartsWith("<="))
-                            {
-                                comparisonOperator = ratingPattern.Substring(0, 2);
-                                valueStr = ratingPattern.Substring(2).Trim();
-                            }
-                            else
-                            {
-                                comparisonOperator = ratingPattern.Substring(0, 1);
-                                valueStr = ratingPattern.Substring(1).Trim();
-                            }
+                // Process rating search conditions
+                var ratingConditions = ExtractRatingConditions(group);
 
-                            if (int.TryParse(valueStr, out int value))
-                            {
-                                // Check if rating value is valid (0-5)
-                                if (value < 0 || value > 5)
-                                {
-                                    Debug.WriteLine($"Invalid rating value: {value} (must be 0-5)");
-                                    continue;
-                                }
+                foreach (var ratingCondition in ratingConditions)
+                {
+                    orPredicates.Add(ratingCondition);
+                    hasValidCondition = true;
+                }
 
-                                switch (comparisonOperator)
-                                {
-                                    case ">=":
-                                        orPredicates.Add(folder => folder.Rating >= value);
-                                        hasValidCondition = true;
-                                        Debug.WriteLine($"Added rating condition: >= {value}");
-                                        break;
-                                    case "<=":
-                                        orPredicates.Add(folder => folder.Rating <= value);
-                                        hasValidCondition = true;
-                                        Debug.WriteLine($"Added rating condition: <= {value}");
-                                        break;
-                                    case "=":
-                                        orPredicates.Add(folder => folder.Rating == value);
-                                        hasValidCondition = true;
-                                        Debug.WriteLine($"Added rating condition: = {value}");
-                                        break;
-                                    case ">":
-                                        orPredicates.Add(folder => folder.Rating > value);
-                                        hasValidCondition = true;
-                                        Debug.WriteLine($"Added rating condition: > {value}");
-                                        break;
-                                    case "<":
-                                        orPredicates.Add(folder => folder.Rating < value);
-                                        hasValidCondition = true;
-                                        Debug.WriteLine($"Added rating condition: < {value}");
-                                        break;
-                                }
-                            }
-                            else
-                            {
-                                Debug.WriteLine($"Invalid rating value format: {valueStr}");
-                            }
-                        }
-                        else
-                        {
-                            Debug.WriteLine($"Invalid rating pattern: {ratingPattern}");
-                        }
-                    }
+                // Process name/path search terms
+                var textSearchTerms = ExtractTextSearchTerms(group);
+
+                if (textSearchTerms.Any())
+                {
+                    orPredicates.Add(folder =>
+                        textSearchTerms.Any(term =>
+                            folder.Name.ToLowerInvariant().Contains(term) ||
+                            folder.FolderPath.ToLowerInvariant().Contains(term)));
+
+                    hasValidCondition = true;
+                    Debug.WriteLine($"Added text search conditions: {string.Join(", ", textSearchTerms)}");
                 }
 
                 // If this group has valid conditions, add it as an AND predicate
@@ -2828,7 +2751,90 @@ namespace ImageFolderManager.ViewModels
                 }
             }
 
+            Debug.WriteLine($"Search completed, found {matchingFolders.Count} matching folders");
             return matchingFolders;
+        }
+
+        /// <summary>
+        /// Extracts rating conditions from a search group
+        /// </summary>
+        private List<Func<FolderInfo, bool>> ExtractRatingConditions(string searchGroup)
+        {
+            var ratingPredicates = new List<Func<FolderInfo, bool>>();
+
+            var ratingTerms = searchGroup.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries)
+                .Where(term => term.StartsWith("*"))
+                .ToList();
+
+            foreach (var term in ratingTerms)
+            {
+                string ratingPattern = term.Substring(1).Trim();
+
+                // Check if pattern is valid (*[operator][value])
+                if (ratingPattern.StartsWith(">=") || ratingPattern.StartsWith("<=") ||
+                    ratingPattern.StartsWith("=") || ratingPattern.StartsWith(">") ||
+                    ratingPattern.StartsWith("<"))
+                {
+                    string comparisonOperator;
+                    string valueStr;
+
+                    if (ratingPattern.StartsWith(">=") || ratingPattern.StartsWith("<="))
+                    {
+                        comparisonOperator = ratingPattern.Substring(0, 2);
+                        valueStr = ratingPattern.Substring(2).Trim();
+                    }
+                    else
+                    {
+                        comparisonOperator = ratingPattern.Substring(0, 1);
+                        valueStr = ratingPattern.Substring(1).Trim();
+                    }
+
+                    if (int.TryParse(valueStr, out int value) && value >= 0 && value <= 5)
+                    {
+                        switch (comparisonOperator)
+                        {
+                            case ">=":
+                                ratingPredicates.Add(folder => folder.Rating >= value);
+                                Debug.WriteLine($"Added rating condition: >= {value}");
+                                break;
+                            case "<=":
+                                ratingPredicates.Add(folder => folder.Rating <= value);
+                                Debug.WriteLine($"Added rating condition: <= {value}");
+                                break;
+                            case "=":
+                                ratingPredicates.Add(folder => folder.Rating == value);
+                                Debug.WriteLine($"Added rating condition: = {value}");
+                                break;
+                            case ">":
+                                ratingPredicates.Add(folder => folder.Rating > value);
+                                Debug.WriteLine($"Added rating condition: > {value}");
+                                break;
+                            case "<":
+                                ratingPredicates.Add(folder => folder.Rating < value);
+                                Debug.WriteLine($"Added rating condition: < {value}");
+                                break;
+                        }
+                    }
+                    else
+                    {
+                        Debug.WriteLine($"Invalid rating value: {valueStr}");
+                    }
+                }
+            }
+
+            return ratingPredicates;
+        }
+
+        /// <summary>
+        /// Extracts text search terms from a search group
+        /// </summary>
+        private List<string> ExtractTextSearchTerms(string searchGroup)
+        {
+            // Get terms that don't start with # or *
+            return searchGroup.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries)
+                .Where(term => !term.StartsWith("#") && !term.StartsWith("*") && !string.IsNullOrWhiteSpace(term))
+                .Select(term => term.ToLowerInvariant())
+                .ToList();
         }
 
         // Add this method to MainViewModel.cs to recursively read all folder tags and ratings
@@ -2851,7 +2857,7 @@ namespace ImageFolderManager.ViewModels
             try
             {
                 // Reload all folders from the file system
-                _allLoadedFolders = await _folderService.LoadFoldersRecursivelyAsync(
+                _allLoadedFolders = await _folderManager.LoadFoldersRecursivelyAsync(
                     AppSettings.Instance.DefaultRootDirectory);
 
                 // Update tag cloud with fresh data
@@ -2900,7 +2906,7 @@ namespace ImageFolderManager.ViewModels
                         if (isDirectory)
                         {
                             // A new directory was created
-                            var newFolder = await _folderService.CreateFolderInfoWithoutImagesAsync(changedPath);
+                            var newFolder = await _folderManager.CreateFolderInfoWithoutImagesAsync(changedPath);
                             if (newFolder != null)
                             {
                                 newFolder.Parent = folder; // Set parent relationship
@@ -2940,7 +2946,7 @@ namespace ImageFolderManager.ViewModels
                             if (deletedFolder != null)
                             {
                                 // Stop watching this folder
-                                _fileSystemWatcher.UnwatchFolder(changedPath);
+                                _folderManager.UnwatchFolder(changedPath);
 
                                 // Remove from tree
                                 folder.Children.Remove(deletedFolder);
@@ -2984,8 +2990,8 @@ namespace ImageFolderManager.ViewModels
                                     renamedFolder.FolderPath = renamedArgs.FullPath;
 
                                     // Stop watching old path and start watching new path
-                                    _fileSystemWatcher.UnwatchFolder(oldPath);
-                                    _fileSystemWatcher.WatchFolder(renamedFolder);
+                                    _folderManager.UnwatchFolder(oldPath);
+                                    _folderManager.WatchFolder(renamedFolder);
 
                                     // Force refresh of the folder
                                     var index = folder.Children.IndexOf(renamedFolder);

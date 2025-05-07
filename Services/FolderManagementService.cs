@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -12,20 +13,29 @@ using ImageFolderManager.Models;
 namespace ImageFolderManager.Services
 {
     /// <summary>
-    /// Service for monitoring file system changes in folders with advanced event batching and throttling
+    /// Unified service for folder management and monitoring
     /// </summary>
-    public class FileSystemWatcherService : IDisposable
+    public class FolderManagementService : IDisposable
     {
+        #region Fields
+
+        // Services
+        private readonly FolderTagService _tagService = new FolderTagService();
+
         // Configuration parameters
         private const int MAX_CONCURRENT_WATCHERS = 100;
         private const int EVENT_PROCESSING_DELAY_MS = 300;
         private const int MAX_EVENTS_PER_BATCH = 20;
         private const int WATCHER_RESET_THRESHOLD = 5;
 
+        // Cache paths
+        private readonly string _thumbnailCachePath = Path.Combine(Path.GetTempPath(), "ImageFolderManager", "thumbnails");
+
+        // Callback for file system events
+        private Action<FolderInfo, FileSystemEventArgs, WatcherChangeTypes> _fileSystemEventCallback;
+
         // Track watched folders and their associated FileSystemWatcher instances
         private readonly Dictionary<string, WatcherInfo> _watchers = new Dictionary<string, WatcherInfo>(StringComparer.OrdinalIgnoreCase);
-        private readonly FolderService _folderService;
-        private readonly Action<FolderInfo, FileSystemEventArgs, WatcherChangeTypes> _callbackAction;
 
         // For handling event throttling and batching
         private readonly ConcurrentQueue<FileSystemEventBatch> _pendingEvents = new ConcurrentQueue<FileSystemEventBatch>();
@@ -38,6 +48,10 @@ namespace ImageFolderManager.Services
         private CancellationTokenSource _processingCancellation;
         private Task _processingTask;
         private bool _isDisposed;
+
+        #endregion
+
+        #region Nested Classes
 
         /// <summary>
         /// Represents information about a file system watcher, including error tracking
@@ -77,23 +91,231 @@ namespace ImageFolderManager.Services
             }
         }
 
+        #endregion
+
+        #region Constructor
+
         /// <summary>
-        /// Initializes a new instance of the FileSystemWatcherService
+        /// Initializes a new instance of the FolderManagementService
         /// </summary>
-        /// <param name="folderService">Service for folder operations</param>
-        /// <param name="callbackAction">Action to call when file system events occur</param>
-        public FileSystemWatcherService(FolderService folderService, Action<FolderInfo, FileSystemEventArgs, WatcherChangeTypes> callbackAction)
+        /// <param name="fileSystemEventCallback">Callback for file system events</param>
+        public FolderManagementService(Action<FolderInfo, FileSystemEventArgs, WatcherChangeTypes> fileSystemEventCallback = null)
         {
-            _folderService = folderService ?? throw new ArgumentNullException(nameof(folderService));
-            _callbackAction = callbackAction ?? throw new ArgumentNullException(nameof(callbackAction));
+            _fileSystemEventCallback = fileSystemEventCallback;
             _processingCancellation = new CancellationTokenSource();
 
-            // Start the background event processing task
-            _processingTask = Task.Run(ProcessEventsLoopAsync);
+            // Start the background event processing task if a callback is provided
+            if (_fileSystemEventCallback != null)
+            {
+                _processingTask = Task.Run(ProcessEventsLoopAsync);
 
-            // Setup application exit handler to ensure proper cleanup
-            Application.Current.Exit += (s, e) => Dispose();
+                // Setup application exit handler to ensure proper cleanup
+                Application.Current.Exit += (s, e) => Dispose();
+            }
         }
+
+        #endregion
+
+        #region Folder Loading and Creation Methods
+
+        /// <summary>
+        /// Loads a root folder and its immediate subfolders
+        /// </summary>
+        /// <param name="path">Path to the root folder</param>
+        /// <returns>A FolderInfo object representing the root folder</returns>
+        public async Task<FolderInfo> LoadRootFolderAsync(string path)
+        {
+            var root = await CreateFolderInfoWithoutImagesAsync(path);
+            await LoadSubfoldersAsync(root);
+
+            // Start watching the root folder
+            WatchFolder(root);
+
+            return root;
+        }
+
+        /// <summary>
+        /// Loads the immediate subfolders of a parent folder
+        /// </summary>
+        /// <param name="parent">Parent folder</param>
+        public async Task LoadSubfoldersAsync(FolderInfo parent)
+        {
+            try
+            {
+                var subDirs = Directory.GetDirectories(parent.FolderPath);
+                foreach (var dir in subDirs)
+                {
+                    var child = await CreateFolderInfoWithoutImagesAsync(dir);
+                    child.Parent = parent;
+                    parent.Children.Add(child);
+
+                    // Start watching each subfolder
+                    WatchFolder(child);
+                }
+            }
+            catch (UnauthorizedAccessException) { }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error loading folder '{parent.FolderPath}': {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Creates a FolderInfo object without loading images
+        /// </summary>
+        /// <param name="path">Folder path</param>
+        /// <param name="loadImages">Whether to load images in the background</param>
+        /// <returns>A FolderInfo object</returns>
+        public async Task<FolderInfo> CreateFolderInfoWithoutImagesAsync(string path, bool loadImages = false)
+        {
+            var folder = new FolderInfo
+            {
+                FolderPath = path,
+                Children = new ObservableCollection<FolderInfo>(),
+                Images = new ObservableCollection<ImageInfo>(),
+                Tags = new ObservableCollection<string>(await _tagService.GetTagsForFolderAsync(path)),
+                Rating = await _tagService.GetRatingForFolderAsync(path)
+            };
+
+            if (loadImages)
+            {
+                _ = LoadImagesAsync(folder);
+            }
+
+            return folder;
+        }
+
+        /// <summary>
+        /// Loads images for a folder in the background
+        /// </summary>
+        /// <param name="folder">The folder to load images for</param>
+        public async Task LoadImagesAsync(FolderInfo folder)
+        {
+            var supportedExtensions = new[] { ".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp" };
+
+            if (!Directory.Exists(folder.FolderPath)) return;
+
+            var images = new List<ImageInfo>();
+
+            try
+            {
+                foreach (var file in Directory.GetFiles(folder.FolderPath))
+                {
+                    string ext = Path.GetExtension(file).ToLowerInvariant();
+                    if (Array.Exists(supportedExtensions, e => e == ext))
+                    {
+                        var imageInfo = new ImageInfo { FilePath = file };
+                        await imageInfo.LoadThumbnailAsync();
+                        images.Add(imageInfo);
+                    }
+                }
+
+                // Update UI on the main thread
+                Application.Current.Dispatcher.Invoke(() =>
+                {
+                    folder.Images.Clear();
+                    foreach (var img in images)
+                    {
+                        folder.Images.Add(img);
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error loading images for {folder.FolderPath}: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Recursively loads all folders under a root path
+        /// </summary>
+        /// <param name="rootPath">Root path to start loading from</param>
+        /// <param name="watchFolders">Whether to watch loaded folders for changes</param>
+        /// <returns>A list of all loaded folders</returns>
+        public async Task<List<FolderInfo>> LoadFoldersRecursivelyAsync(string rootPath, bool watchFolders = false)
+        {
+            // Before starting a recursive scan, disable caching in the tag service
+            bool originalCachingSetting = _tagService.EnableCaching;
+            _tagService.EnableCaching = false;
+
+            var result = new List<FolderInfo>();
+
+            try
+            {
+                // Clear any existing cache
+                _tagService.ClearCache();
+
+                await TraverseDirectoriesAsync(rootPath, null, result, watchFolders);
+            }
+            finally
+            {
+                // Restore original caching setting
+                _tagService.EnableCaching = originalCachingSetting;
+            }
+
+            return result;
+        }
+
+        /// <summary>
+        /// Recursively traverses a directory structure
+        /// </summary>
+        private async Task TraverseDirectoriesAsync(string path, FolderInfo parent, List<FolderInfo> result, bool watchFolders)
+        {
+            if (!Directory.Exists(path))
+            {
+                return;
+            }
+
+            try
+            {
+                // Create the folder info
+                var folder = new FolderInfo
+                {
+                    FolderPath = path,
+                    Parent = parent,
+                    Children = new ObservableCollection<FolderInfo>(),
+                    Images = new ObservableCollection<ImageInfo>(),
+                    Tags = new ObservableCollection<string>(await _tagService.GetTagsForFolderAsync(path)),
+                    Rating = await _tagService.GetRatingForFolderAsync(path)
+                };
+
+                // Add to results
+                result.Add(folder);
+
+                // Watch folder if requested
+                if (watchFolders)
+                {
+                    WatchFolder(folder);
+                }
+
+                // Process subdirectories
+                string[] subDirectories;
+                try
+                {
+                    subDirectories = Directory.GetDirectories(path);
+                }
+                catch (UnauthorizedAccessException)
+                {
+                    // Skip directories we can't access
+                    return;
+                }
+
+                // Process each subdirectory
+                foreach (var subDir in subDirectories)
+                {
+                    await TraverseDirectoriesAsync(subDir, folder, result, watchFolders);
+                }
+            }
+            catch (Exception ex)
+            {
+                // Log error but continue processing other directories
+                Debug.WriteLine($"Error processing directory {path}: {ex.Message}");
+            }
+        }
+
+        #endregion
+
+        #region FileSystemWatcher Methods
 
         /// <summary>
         /// Starts watching a folder for file system changes
@@ -101,6 +323,9 @@ namespace ImageFolderManager.Services
         /// <param name="folder">The folder to watch</param>
         public void WatchFolder(FolderInfo folder)
         {
+            if (_fileSystemEventCallback == null)
+                return; // No callback, no need to watch
+
             if (folder == null || string.IsNullOrEmpty(folder.FolderPath) || !Directory.Exists(folder.FolderPath))
                 return;
 
@@ -245,10 +470,12 @@ namespace ImageFolderManager.Services
                 try
                 {
                     // Wait for delay to batch events
-                    await Task.Delay(_eventProcessingDelay, _processingCancellation.Token);
+                    await Task.Delay(_eventProcessingDelay, _processingCancellation.Token)
+                        .ConfigureAwait(false);
 
                     // Process batches of events
-                    await ProcessPendingEventsAsync();
+                    await ProcessPendingEventsAsync()
+                        .ConfigureAwait(false);
                 }
                 catch (OperationCanceledException)
                 {
@@ -260,7 +487,8 @@ namespace ImageFolderManager.Services
                     Debug.WriteLine($"Error in event processing loop: {ex.Message}");
 
                     // Wait before continuing to avoid tight loop in error cases
-                    await Task.Delay(1000, _processingCancellation.Token);
+                    await Task.Delay(1000, _processingCancellation.Token)
+                        .ConfigureAwait(false);
                 }
             }
         }
@@ -271,7 +499,7 @@ namespace ImageFolderManager.Services
         private async Task ProcessPendingEventsAsync()
         {
             // Use lock to ensure only one processing operation at a time
-            if (!await _processingLock.WaitAsync(0))
+            if (!await _processingLock.WaitAsync(0).ConfigureAwait(false))
                 return;
 
             try
@@ -312,7 +540,7 @@ namespace ImageFolderManager.Services
                         {
                             try
                             {
-                                _callbackAction?.Invoke(batch.FolderInfo, eventItem.Item1, eventItem.Item2);
+                                _fileSystemEventCallback?.Invoke(batch.FolderInfo, eventItem.Item1, eventItem.Item2);
                             }
                             catch (Exception ex)
                             {
@@ -421,6 +649,10 @@ namespace ImageFolderManager.Services
             }
         }
 
+        #endregion
+
+        #region IDisposable Implementation
+
         /// <summary>
         /// Disposes resources used by the service
         /// </summary>
@@ -462,5 +694,7 @@ namespace ImageFolderManager.Services
                 GC.SuppressFinalize(this);
             }
         }
+
+        #endregion
     }
 }

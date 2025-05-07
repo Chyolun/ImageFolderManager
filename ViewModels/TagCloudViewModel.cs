@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading;
@@ -11,6 +12,7 @@ using System.Threading.Tasks;
 using System.Windows.Media;
 using System.Windows.Threading;
 using ImageFolderManager.Models;
+using ImageFolderManager.Services;
 
 namespace ImageFolderManager.ViewModels
 {
@@ -83,6 +85,11 @@ namespace ImageFolderManager.ViewModels
         /// Updates the tag cloud based on folder data
         /// </summary>
         /// <param name="allFolders">Collection of folders to analyze for tags</param>
+        /// <summary>
+        /// Updates the tag cloud based on folder data
+        /// </summary>
+        /// <param name="allFolders">Collection of folders to analyze for tags</param>
+        /// <param name="cancellationToken">Cancellation token for the operation</param>
         public async Task UpdateTagCloudAsync(IEnumerable<FolderInfo> allFolders, CancellationToken cancellationToken = default)
         {
             if (allFolders == null)
@@ -98,164 +105,155 @@ namespace ImageFolderManager.ViewModels
                         // Check for cancellation
                         cancellationToken.ThrowIfCancellationRequested();
 
-                        // Count the folders to determine if we need a full update
-                        int folderCount = allFolders.Count();
-                        bool forceFullUpdate = _isFullUpdateNeeded ||
-                                             Math.Abs(folderCount - _lastFolderCount) / (double)Math.Max(1, _lastFolderCount) > TAG_COUNT_THRESHOLD;
-                        _lastFolderCount = folderCount;
+                        // Determine if we need a full update
+                        bool shouldPerformFullUpdate = ShouldPerformFullUpdate(allFolders);
 
-                        // Start tag counting
-                        Dictionary<string, int> tagCounts;
-
-                        if (forceFullUpdate)
-                        {
-                            // Perform a full recount of all tags
-                            tagCounts = CountTagsInFolders(allFolders);
-                            _cachedTagCounts = new Dictionary<string, int>(tagCounts, StringComparer.OrdinalIgnoreCase);
-                            _isFullUpdateNeeded = false;
-                        }
-                        else
-                        {
-                            // Use cached counts and only update if necessary
-                            tagCounts = new Dictionary<string, int>(_cachedTagCounts, StringComparer.OrdinalIgnoreCase);
-                        }
+                        // Get tag counts
+                        Dictionary<string, int> tagCounts = await GetTagCountsAsync(allFolders, shouldPerformFullUpdate);
 
                         // Check for cancellation again
                         cancellationToken.ThrowIfCancellationRequested();
 
-                        // Sort tags by count (most frequent first) and take top MAX_TAGS_TO_DISPLAY
-                        var sortedTags = tagCounts
-                            .OrderByDescending(pair => pair.Value)
-                            .Take(MAX_TAGS_TO_DISPLAY)
-                            .ToList();
-
-                        // Calculate min/max for font scaling
-                        int minCount = sortedTags.Any() ? sortedTags.Min(t => t.Value) : 0;
-                        int maxCount = sortedTags.Any() ? sortedTags.Max(t => t.Value) : 0;
-
-                        // Create a new dictionary for updated tags
-                        var updatedTags = new Dictionary<string, TagCloudItem>(StringComparer.OrdinalIgnoreCase);
-
-                        foreach (var tag in sortedTags)
-                        {
-                            double fontSize = CalculateFontSize(tag.Value, minCount, maxCount);
-
-                            // Check if tag already exists
-                            if (_currentTags.TryGetValue(tag.Key, out var existingItem))
-                            {
-                                // Update existing tag (keeping the same color)
-                                existingItem.Count = tag.Value;
-                                existingItem.FontSize = fontSize;
-                                updatedTags[tag.Key] = existingItem;
-                            }
-                            else
-                            {
-                                // Create new tag
-                                updatedTags[tag.Key] = new TagCloudItem
-                                {
-                                    Tag = tag.Key,
-                                    Count = tag.Value,
-                                    FontSize = fontSize,
-                                    Color = GetRandomColor()
-                                };
-                            }
-                        }
+                        // Create updated tag items
+                        var updatedTags = await CreateTagItemsAsync(tagCounts, cancellationToken);
 
                         // Check for cancellation
                         if (cancellationToken.IsCancellationRequested)
-                        {
                             return;
-                        }
 
-                        // NOW updatedTags is defined, so we can use it in the lambda
-                        // Use dispatcher to update the UI collection
-                        await _dispatcher.InvokeAsync(() =>
-                        {
-                            // Check if we're still allowed to update
-                            if (!cancellationToken.IsCancellationRequested)
-                            {
-                                UpdateTagItemsCollection(updatedTags);
-                            }
-                        }, DispatcherPriority.Background);
+                        // Update UI on dispatcher thread
+                        await UpdateUIAsync(updatedTags, cancellationToken);
                     }
                     catch (OperationCanceledException)
                     {
                         // Task was canceled, this is expected
-                        System.Diagnostics.Debug.WriteLine("Tag cloud calculation was canceled");
+                        Debug.WriteLine("Tag cloud calculation was canceled");
                     }
                     catch (Exception ex)
                     {
-                        System.Diagnostics.Debug.WriteLine($"Error in tag cloud calculation: {ex.Message}");
+                        Debug.WriteLine($"Error in tag cloud calculation: {ex.Message}");
                     }
                 }, cancellationToken);
             }
             catch (OperationCanceledException)
             {
-                System.Diagnostics.Debug.WriteLine("Tag cloud update task was canceled");
+                Debug.WriteLine("Tag cloud update task was canceled");
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"Error updating tag cloud: {ex.Message}");
+                Debug.WriteLine($"Error updating tag cloud: {ex.Message}");
             }
         }
 
+        /// <summary>
+        /// Determines if a full tag count update is needed
+        /// </summary>
+        private bool ShouldPerformFullUpdate(IEnumerable<FolderInfo> allFolders)
+        {
+            int folderCount = allFolders.Count();
+            bool forceFullUpdate = _isFullUpdateNeeded ||
+                                 Math.Abs(folderCount - _lastFolderCount) / (double)Math.Max(1, _lastFolderCount) > TAG_COUNT_THRESHOLD;
+
+            _lastFolderCount = folderCount;
+            return forceFullUpdate;
+        }
 
         /// <summary>
-        /// Counts all tags in the provided folders
+        /// Gets tag counts from folders, either by recounting or using cache
         /// </summary>
-        private Dictionary<string, int> CountTagsInFolders(IEnumerable<FolderInfo> folders)
+        private async Task<Dictionary<string, int>> GetTagCountsAsync(IEnumerable<FolderInfo> allFolders, bool forceFullUpdate)
         {
-            var tagCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-
-            // Use partitioning for large folder collections
-            int processorCount = Environment.ProcessorCount;
-            if (folders.Count() > 1000 && processorCount > 1)
+            if (forceFullUpdate)
             {
-                // Parallelize counting for very large collections
-                var partitionedResults = new ConcurrentDictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+                // Get all folder tags
+                var allFolderTags = allFolders.Select(f => f.Tags);
 
-                Parallel.ForEach(folders, new ParallelOptions { MaxDegreeOfParallelism = processorCount }, folder =>
-                {
-                    CountTagsInFolder(folder, partitionedResults);
-                });
+                // Use TagHelper to count tag frequency
+                var tagCounts = TagHelper.CountTagFrequency(allFolderTags);
 
-                // Convert to regular dictionary
-                tagCounts = new Dictionary<string, int>(partitionedResults, StringComparer.OrdinalIgnoreCase);
+                // Update cache
+                _cachedTagCounts = new Dictionary<string, int>(tagCounts, StringComparer.OrdinalIgnoreCase);
+                _isFullUpdateNeeded = false;
+
+                Debug.WriteLine($"Performed full tag count, found {tagCounts.Count} unique tags");
+                return tagCounts;
             }
             else
             {
-                // Serial counting for smaller collections
-                foreach (var folder in folders)
-                {
-                    CountTagsInFolder(folder, tagCounts);
-                }
+                // Use cached counts
+                Debug.WriteLine("Using cached tag counts");
+                return new Dictionary<string, int>(_cachedTagCounts, StringComparer.OrdinalIgnoreCase);
             }
-
-            return tagCounts;
         }
 
         /// <summary>
-        /// Counts tags in a single folder
+        /// Creates TagCloudItem objects from tag counts
         /// </summary>
-        private void CountTagsInFolder(FolderInfo folder, IDictionary<string, int> tagCounts)
+        private async Task<Dictionary<string, TagCloudItem>> CreateTagItemsAsync(
+            Dictionary<string, int> tagCounts,
+            CancellationToken cancellationToken)
         {
-            foreach (var tag in folder.Tags)
-            {
-                if (!string.IsNullOrWhiteSpace(tag))
-                {
-                    string normalizedTag = tag.Trim().ToLowerInvariant();
+            // Sort tags by count and take top MAX_TAGS_TO_DISPLAY
+            var sortedTags = tagCounts
+                .OrderByDescending(pair => pair.Value)
+                .Take(MAX_TAGS_TO_DISPLAY)
+                .ToList();
 
-                    // Use TryGetValue + dictionary update for better performance
-                    if (!tagCounts.TryGetValue(normalizedTag, out int count))
+            // Check for cancellation
+            cancellationToken.ThrowIfCancellationRequested();
+
+            // Calculate min/max for font scaling
+            int minCount = sortedTags.Any() ? sortedTags.Min(t => t.Value) : 0;
+            int maxCount = sortedTags.Any() ? sortedTags.Max(t => t.Value) : 0;
+
+            // Create updated tags dictionary
+            var updatedTags = new Dictionary<string, TagCloudItem>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var tag in sortedTags)
+            {
+                // Check for cancellation periodically for responsiveness
+                if (sortedTags.Count > 50 && updatedTags.Count % 50 == 0)
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                double fontSize = CalculateFontSize(tag.Value, minCount, maxCount);
+
+                // Check if tag already exists
+                if (_currentTags.TryGetValue(tag.Key, out var existingItem))
+                {
+                    // Update existing tag (keeping the same color)
+                    existingItem.Count = tag.Value;
+                    existingItem.FontSize = fontSize;
+                    updatedTags[tag.Key] = existingItem;
+                }
+                else
+                {
+                    // Create new tag
+                    updatedTags[tag.Key] = new TagCloudItem
                     {
-                        tagCounts[normalizedTag] = 1;
-                    }
-                    else
-                    {
-                        tagCounts[normalizedTag] = count + 1;
-                    }
+                        Tag = tag.Key,
+                        Count = tag.Value,
+                        FontSize = fontSize,
+                        Color = GetRandomColor()
+                    };
                 }
             }
+
+            return updatedTags;
+        }
+
+        /// <summary>
+        /// Updates the UI with the new tag items
+        /// </summary>
+        private async Task UpdateUIAsync(Dictionary<string, TagCloudItem> updatedTags, CancellationToken cancellationToken)
+        {
+            await _dispatcher.InvokeAsync(() =>
+            {
+                // Check if we're still allowed to update
+                if (!cancellationToken.IsCancellationRequested)
+                {
+                    UpdateTagItemsCollection(updatedTags);
+                }
+            }, DispatcherPriority.Background);
         }
 
         /// <summary>

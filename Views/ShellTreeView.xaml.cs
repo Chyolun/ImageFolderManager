@@ -1048,7 +1048,8 @@ namespace ImageFolderManager.Views
                                             if (!string.IsNullOrEmpty(childPath) && Directory.Exists(childPath))
                                             {
                                                 var childFolder = new FolderInfo(childPath);
-                                                ViewModel._fileSystemWatcher.WatchFolder(childFolder);
+                                                ViewModel.WatchFolder(childFolder);
+                               
                                             }
                                         }
                                     }

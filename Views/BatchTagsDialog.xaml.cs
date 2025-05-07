@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Windows;
+using ImageFolderManager.Services;
 using MahApps.Metro.Controls;
 
 namespace ImageFolderManager.Views
@@ -73,21 +74,13 @@ namespace ImageFolderManager.Views
 
         private void ParseTags(string input, HashSet<string> tagSet)
         {
-            if (string.IsNullOrWhiteSpace(input))
-                return;
+            // Use TagHelper for parsing
+            var parsedTags = TagHelper.ParseTags(input);
 
-            // Clear existing tags
             tagSet.Clear();
-
-            // Add tags from input, using # as a separator
-            var parts = input.Split(new[] { '#' }, StringSplitOptions.RemoveEmptyEntries);
-            foreach (var tag in parts)
+            foreach (var tag in parsedTags)
             {
-                var trimmed = tag.Trim();
-                if (!string.IsNullOrWhiteSpace(trimmed))
-                {
-                    tagSet.Add(trimmed);
-                }
+                tagSet.Add(tag);
             }
         }
     }

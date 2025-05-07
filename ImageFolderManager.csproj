@@ -112,6 +112,8 @@
     </ApplicationDefinition>
     <Compile Include="Services\AppSettings.cs" />
     <Compile Include="Services\FileOperations.cs" />
+    <Compile Include="Services\FolderManagementService.cs" />
+    <Compile Include="Services\TagHelper.cs" />
     <Compile Include="Views\BatchTagsDialog.xaml.cs">
       <DependentUpon>BatchTagsDialog.xaml</DependentUpon>
     </Compile>
@@ -147,8 +149,6 @@
     <Compile Include="Models\ImageCache.cs" />
     <Compile Include="Models\ImageInfo.cs" />
     <Compile Include="Models\TagCloudItem.cs" />
-    <Compile Include="Services\FileSystemWatcherService.cs" />
-    <Compile Include="Services\FolderService.cs" />
     <Compile Include="ViewModels\MainViewModel.cs" />
     <Compile Include="ViewModels\TagCloudViewModel.cs" />
     <Compile Include="Views\MainWindow.xaml.cs">
