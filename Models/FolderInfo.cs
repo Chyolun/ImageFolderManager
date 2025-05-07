@@ -111,7 +111,7 @@ namespace ImageFolderManager.Models
             Children = new ObservableCollection<FolderInfo>();
             Images = new ObservableCollection<ImageInfo>();
 
-            if (HasSubfolders(path))
+            if (PathService.DirectoryHasSubdirectories(FolderPath))
             {
                 Children.Add(null);
             }
@@ -132,7 +132,7 @@ namespace ImageFolderManager.Models
                     var subDirs = Directory.GetDirectories(FolderPath);
                     foreach (var dir in subDirs)
                     {
-                        var child = new FolderInfo(dir, this);
+                        var child = new FolderInfo(PathService.NormalizePath(dir), this);
                         Children.Add(child);
                     }
                 }
@@ -154,7 +154,7 @@ namespace ImageFolderManager.Models
                     var subDirs = Directory.GetDirectories(FolderPath);
                     foreach (var dir in subDirs)
                     {
-                        var child = new FolderInfo(dir, this);
+                        var child = new FolderInfo(PathService.NormalizePath(dir), this);
                         Children.Add(child);
                     }
                 }
@@ -164,12 +164,6 @@ namespace ImageFolderManager.Models
                     System.Diagnostics.Debug.WriteLine($"Error loading children for {FolderPath}: {ex.Message}");
                 }
             }
-        }
-
-        private bool HasSubfolders(string path)
-        {
-            // Use PathService's DirectoryHasSubdirectories method
-            return PathService.DirectoryHasSubdirectories(path);
         }
 
 

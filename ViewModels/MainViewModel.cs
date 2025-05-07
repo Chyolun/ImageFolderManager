@@ -1667,7 +1667,7 @@ namespace ImageFolderManager.ViewModels
 
                         // Check if trying to copy/move to itself or child
                         if (_clipboardFolder == targetFolder ||
-                            targetFolder.FolderPath.StartsWith(_clipboardFolder.FolderPath + Path.DirectorySeparatorChar))
+                            PathService.IsPathWithin(_clipboardFolder.FolderPath, targetFolder.FolderPath))
                         {
                             MessageBox.Show("Cannot paste a folder into itself or its subfolder.",
                                 "Invalid Operation", MessageBoxButton.OK, MessageBoxImage.Warning);
@@ -2365,7 +2365,7 @@ namespace ImageFolderManager.ViewModels
 
                     // Skip if trying to move to itself or child folder
                     if (sourceFolder == targetFolder ||
-                        targetFolder.FolderPath.StartsWith(sourceFolder.FolderPath + Path.DirectorySeparatorChar))
+                            PathService.IsPathWithin(sourceFolder.FolderPath, targetFolder.FolderPath))
                     {
                         MessageBox.Show("Cannot move a folder into itself or its subfolder.",
                             "Invalid Operation", MessageBoxButton.OK, MessageBoxImage.Warning);
