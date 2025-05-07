@@ -8,6 +8,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Media.Imaging;
+using ImageFolderManager.Services;
 
 namespace ImageFolderManager.Models
 {
@@ -58,16 +59,26 @@ namespace ImageFolderManager.Models
         {
             try
             {
-                Directory.CreateDirectory(_cacheFolder);
+                // Use PathService to check directory existence
+                if (!PathService.DirectoryExists(_cacheFolder))
+                {
+                    Directory.CreateDirectory(_cacheFolder);
+                }
                 Task.Run(CleanupOrphanedCacheFilesAsync);
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                Debug.WriteLine($"Error initializing cache folder: {ex.Message}");
+
                 _cacheFolder = Path.Combine(
                     Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
                     "ImageFolderManager", "Cache");
 
-                Directory.CreateDirectory(_cacheFolder);
+                // Use PathService to check directory existence
+                if (!PathService.DirectoryExists(_cacheFolder))
+                {
+                    Directory.CreateDirectory(_cacheFolder);
+                }
             }
         }
 
@@ -83,12 +94,16 @@ namespace ImageFolderManager.Models
             CancellationToken cancellationToken = default,
             IProgress<double> progressCallback = null)
         {
-            if (string.IsNullOrEmpty(path) || !File.Exists(path))
+            // Normalize path to ensure consistency in cache keys
+            string normalizedPath = PathService.NormalizePath(path);
+
+            // Check if path is valid
+            if (string.IsNullOrEmpty(normalizedPath) || !File.Exists(normalizedPath))
                 return null;
 
             // Register this loading operation for possible cancellation
             var operationCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            _loadingOperations[path] = operationCts;
+            _loadingOperations[normalizedPath] = operationCts;
 
             try
             {
@@ -96,7 +111,7 @@ namespace ImageFolderManager.Models
                 progressCallback?.Report(0.1);
 
                 // Check memory cache first (fastest)
-                if (TryGetFromMemoryCache(path, out var cachedImage))
+                if (TryGetFromMemoryCache(normalizedPath, out var cachedImage))
                 {
                     Interlocked.Increment(ref _cacheHits);
                     progressCallback?.Report(1.0); // Complete
@@ -110,14 +125,14 @@ namespace ImageFolderManager.Models
                 progressCallback?.Report(0.2);
 
                 // Calculate content-based cache key
-                string contentHash = await CalculateFileContentHashAsync(path, operationCts.Token);
+                string contentHash = await CalculateFileContentHashAsync(normalizedPath, operationCts.Token);
 
                 // Check if operation was cancelled
                 operationCts.Token.ThrowIfCancellationRequested();
                 progressCallback?.Report(0.3);
 
                 // Get thumbnail cache path based on content hash
-                string thumbPath = GetThumbnailCachePath(path, contentHash);
+                string thumbPath = GetThumbnailCachePath(normalizedPath, contentHash);
 
                 // Check disk cache next
                 if (File.Exists(thumbPath))
@@ -131,7 +146,7 @@ namespace ImageFolderManager.Models
                             var bitmap = await LoadImageFromFileAsync(thumbPath, operationCts.Token);
                             if (bitmap != null)
                             {
-                                StoreInMemoryCache(path, bitmap);
+                                StoreInMemoryCache(normalizedPath, bitmap);
                                 progressCallback?.Report(1.0); // Complete
                                 return bitmap;
                             }
@@ -171,13 +186,13 @@ namespace ImageFolderManager.Models
 
                             var bitmap = new BitmapImage();
                             bitmap.BeginInit();
-                            bitmap.UriSource = new Uri(path);
+                            bitmap.UriSource = new Uri(normalizedPath);
                             bitmap.DecodePixelWidth = decodeWidth;
                             bitmap.CacheOption = BitmapCacheOption.OnLoad;
                             bitmap.EndInit();
                             bitmap.Freeze(); // Important for cross-thread usage
 
-                            StoreInMemoryCache(path, bitmap);
+                            StoreInMemoryCache(normalizedPath, bitmap);
                             progressCallback?.Report(0.9);
 
                             // Save to disk cache asynchronously without waiting for completion
@@ -192,7 +207,7 @@ namespace ImageFolderManager.Models
                         }
                         catch (Exception ex)
                         {
-                            Debug.WriteLine($"Error generating thumbnail for {path}: {ex.Message}");
+                            Debug.WriteLine($"Error generating thumbnail for {normalizedPath}: {ex.Message}");
                             return null;
                         }
                     }, operationCts.Token);
@@ -210,7 +225,7 @@ namespace ImageFolderManager.Models
             finally
             {
                 // Clean up the cancellation token source
-                _loadingOperations.TryRemove(path, out _);
+                _loadingOperations.TryRemove(normalizedPath, out _);
                 operationCts.Dispose();
             }
         }
@@ -220,7 +235,8 @@ namespace ImageFolderManager.Models
         /// </summary>
         public static void CancelLoading(string path)
         {
-            if (_loadingOperations.TryGetValue(path, out var cts))
+            string normalizedPath = PathService.NormalizePath(path);
+            if (_loadingOperations.TryGetValue(normalizedPath, out var cts))
             {
                 try
                 {
@@ -259,6 +275,12 @@ namespace ImageFolderManager.Models
         {
             try
             {
+                // Use the PathService method if available
+                if (PathService.CreateFileContentHash(filePath) is string serviceHash && !string.IsNullOrEmpty(serviceHash))
+                {
+                    return serviceHash;
+                }
+
                 // Get key file properties that should be stable even if the file is moved
                 var fileInfo = new FileInfo(filePath);
                 if (!fileInfo.Exists)
@@ -316,6 +338,7 @@ namespace ImageFolderManager.Models
         private static bool TryGetFromMemoryCache(string path, out BitmapImage bitmap)
         {
             bitmap = null;
+            path = PathService.NormalizePath(path);
 
             if (_thumbnailCache.TryGetValue(path, out var cacheItem))
             {
@@ -338,6 +361,7 @@ namespace ImageFolderManager.Models
         /// </summary>
         private static void StoreInMemoryCache(string path, BitmapImage bitmap)
         {
+            path = PathService.NormalizePath(path);
             _thumbnailCache[path] = new CacheItem(bitmap);
 
             // Trim cache if it grows too large
@@ -410,6 +434,9 @@ namespace ImageFolderManager.Models
             if (string.IsNullOrEmpty(originalPath))
                 return null;
 
+            // Normalize path
+            originalPath = PathService.NormalizePath(originalPath);
+
             // Include thumbnail size in the filename to ensure different sizes get different cache files
             int width = Services.AppSettings.Instance.PreviewWidth;
             int height = Services.AppSettings.Instance.PreviewHeight;
@@ -425,6 +452,8 @@ namespace ImageFolderManager.Models
         /// </summary>
         private static async Task<BitmapImage> LoadImageFromFileAsync(string filePath, CancellationToken cancellationToken = default)
         {
+            filePath = PathService.NormalizePath(filePath);
+
             if (string.IsNullOrEmpty(filePath) || !File.Exists(filePath))
                 return null;
 
@@ -485,7 +514,11 @@ namespace ImageFolderManager.Models
                 try
                 {
                     // Ensure directory exists
-                    Directory.CreateDirectory(Path.GetDirectoryName(filePath));
+                    string dirPath = Path.GetDirectoryName(filePath);
+                    if (!PathService.DirectoryExists(dirPath))
+                    {
+                        Directory.CreateDirectory(dirPath);
+                    }
 
                     // Store the content hash in file metadata for future verification
                     // This is stored in Windows alternate data stream for NTFS
@@ -534,7 +567,7 @@ namespace ImageFolderManager.Models
 
             try
             {
-                if (Directory.Exists(_cacheFolder))
+                if (PathService.DirectoryExists(_cacheFolder))
                 {
                     foreach (var file in Directory.GetFiles(_cacheFolder))
                     {
@@ -575,7 +608,7 @@ namespace ImageFolderManager.Models
             try
             {
                 // Only run if cache folder exists
-                if (!Directory.Exists(_cacheFolder))
+                if (!PathService.DirectoryExists(_cacheFolder))
                     return;
 
                 // Get cache files older than 7 days

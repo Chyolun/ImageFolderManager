@@ -292,7 +292,7 @@ namespace ImageFolderManager.Services
                 string[] subDirectories;
                 try
                 {
-                    subDirectories = Directory.GetDirectories(path);
+                    subDirectories = Directory.GetDirectories(path);            
                 }
                 catch (UnauthorizedAccessException)
                 {

@@ -6,6 +6,7 @@ using System.IO;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using System.Windows.Media.Imaging;
+using ImageFolderManager.Services;
 
 namespace ImageFolderManager.Models
 {
@@ -73,24 +74,6 @@ namespace ImageFolderManager.Models
             }
         }
 
-        public string Name => Path.GetFileName(FolderPath);
-        public FolderInfo() { }
-
-        public FolderInfo(string path, FolderInfo parent = null)
-        {
-            FolderPath = path;
-            Parent = parent;
-            Tags = new ObservableCollection<string>();
-            Children = new ObservableCollection<FolderInfo>();
-            Images = new ObservableCollection<ImageInfo>();
-
-            // 添加一个 dummy 子项用于懒加载
-            if (HasSubfolders(path))
-            {
-                Children.Add(null);
-            }
-        }
-
         private bool _isExpanded;
         public bool IsExpanded
         {
@@ -98,7 +81,39 @@ namespace ImageFolderManager.Models
             set
             {
                 _isExpanded = value;
-                OnPropertyChanged(); // 通知 UI 更新绑定
+                OnPropertyChanged(); // update binding
+            }
+        }
+
+        private bool _isSelected;
+        public bool IsSelected
+        {
+            get => _isSelected;
+            set
+            {
+                if (_isSelected != value)
+                {
+                    _isSelected = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        public string Name => Path.GetFileName(FolderPath);
+        public FolderInfo() { }
+
+        public FolderInfo(string path, FolderInfo parent = null)
+        {
+            // Normalize path when saving to ensure consistency
+            FolderPath = PathService.NormalizePath(path);
+            Parent = parent;
+            Tags = new ObservableCollection<string>();
+            Children = new ObservableCollection<FolderInfo>();
+            Images = new ObservableCollection<ImageInfo>();
+
+            if (HasSubfolders(path))
+            {
+                Children.Add(null);
             }
         }
 
@@ -110,6 +125,10 @@ namespace ImageFolderManager.Models
 
                 try
                 {
+                    // Use PathService to verify directory exists
+                    if (!PathService.DirectoryExists(FolderPath))
+                        return;
+
                     var subDirs = Directory.GetDirectories(FolderPath);
                     foreach (var dir in subDirs)
                     {
@@ -128,6 +147,10 @@ namespace ImageFolderManager.Models
                 // If Children is empty, try loading anyway
                 try
                 {
+                    // Use PathService to verify directory exists
+                    if (!PathService.DirectoryExists(FolderPath))
+                        return;
+
                     var subDirs = Directory.GetDirectories(FolderPath);
                     foreach (var dir in subDirs)
                     {
@@ -143,104 +166,17 @@ namespace ImageFolderManager.Models
             }
         }
 
-        public async Task<List<ImageInfo>> LoadImagesAsync()
-        {
-            var loadedImages = new List<ImageInfo>();
-            if (!Directory.Exists(FolderPath)) return loadedImages;
-
-            string[] extensions = new[] { ".jpg", ".jpeg", ".png", ".bmp", ".gif", ".wbep" };
-            try
-            {
-                var files = Directory.GetFiles(FolderPath);
-                foreach (var file in files)
-                {
-                    string ext = Path.GetExtension(file).ToLowerInvariant();
-                    if (Array.Exists(extensions, e => e == ext))
-                    {
-                        var image = new ImageInfo
-                        {
-                            FilePath = file
-                        };
-                        await image.LoadThumbnailAsync();  // 异步加载缩略图
-                        loadedImages.Add(image);
-                    }
-                }
-            }
-            catch
-            {
-                // 忽略错误
-            }
-            return loadedImages;
-        }
-
-
-        private BitmapImage LoadBitmapImage(string path)
-        {
-            try
-            {
-                var bmp = new BitmapImage();
-                bmp.BeginInit();
-                bmp.UriSource = new Uri(path, UriKind.Absolute);
-                bmp.CacheOption = BitmapCacheOption.OnLoad;
-                bmp.EndInit();
-                bmp.Freeze();
-                return bmp;
-            }
-            catch
-            {
-                return null;
-            }
-        }
-
-
-        private BitmapImage LoadThumbnail(string path)
-        {
-            try
-            {
-                var bitmap = new BitmapImage();
-                bitmap.BeginInit();
-                bitmap.UriSource = new Uri(path);
-                bitmap.DecodePixelWidth = 150;
-                bitmap.CacheOption = BitmapCacheOption.OnLoad;
-                bitmap.EndInit();
-                bitmap.Freeze();
-                return bitmap;
-            }
-            catch
-            {
-                return null;
-            }
-        }
-
         private bool HasSubfolders(string path)
         {
-            try
-            {
-                return Directory.GetDirectories(path).Length > 0;
-            }
-            catch
-            {
-                return false;
-            }
+            // Use PathService's DirectoryHasSubdirectories method
+            return PathService.DirectoryHasSubdirectories(path);
         }
-        private bool _isSelected;
-        public bool IsSelected
-        {
-            get => _isSelected;
-            set
-            {
-                if (_isSelected != value)
-                {
-                    _isSelected = value;
-                    OnPropertyChanged();
-                }
-            }
-        }
+
 
         public event PropertyChangedEventHandler PropertyChanged;
         protected void OnPropertyChanged([CallerMemberName] string propName = null)
-         {
-             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propName));
-         }
+        {
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propName));
+        }
     }
 }

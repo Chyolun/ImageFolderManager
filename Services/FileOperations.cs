@@ -16,12 +16,13 @@ namespace ImageFolderManager.Services
     /// </summary>
     public class FileOperations
     {
-  
         private readonly FolderManagementService _folderManager;
+        private readonly FolderTagService _tagService;
 
         public FileOperations(FolderManagementService folderManager)
         {
             _folderManager = folderManager ?? throw new ArgumentNullException(nameof(folderManager));
+            _tagService = new FolderTagService();
         }
 
         /// <summary>
@@ -39,11 +40,17 @@ namespace ImageFolderManager.Services
             if (folderName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
                 throw new ArgumentException("The folder name contains invalid characters.", nameof(folderName));
 
-            string newPath = Path.Combine(parentFolder.FolderPath, folderName);
+            // Normalize parent path
+            string parentPath = PathService.NormalizePath(parentFolder.FolderPath);
 
-            // Check if destination already exists
-            if (Directory.Exists(newPath))
-                throw new IOException($"A folder named '{folderName}' already exists in this location.");
+            // Verify parent directory exists
+            if (!PathService.DirectoryExists(parentPath))
+                throw new DirectoryNotFoundException($"Parent directory does not exist: {parentPath}");
+
+            // Get a unique path for the new folder to avoid name collisions
+            string newPath = PathService.GetUniqueDirectoryPath(parentPath, folderName);
+            if (string.IsNullOrEmpty(newPath))
+                throw new IOException($"Failed to generate a unique path for the new folder: {folderName}");
 
             try
             {
@@ -61,6 +68,9 @@ namespace ImageFolderManager.Services
 
                 // Watch the new folder
                 _folderManager.WatchFolder(newFolder);
+
+                // Invalidate path cache for the new folder
+                PathService.InvalidatePathCache(parentPath, false);
 
                 return newFolder;
             }
@@ -108,10 +118,12 @@ namespace ImageFolderManager.Services
                     // Check for cancellation
                     token.ThrowIfCancellationRequested();
 
+                    // Normalize folder path
+                    string folderPath = PathService.NormalizePath(folder.FolderPath);
+
                     // Skip root directory
-                    string rootDir = AppSettings.Instance.DefaultRootDirectory;
-                    if (!string.IsNullOrEmpty(rootDir) &&
-                        folder.FolderPath.Equals(rootDir, StringComparison.OrdinalIgnoreCase))
+                    string rootDir = PathService.NormalizePath(AppSettings.Instance.DefaultRootDirectory);
+                    if (!string.IsNullOrEmpty(rootDir) && PathService.PathsEqual(folderPath, rootDir))
                     {
                         processed++;
                         progressDialog?.UpdateProgress((double)processed / total, $"Skipping root directory");
@@ -128,20 +140,27 @@ namespace ImageFolderManager.Services
                         }
 
                         // Stop watching this folder before deletion
-                        _folderManager.UnwatchFolder(folder.FolderPath);
+                        _folderManager.UnwatchFolder(folderPath);
 
-                        // Delete to recycle bin
-                        FileSystem.DeleteDirectory(
-                            folder.FolderPath,
-                            UIOption.OnlyErrorDialogs,
-                            RecycleOption.SendToRecycleBin);
+                        // Make sure the folder exists before deletion
+                        if (PathService.DirectoryExists(folderPath))
+                        {
+                            // Delete to recycle bin
+                            FileSystem.DeleteDirectory(
+                                folderPath,
+                                UIOption.OnlyErrorDialogs,
+                                RecycleOption.SendToRecycleBin);
+
+                            // Invalidate path cache
+                            PathService.InvalidatePathCache(folderPath, true);
+                        }
 
                         // Brief delay to prevent UI freezing
                         await Task.Delay(10, token);
                     }
                     catch (Exception ex)
                     {
-                        Debug.WriteLine($"Error deleting folder {folder.FolderPath}: {ex.Message}");
+                        Debug.WriteLine($"Error deleting folder {folderPath}: {ex.Message}");
                         // Continue with other folders
                     }
 
@@ -184,7 +203,7 @@ namespace ImageFolderManager.Services
             if (string.IsNullOrWhiteSpace(newName))
                 throw new ArgumentException("New folder name cannot be empty.", nameof(newName));
 
-            string oldPath = folder.FolderPath;
+            string oldPath = PathService.NormalizePath(folder.FolderPath);
             string oldName = Path.GetFileName(oldPath);
 
             // Don't do anything if the name is the same
@@ -201,7 +220,7 @@ namespace ImageFolderManager.Services
             string newPath = Path.Combine(parentPath, newName);
 
             // Check if destination already exists
-            if (Directory.Exists(newPath))
+            if (PathService.DirectoryExists(newPath))
                 throw new IOException($"A folder named '{newName}' already exists in this location.");
 
             try
@@ -217,6 +236,13 @@ namespace ImageFolderManager.Services
 
                 // Start watching the renamed folder
                 _folderManager.WatchFolder(folder);
+
+                // Invalidate path cache
+                PathService.InvalidatePathCache(oldPath, true);
+                PathService.InvalidatePathCache(parentPath, false);
+
+                // Move folder tags to the new location
+                await _tagService.MoveFolderTagsAsync(oldPath, newPath);
 
                 return newPath;
             }
@@ -240,7 +266,12 @@ namespace ImageFolderManager.Services
 
             try
             {
-                string targetPath = targetFolder.FolderPath;
+                string targetPath = PathService.NormalizePath(targetFolder.FolderPath);
+
+                // Verify target exists
+                if (!PathService.DirectoryExists(targetPath))
+                    throw new DirectoryNotFoundException($"Target directory not found: {targetPath}");
+
                 int total = sourceFolders.Count;
                 int processed = 0;
                 bool isOwningProgressDialog = false;
@@ -268,10 +299,12 @@ namespace ImageFolderManager.Services
                     // Check for cancellation
                     token.ThrowIfCancellationRequested();
 
+                    // Get normalized source path
+                    string sourcePath = PathService.NormalizePath(sourceFolder.FolderPath);
+
                     // Skip if trying to move to itself or child folder
-                    string sourcePath = sourceFolder.FolderPath;
-                    if (sourcePath == targetPath ||
-                        targetPath.StartsWith(sourcePath + Path.DirectorySeparatorChar))
+                    if (PathService.PathsEqual(sourcePath, targetPath) ||
+                        PathService.IsPathWithin(sourcePath, targetPath))
                     {
                         processed++;
                         continue;
@@ -288,22 +321,13 @@ namespace ImageFolderManager.Services
 
                         // Build destination path
                         string folderName = Path.GetFileName(sourcePath);
-                        string destinationPath = Path.Combine(targetPath, folderName);
+                        string destinationPath = PathService.GetUniqueDirectoryPath(targetPath, folderName);
 
-                        // Handle name collision
-                        if (Directory.Exists(destinationPath))
+                        if (string.IsNullOrEmpty(destinationPath))
                         {
-                            // Append number to avoid name collision
-                            int counter = 1;
-                            string newName = folderName;
-
-                            while (Directory.Exists(Path.Combine(targetPath, newName)))
-                            {
-                                newName = $"{folderName} ({counter})";
-                                counter++;
-                            }
-
-                            destinationPath = Path.Combine(targetPath, newName);
+                            Debug.WriteLine($"Failed to generate a unique destination path for {sourcePath}");
+                            processed++;
+                            continue;
                         }
 
                         // Temporarily disable FileSystemWatcher
@@ -312,6 +336,13 @@ namespace ImageFolderManager.Services
 
                         // Move directory
                         Directory.Move(sourcePath, destinationPath);
+
+                        // Move folder tags to the new location
+                        await _tagService.MoveFolderTagsAsync(sourcePath, destinationPath);
+
+                        // Invalidate path caches
+                        PathService.InvalidatePathCache(sourcePath, true);
+                        PathService.InvalidatePathCache(targetPath, false);
 
                         // Create FolderInfo for the new location
                         var movedFolder = new FolderInfo(destinationPath, targetFolder);
@@ -376,7 +407,12 @@ namespace ImageFolderManager.Services
 
             try
             {
-                string targetPath = targetFolder.FolderPath;
+                string targetPath = PathService.NormalizePath(targetFolder.FolderPath);
+
+                // Verify target exists
+                if (!PathService.DirectoryExists(targetPath))
+                    throw new DirectoryNotFoundException($"Target directory not found: {targetPath}");
+
                 int total = sourceFolders.Count;
                 int processed = 0;
                 bool isOwningProgressDialog = false;
@@ -404,9 +440,11 @@ namespace ImageFolderManager.Services
                     // Check for cancellation
                     token.ThrowIfCancellationRequested();
 
+                    // Get normalized source path
+                    string sourcePath = PathService.NormalizePath(sourceFolder.FolderPath);
+
                     // Skip if trying to copy to itself
-                    string sourcePath = sourceFolder.FolderPath;
-                    if (sourcePath == targetPath)
+                    if (PathService.PathsEqual(sourcePath, targetPath))
                     {
                         processed++;
                         continue;
@@ -421,24 +459,15 @@ namespace ImageFolderManager.Services
                             progressDialog.UpdateProgress(progress, $"Copying {processed + 1} of {total}: {sourceFolder.Name}");
                         }
 
-                        // Build destination path
+                        // Generate a unique destination path
                         string folderName = Path.GetFileName(sourcePath);
-                        string destinationPath = Path.Combine(targetPath, folderName);
+                        string destinationPath = PathService.GetUniqueDirectoryPath(targetPath, folderName);
 
-                        // Handle name collision
-                        if (Directory.Exists(destinationPath))
+                        if (string.IsNullOrEmpty(destinationPath))
                         {
-                            // Append number to avoid name collision
-                            int counter = 1;
-                            string newName = folderName;
-
-                            while (Directory.Exists(Path.Combine(targetPath, newName)))
-                            {
-                                newName = $"{folderName} ({counter})";
-                                counter++;
-                            }
-
-                            destinationPath = Path.Combine(targetPath, newName);
+                            Debug.WriteLine($"Failed to generate a unique destination path for {sourcePath}");
+                            processed++;
+                            continue;
                         }
 
                         // Create the destination directory
@@ -447,7 +476,16 @@ namespace ImageFolderManager.Services
                         // Copy all files and subdirectories with progress reporting
                         double copyStartProgress = (double)processed / total;
                         double copyEndProgress = (double)(processed + 1) / total;
-                        CopyDirectory(sourcePath, destinationPath, progressDialog, copyStartProgress, copyEndProgress, token);
+                        await CopyDirectoryAsync(
+                            sourcePath,
+                            destinationPath,
+                            progressDialog,
+                            copyStartProgress,
+                            copyEndProgress,
+                            token);
+
+                        // Copy folder tags to the new location
+                        await _tagService.CopyFolderTagsAsync(sourcePath, destinationPath);
 
                         // Create FolderInfo for the new copy
                         var newFolder = new FolderInfo(destinationPath, targetFolder);
@@ -495,7 +533,7 @@ namespace ImageFolderManager.Services
         /// <summary>
         /// Recursively copies a directory and its contents
         /// </summary>
-        private void CopyDirectory(
+        private async Task CopyDirectoryAsync(
             string sourceDir,
             string destinationDir,
             ProgressDialog progressDialog = null,
@@ -503,11 +541,16 @@ namespace ImageFolderManager.Services
             double progressEnd = 1,
             CancellationToken cancellationToken = default)
         {
-            // Get all subdirectories
-            var directory = new DirectoryInfo(sourceDir);
+            // Normalize paths
+            sourceDir = PathService.NormalizePath(sourceDir);
+            destinationDir = PathService.NormalizePath(destinationDir);
+
+            // Check if source directory exists
+            if (!PathService.DirectoryExists(sourceDir))
+                return;
 
             // Create destination directory if it doesn't exist
-            if (!Directory.Exists(destinationDir))
+            if (!PathService.DirectoryExists(destinationDir))
             {
                 Directory.CreateDirectory(destinationDir);
             }
@@ -515,58 +558,73 @@ namespace ImageFolderManager.Services
             // Check if cancelled
             cancellationToken.ThrowIfCancellationRequested();
 
-            // Calculate total items for progress reporting
-            int totalItems = 0;
-            int processedItems = 0;
-
-            if (progressDialog != null)
+            try
             {
-                // Count files and subdirectories
-                totalItems = directory.GetFiles().Length + directory.GetDirectories().Length;
-                if (totalItems == 0) totalItems = 1; // Prevent division by zero
-            }
+                // Get directory info
+                var directory = new DirectoryInfo(sourceDir);
 
-            // Copy all files
-            foreach (FileInfo file in directory.GetFiles())
-            {
-                // Check if cancelled
-                cancellationToken.ThrowIfCancellationRequested();
+                // Calculate total items for progress reporting
+                int totalItems = 0;
+                int processedItems = 0;
 
-                string targetFilePath = Path.Combine(destinationDir, file.Name);
-                file.CopyTo(targetFilePath, true);
-
-                // Update progress
                 if (progressDialog != null)
                 {
-                    processedItems++;
-                    double progress = progressStart + (progressEnd - progressStart) * (processedItems / (double)totalItems);
-                    progressDialog.UpdateProgress(progress, $"Copying: {file.Name}");
+                    // Count files and subdirectories
+                    totalItems = directory.GetFiles().Length + directory.GetDirectories().Length;
+                    if (totalItems == 0) totalItems = 1; // Prevent division by zero
+                }
+
+                // Copy all files
+                foreach (FileInfo file in directory.GetFiles())
+                {
+                    // Check if cancelled
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    string targetFilePath = Path.Combine(destinationDir, file.Name);
+                    file.CopyTo(targetFilePath, true);
+
+                    // Update progress
+                    if (progressDialog != null)
+                    {
+                        processedItems++;
+                        double progress = progressStart + (progressEnd - progressStart) * (processedItems / (double)totalItems);
+                        progressDialog.UpdateProgress(progress, $"Copying: {file.Name}");
+                    }
+                }
+
+                // Process subdirectories recursively
+                foreach (DirectoryInfo subDir in directory.GetDirectories())
+                {
+                    // Check if cancelled
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    string newDestinationDir = Path.Combine(destinationDir, subDir.Name);
+
+                    // Update progress
+                    if (progressDialog != null)
+                    {
+                        processedItems++;
+                        double progress = progressStart + (progressEnd - progressStart) * (processedItems / (double)totalItems);
+                        progressDialog.UpdateProgress(progress, $"Copying folder: {subDir.Name}");
+                    }
+
+                    await CopyDirectoryAsync(
+                        subDir.FullName,
+                        newDestinationDir,
+                        progressDialog,
+                        progressStart + (progressEnd - progressStart) * (processedItems / (double)totalItems),
+                        progressStart + (progressEnd - progressStart) * ((processedItems + 1) / (double)totalItems),
+                        cancellationToken);
                 }
             }
-
-            // Process subdirectories recursively
-            foreach (DirectoryInfo subDir in directory.GetDirectories())
+            catch (OperationCanceledException)
             {
-                // Check if cancelled
-                cancellationToken.ThrowIfCancellationRequested();
-
-                string newDestinationDir = Path.Combine(destinationDir, subDir.Name);
-
-                // Update progress
-                if (progressDialog != null)
-                {
-                    processedItems++;
-                    double progress = progressStart + (progressEnd - progressStart) * (processedItems / (double)totalItems);
-                    progressDialog.UpdateProgress(progress, $"Copying folder: {subDir.Name}");
-                }
-
-                CopyDirectory(
-                    subDir.FullName,
-                    newDestinationDir,
-                    progressDialog,
-                    progressStart + (progressEnd - progressStart) * (processedItems / (double)totalItems),
-                    progressStart + (progressEnd - progressStart) * ((processedItems + 1) / (double)totalItems),
-                    cancellationToken);
+                throw;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error copying directory {sourceDir} to {destinationDir}: {ex.Message}");
+                throw;
             }
         }
     }
