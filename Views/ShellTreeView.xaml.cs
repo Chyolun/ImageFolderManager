@@ -1482,7 +1482,7 @@ namespace ImageFolderManager.Views
 
                 // Don't allow dragging the root directory
                 if (!string.IsNullOrEmpty(_rootDirectory) &&
-                    path.Equals(_rootDirectory, StringComparison.OrdinalIgnoreCase))
+                   PathService.PathsEqual(path, _rootDirectory))
                 {
                     return;
                 }
@@ -1506,7 +1506,7 @@ namespace ImageFolderManager.Views
                         {
                             // Don't allow dragging the root directory
                             if (!string.IsNullOrEmpty(_rootDirectory) &&
-                                path.Equals(_rootDirectory, StringComparison.OrdinalIgnoreCase))
+                                PathService.PathsEqual(path, _rootDirectory))
                             {
                                 continue;
                             }
@@ -1951,7 +1951,7 @@ namespace ImageFolderManager.Views
 
                 // Don't allow renaming root directory
                 if (!string.IsNullOrEmpty(_rootDirectory) &&
-                    path.Equals(_rootDirectory, StringComparison.OrdinalIgnoreCase))
+                    PathService.PathsEqual(path, _rootDirectory))
                 {
                     Debug.WriteLine("Cannot rename root directory");
                     MessageBox.Show("Cannot rename the root directory.",
@@ -2013,7 +2013,7 @@ namespace ImageFolderManager.Views
                 if (!PathService.DirectoryExists(path)) return;
 
                 if (!string.IsNullOrEmpty(_rootDirectory) &&
-                    path.Equals(_rootDirectory, StringComparison.OrdinalIgnoreCase))
+                    PathService.PathsEqual(path, _rootDirectory))
                 {
                     Debug.WriteLine("Cannot delete root directory");
                     MessageBox.Show("Cannot delete the root directory.",

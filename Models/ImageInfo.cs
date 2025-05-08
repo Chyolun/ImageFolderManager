@@ -1,4 +1,5 @@
-﻿using System;
+﻿using ImageFolderManager.Services;
+using System;
 using System.ComponentModel;
 using System.IO;
 using System.Runtime.CompilerServices;
@@ -79,7 +80,8 @@ namespace ImageFolderManager.Models
             CancellationToken externalCancellationToken = default,
             IProgress<double> progress = null)
         {
-            if (_isDisposed || string.IsNullOrEmpty(FilePath) || !File.Exists(FilePath))
+            string normalizedPath = PathService.NormalizePath(FilePath);
+            if (!string.IsNullOrEmpty(normalizedPath) && File.Exists(normalizedPath))
                 return false;
 
             // Cancel any existing loading operation

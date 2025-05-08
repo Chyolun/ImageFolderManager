@@ -449,7 +449,7 @@ namespace ImageFolderManager.ViewModels
                 var supportedExtensions = new[] { ".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp" };
                 var imageFiles = new List<string>();
 
-                if (Directory.Exists(path))
+                if (PathService.DirectoryExists(path))
                 {
                     try
                     {
@@ -907,7 +907,7 @@ namespace ImageFolderManager.ViewModels
         public void ShowInExplorer(FolderInfo folder)
         {
             if (folder == null) return;
-            if (Directory.Exists(folder.FolderPath))
+            if (PathService.DirectoryExists(folder.FolderPath))
             {
                 System.Diagnostics.Process.Start("explorer.exe", folder.FolderPath);
             }
@@ -1814,23 +1814,7 @@ namespace ImageFolderManager.ViewModels
 
                                     // Build destination path
                                     string folderName = Path.GetFileName(sourcePath);
-                                    string destinationPath = Path.Combine(targetPath, folderName);
-
-                                    // Check if destination already exists
-                                    if (Directory.Exists(destinationPath))
-                                    {
-                                        // Append number to avoid name collision
-                                        int counter = 1;
-                                        string newName = folderName;
-
-                                        while (Directory.Exists(Path.Combine(targetPath, newName)))
-                                        {
-                                            newName = $"{folderName} ({counter})";
-                                            counter++;
-                                        }
-
-                                        destinationPath = Path.Combine(targetPath, newName);
-                                    }
+                                    string destinationPath = PathService.GetUniqueDirectoryPath(targetPath, folderName);
 
                                     // Create the destination directory
                                     Directory.CreateDirectory(destinationPath);
@@ -1950,34 +1934,13 @@ namespace ImageFolderManager.ViewModels
                     {
                         string sourcePath = sourceFolder.FolderPath;
                         string folderName = Path.GetFileName(sourcePath);
-                        string destinationPath = Path.Combine(targetFolder.FolderPath, folderName);
-
                         // Check if cancelled
                         if (cancellationToken.IsCancellationRequested)
                             return false;
 
                         // Update progress
                         progressDialog.UpdateProgress(0.2, "Checking destination path...");
-
-                        // Check if destination already exists
-                        if (Directory.Exists(destinationPath))
-                        {
-                            // Append number to avoid name collision
-                            int counter = 1;
-                            string newName = folderName;
-
-                            while (Directory.Exists(Path.Combine(targetFolder.FolderPath, newName)))
-                            {
-                                // Check if cancelled
-                                if (cancellationToken.IsCancellationRequested)
-                                    return false;
-
-                                newName = $"{folderName} ({counter})";
-                                counter++;
-                            }
-
-                            destinationPath = Path.Combine(targetFolder.FolderPath, newName);
-                        }
+                        string destinationPath = PathService.GetUniqueDirectoryPath(targetFolder.FolderPath, folderName);
 
                         // Update progress
                         progressDialog.UpdateProgress(0.3, "Temporarily disabling file monitoring...");
@@ -2085,7 +2048,7 @@ namespace ImageFolderManager.ViewModels
             var directory = new DirectoryInfo(sourceDir);
 
             // Create destination directory if it doesn't exist
-            if (!Directory.Exists(destinationDir))
+            if (!PathService.DirectoryExists(destinationDir))
             {
                 Directory.CreateDirectory(destinationDir);
             }
@@ -2179,10 +2142,11 @@ namespace ImageFolderManager.ViewModels
             }
 
             // Construct new path
-            string newPath = Path.Combine(parentFolder.FolderPath, folderName);
+            string normalizedPath = PathService.NormalizePath(parentFolder.FolderPath);
+            string newPath = Path.Combine(normalizedPath, folderName);
 
             // Check if destination already exists
-            if (Directory.Exists(newPath))
+            if (PathService.DirectoryExists(newPath))
             {
                 MessageBox.Show($"A folder named '{folderName}' already exists in this location.",
                     "Cannot Create Folder", MessageBoxButton.OK, MessageBoxImage.Warning);
@@ -2234,7 +2198,7 @@ namespace ImageFolderManager.ViewModels
             if (folder == null) return;
 
             // Get the old path
-            string oldPath = folder.FolderPath;
+            string oldPath = PathService.NormalizePath(folder.FolderPath);
             string oldName = Path.GetFileName(oldPath);
             string parentPath = Path.GetDirectoryName(oldPath);
 
@@ -2260,7 +2224,7 @@ namespace ImageFolderManager.ViewModels
             string newPath = Path.Combine(parentPath, newName);
 
             // Check if destination already exists
-            if (Directory.Exists(newPath))
+            if (PathService.DirectoryExists(newPath))
             {
                 MessageBox.Show($"A folder named '{newName}' already exists in this location.",
                     "Cannot Rename", MessageBoxButton.OK, MessageBoxImage.Warning);
@@ -2285,7 +2249,7 @@ namespace ImageFolderManager.ViewModels
                     {
                         f.FolderPath = newPath;
                     }
-                    else if (f.FolderPath.StartsWith(oldPath + Path.DirectorySeparatorChar))
+                    else if (PathService.IsPathWithin(oldPath, f.FolderPath))
                     {
                         f.FolderPath = newPath + f.FolderPath.Substring(oldPath.Length);
                     }
@@ -2383,24 +2347,7 @@ namespace ImageFolderManager.ViewModels
                             // Build destination path
                             string sourcePath = sourceFolder.FolderPath;
                             string folderName = Path.GetFileName(sourcePath);
-                            string destinationPath = Path.Combine(targetFolder.FolderPath, folderName);
-
-                            // Check if destination already exists
-                            if (Directory.Exists(destinationPath))
-                            {
-                                // Append number to avoid name collision
-                                int counter = 1;
-                                string newName = folderName;
-
-                                while (Directory.Exists(Path.Combine(targetFolder.FolderPath, newName)))
-                                {
-                                    newName = $"{folderName} ({counter})";
-                                    counter++;
-                                }
-
-                                destinationPath = Path.Combine(targetFolder.FolderPath, newName);
-                            }
-
+                            string destinationPath = PathService.GetUniqueDirectoryPath(targetFolder.FolderPath, folderName);                         
                             // Update progress
                             progressDialog.UpdateProgress(0.2, "Preparing to move...");
 
@@ -2548,8 +2495,7 @@ namespace ImageFolderManager.ViewModels
 
                                 // Skip if trying to move to itself or child folder
                                 string sourcePath = sourceFolder.FolderPath;
-                                if (sourcePath == targetPath ||
-                                    targetPath.StartsWith(sourcePath + Path.DirectorySeparatorChar))
+                                if (PathService.PathsEqual(sourcePath, targetPath) || PathService.IsPathWithin(sourcePath, targetPath))
                                 {
                                     processed++;
                                     continue;
@@ -2563,23 +2509,9 @@ namespace ImageFolderManager.ViewModels
 
                                     // Build destination path
                                     string folderName = Path.GetFileName(sourcePath);
-                                    string destinationPath = Path.Combine(targetPath, folderName);
-
+                                    string destinationPath = PathService.GetUniqueDirectoryPath(targetPath, folderName);
                                     // Check if destination already exists
-                                    if (Directory.Exists(destinationPath))
-                                    {
-                                        // Append number to avoid name collision
-                                        int counter = 1;
-                                        string newName = folderName;
-
-                                        while (Directory.Exists(Path.Combine(targetPath, newName)))
-                                        {
-                                            newName = $"{folderName} ({counter})";
-                                            counter++;
-                                        }
-
-                                        destinationPath = Path.Combine(targetPath, newName);
-                                    }
+                                    
 
                                     // Temporarily disable FileSystemWatcher
                                     _folderManager.UnwatchFolder(sourcePath);
@@ -3093,7 +3025,7 @@ namespace ImageFolderManager.ViewModels
                 {
                     folder.FolderPath = newPath;
                 }
-                else if (folder.FolderPath.StartsWith(oldPath + Path.DirectorySeparatorChar))
+                else if (PathService.IsPathWithin(oldPath, folder.FolderPath))
                 {
                     // Update subfolders as well
                     folder.FolderPath = newPath + folder.FolderPath.Substring(oldPath.Length);

@@ -20,6 +20,7 @@ namespace ImageFolderManager
         }
         protected override void OnExit(ExitEventArgs e)
         {
+            PathService.ClearPathCache();
             // Get the main view model and clean up resources
             if (Application.Current.MainWindow?.DataContext is MainViewModel viewModel)
             {
