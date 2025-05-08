@@ -3,16 +3,16 @@
   "WorkspaceRootPath": "D:\\ImageFolderManager\\",
   "Documents": [
     {
-      "AbsoluteMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|d:\\imagefoldermanager\\models\\imagecache.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
-      "RelativeMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|solutionrelative:models\\imagecache.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
-    },
-    {
       "AbsoluteMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|D:\\ImageFolderManager\\models\\imageinfo.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
       "RelativeMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|solutionrelative:models\\imageinfo.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     },
     {
       "AbsoluteMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|D:\\ImageFolderManager\\viewmodels\\mainviewmodel.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
       "RelativeMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|solutionrelative:viewmodels\\mainviewmodel.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|d:\\imagefoldermanager\\models\\imagecache.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|solutionrelative:models\\imagecache.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     },
     {
       "AbsoluteMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|D:\\ImageFolderManager\\views\\shelltreeview.xaml.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
@@ -50,7 +50,7 @@
       "DocumentGroups": [
         {
           "DockedWidth": 200,
-          "SelectedChildIndex": 7,
+          "SelectedChildIndex": 5,
           "Children": [
             {
               "$type": "Document",
@@ -68,18 +68,6 @@
             {
               "$type": "Bookmark",
               "Name": "ST:0:0:{34e76e81-ee4a-11d0-ae2e-00a0c90fffc3}"
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 7,
-              "Title": "FolderInfo.cs",
-              "DocumentMoniker": "D:\\ImageFolderManager\\Models\\FolderInfo.cs",
-              "RelativeDocumentMoniker": "Models\\FolderInfo.cs",
-              "ToolTip": "D:\\ImageFolderManager\\Models\\FolderInfo.cs",
-              "RelativeToolTip": "Models\\FolderInfo.cs",
-              "ViewState": "AgIAAHUAAAAAAAAAAAAswKkAAABBAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2025-05-07T06:57:58.714Z"
             },
             {
               "$type": "Document",
@@ -119,20 +107,45 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 2,
+              "DocumentIndex": 0,
+              "Title": "ImageInfo.cs",
+              "DocumentMoniker": "D:\\ImageFolderManager\\Models\\ImageInfo.cs",
+              "RelativeDocumentMoniker": "Models\\ImageInfo.cs",
+              "ToolTip": "D:\\ImageFolderManager\\Models\\ImageInfo.cs",
+              "RelativeToolTip": "Models\\ImageInfo.cs",
+              "ViewState": "AgIAADsAAAAAAAAAAAAWwFMAAAA0AAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2025-05-07T09:18:41.312Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 7,
+              "Title": "FolderInfo.cs",
+              "DocumentMoniker": "D:\\ImageFolderManager\\Models\\FolderInfo.cs",
+              "RelativeDocumentMoniker": "Models\\FolderInfo.cs",
+              "ToolTip": "D:\\ImageFolderManager\\Models\\FolderInfo.cs",
+              "RelativeToolTip": "Models\\FolderInfo.cs",
+              "ViewState": "AgIAAHUAAAAAAAAAAAAswKkAAABBAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2025-05-07T06:57:58.714Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 1,
               "Title": "MainViewModel.cs",
               "DocumentMoniker": "D:\\ImageFolderManager\\ViewModels\\MainViewModel.cs",
               "RelativeDocumentMoniker": "ViewModels\\MainViewModel.cs",
               "ToolTip": "D:\\ImageFolderManager\\ViewModels\\MainViewModel.cs",
               "RelativeToolTip": "ViewModels\\MainViewModel.cs",
-              "ViewState": "AgIAAAYCAAAAAAAAAAArwBsCAAAkAAAAAAAAAA==",
+              "ViewState": "AgIAAPoBAAAAAAAAAAAAwBICAABzAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
               "WhenOpened": "2025-04-30T08:30:57.404Z",
               "EditorCaption": ""
             },
             {
               "$type": "Document",
-              "DocumentIndex": 0,
+              "DocumentIndex": 2,
               "Title": "ImageCache.cs",
               "DocumentMoniker": "D:\\ImageFolderManager\\Models\\ImageCache.cs",
               "RelativeDocumentMoniker": "Models\\ImageCache.cs",
@@ -141,19 +154,6 @@
               "ViewState": "AgIAAI8AAAAAAAAAAAAjwGQAAAAnAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
               "WhenOpened": "2025-05-07T08:16:25.04Z",
-              "EditorCaption": ""
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 1,
-              "Title": "ImageInfo.cs",
-              "DocumentMoniker": "D:\\ImageFolderManager\\Models\\ImageInfo.cs",
-              "RelativeDocumentMoniker": "Models\\ImageInfo.cs",
-              "ToolTip": "D:\\ImageFolderManager\\Models\\ImageInfo.cs",
-              "RelativeToolTip": "Models\\ImageInfo.cs",
-              "ViewState": "AgIAAGUAAAAAAAAAAAAjwHEAAAA9AAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2025-05-07T09:18:41.312Z",
               "EditorCaption": ""
             },
             {

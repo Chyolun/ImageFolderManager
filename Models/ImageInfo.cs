@@ -81,7 +81,7 @@ namespace ImageFolderManager.Models
             IProgress<double> progress = null)
         {
             string normalizedPath = PathService.NormalizePath(FilePath);
-            if (!string.IsNullOrEmpty(normalizedPath) && File.Exists(normalizedPath))
+            if (string.IsNullOrEmpty(normalizedPath) && !File.Exists(normalizedPath))
                 return false;
 
             // Cancel any existing loading operation
