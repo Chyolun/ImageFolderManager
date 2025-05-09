@@ -111,7 +111,7 @@ namespace ImageFolderManager.Models
             Children = new ObservableCollection<FolderInfo>();
             Images = new ObservableCollection<ImageInfo>();
 
-            if (PathService.DirectoryHasSubdirectories(FolderPath))
+            if (HasSubfolders(path))
             {
                 Children.Add(null);
             }
@@ -163,6 +163,17 @@ namespace ImageFolderManager.Models
                     // Log error but don't crash
                     System.Diagnostics.Debug.WriteLine($"Error loading children for {FolderPath}: {ex.Message}");
                 }
+            }
+        }
+        private bool HasSubfolders(string path)
+        {
+            try
+            {
+                return Directory.GetDirectories(path).Length > 0;
+            }
+            catch
+            {
+                return false;
             }
         }
 

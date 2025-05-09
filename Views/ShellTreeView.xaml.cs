@@ -227,7 +227,7 @@ namespace ImageFolderManager.Views
         {
             try
             {
-                // Store the current selection if not provided
+                // Store the current selection if not providedi1·
                 if (string.IsNullOrEmpty(pathToSelect))
                 {
                     var treeViewItem = GetSelectedTreeViewItem();
@@ -1700,14 +1700,17 @@ namespace ImageFolderManager.Views
                         }
                     }
 
-                    // Delay refresh to ensure operation completes first
-                    var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
-                    timer.Tick += (s, args) =>
-                    {
-                        timer.Stop();
+  
                         RefreshTree(targetPath, true);
-                    };
-                    timer.Start();
+                        // Also refresh all source parent paths
+                        foreach (var parentPath in sourceParentPaths)
+                        {
+                            if (PathService.DirectoryExists(parentPath))
+                            {
+                                RefreshTree(parentPath, true);
+                            }
+                        }
+       
                 }
                 catch (Exception ex)
                 {
@@ -1899,17 +1902,13 @@ namespace ImageFolderManager.Views
 
                     if (ViewModel.HasClipboardContent())
                     {
+                      
                         // Execute paste operation
                         ViewModel.PasteFolder(folderInfo);
 
-                        // Delay refresh to ensure UI updates properly
-                        var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
-                        timer.Tick += (s, args) =>
-                        {
-                            timer.Stop();
-                            RefreshTree(path, true);
-                        };
-                        timer.Start();
+                    
+                        RefreshTree(path, true);
+                           
                     }
                     else
                     {
@@ -2027,16 +2026,9 @@ namespace ImageFolderManager.Views
                 if (ViewModel != null)
                 {
                     // Execute delete command through ViewModel
-                    ViewModel.DeleteFolderCommand.Execute(folderInfo);
+                    ViewModel.DeleteFolderCommand.Execute(folderInfo);                 
+                    RefreshTree(parentPath, true);
 
-                    // Refresh tree after a delay
-                    var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
-                    timer.Tick += (s, args) =>
-                    {
-                        timer.Stop();
-                        RefreshTree(parentPath, true);
-                    };
-                    timer.Start();
                 }
                 else
                 {

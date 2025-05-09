@@ -88,6 +88,7 @@
                                     <Trigger Property="HasItems" Value="False">
                                         <Setter TargetName="Expander" Property="Visibility" Value="Hidden"/>
                                     </Trigger>
+       
                                 </ControlTemplate.Triggers>
                             </ControlTemplate>
                         </Setter.Value>

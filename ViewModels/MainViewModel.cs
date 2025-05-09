@@ -1972,6 +1972,7 @@ namespace ImageFolderManager.ViewModels
                                     RemoveFolderFromTree(sourceFolder);
                                     RemoveFolderAndSubfoldersFromSearchResults(sourcePath);
                                     RemoveFolderAndSubfoldersFromAllLoaded(sourcePath);
+                                    
                                 });
                             }
                             else
