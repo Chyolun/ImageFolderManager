@@ -1026,6 +1026,7 @@ namespace ImageFolderManager.ViewModels
 
             // Normalize target path
             string normalizedTarget = PathService.NormalizePath(targetPath);
+            bool removed = false;  // Track if we found any matches
 
             // Use ToList() to avoid collection modification exceptions during enumeration
             foreach (var folder in folders.ToList())
@@ -1035,20 +1036,38 @@ namespace ImageFolderManager.ViewModels
                     PathService.PathsEqual(folder.FolderPath, normalizedTarget))
                 {
                     folders.Remove(folder);
-                    return true;
+                    removed = true;
+                    // Continue searching instead of returning immediately
                 }
 
                 // Check children
                 if (folder?.Children != null)
                 {
-                    if (RecursiveRemoveFolderByPath(folder.Children, normalizedTarget))
-                    {
-                        return true;
-                    }
+                    // Combine result with recursive call
+                    bool childRemoved = RecursiveRemoveFolderByPath(folder.Children, normalizedTarget);
+                    removed = removed || childRemoved;
                 }
             }
 
-            return false;
+            return removed;
+        }
+
+        /// <summary>
+        /// Gets the source parent directory for the current clipboard content
+        /// </summary>
+        public string GetClipboardSourceDirectory()
+        {
+            if (_clipboardFolder != null)
+            {
+                return Path.GetDirectoryName(_clipboardFolder.FolderPath);
+            }
+            else if (_isMultipleSelection && _clipboardFolders.Count > 0)
+            {
+                // Get the first source folder's parent for simplicity
+                // For a more comprehensive solution, we could return all parent directories
+                return Path.GetDirectoryName(_clipboardFolders[0].FolderPath);
+            }
+            return null;
         }
 
 

@@ -221,13 +221,67 @@ namespace ImageFolderManager.Views
         }
 
         /// <summary>
+        /// Completely rebuilds a TreeViewItem with correct subdirectory status
+        /// </summary>
+        private void RebuildTreeItem(TreeViewItem item)
+        {
+            if (item == null) return;
+
+            bool wasExpanded = item.IsExpanded;
+            var shellObject = item.Tag as ShellObject;
+            if (shellObject == null) return;
+
+            // Clear all child items
+            item.Items.Clear();
+
+            // Get the actual path
+            string path = PathService.GetPathFromShellObject(shellObject);
+            if (string.IsNullOrEmpty(path)) return;
+
+            // Only check for subfolders if this is a file system folder
+            if (PathService.DirectoryExists(path))
+            {
+                // Check if this directory actually has any subdirectories
+                bool hasSubdirectories = false;
+                try
+                {
+                    hasSubdirectories = Directory.GetDirectories(path).Length > 0;
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"Error checking for subdirectories: {ex.Message}");
+                    // Assume no subdirectories on error
+                    hasSubdirectories = false;
+                }
+
+                // Only add dummy item if it has subdirectories
+                if (hasSubdirectories)
+                {
+                    item.Items.Add(new TreeViewItem { Header = "Loading..." });
+                }
+            }
+            else if (shellObject is ShellFolder)
+            {
+                // For special shell folders, add the dummy item
+                item.Items.Add(new TreeViewItem { Header = "Loading..." });
+            }
+
+            // If it was expanded before, expand it again to reload children
+            if (wasExpanded)
+            {
+                item.IsExpanded = false;
+                item.IsExpanded = true;
+            }
+        }
+
+        /// <summary>
         /// Comprehensive tree refresh method that handles various refresh scenarios
         /// </summary>
         public void RefreshTree(string pathToSelect = null, bool preserveExpanded = true)
         {
             try
             {
-                // Store the current selection if not providedi1·
+                // Store the current selection if not provided
                 if (string.IsNullOrEmpty(pathToSelect))
                 {
                     var treeViewItem = GetSelectedTreeViewItem();
@@ -287,14 +341,25 @@ namespace ImageFolderManager.Views
                     RefreshRootItems();
                 }
 
-                // Restore expanded state
-                if (preserveExpanded)
+                // Important: Validate and fix all tree items to ensure expander triangles are correct
+                foreach (var item in FindVisualChildren<TreeViewItem>(ShellTreeViewControl))
                 {
-                    foreach (var path in expandedPaths)
+                    if (item.Tag is ShellObject so)
                     {
-                        if (PathService.DirectoryExists(path) && _pathToTreeViewItem.TryGetValue(path, out var item))
+                        string path = PathService.GetPathFromShellObject(so);
+                        if (!string.IsNullOrEmpty(path) && PathService.DirectoryExists(path))
                         {
-                            item.IsExpanded = true;
+                            // If this item is in the expanded paths list, we'll expand it again
+                            bool shouldBeExpanded = expandedPaths.Contains(path);
+
+                            // But first ensure it has the correct children
+                            RebuildTreeItem(item);
+
+                            // Then restore expanded state if needed
+                            if (shouldBeExpanded && preserveExpanded)
+                            {
+                                item.IsExpanded = true;
+                            }
                         }
                     }
                 }
@@ -316,7 +381,7 @@ namespace ImageFolderManager.Views
             }
             catch (Exception ex)
             {
-                HandleException("Error refreshing tree", ex, false);
+                HandleException("Error refreshing tree", ex);
             }
         }
 
@@ -326,19 +391,21 @@ namespace ImageFolderManager.Views
         private void RefreshTreeItem(TreeViewItem item)
         {
             if (item == null) return;
+            RebuildTreeItem(item);
 
-            bool wasExpanded = item.IsExpanded;
+            //bool wasExpanded = item.IsExpanded;
 
-            // Clear and add dummy item to force reload
-            item.Items.Clear();
-            item.Items.Add(new TreeViewItem { Header = "Loading..." });
+            //// Clear and add dummy item to force reload
+            //item.Items.Clear();
+            //item.Items.Add(new TreeViewItem { Header = "Loading..." });
 
-            // Force a refresh by toggling IsExpanded if it was already expanded
-            if (wasExpanded)
-            {
-                item.IsExpanded = false;
-                item.IsExpanded = true; // This will trigger TreeViewItem_Expanded event
-            }
+
+            //// Force a refresh by toggling IsExpanded if it was already expanded
+            //if (wasExpanded)
+            //{
+            //    item.IsExpanded = false;
+            //    item.IsExpanded = true; // This will trigger TreeViewItem_Expanded event
+            //}
         }
 
         /// <summary>
@@ -1902,11 +1969,20 @@ namespace ImageFolderManager.Views
 
                     if (ViewModel.HasClipboardContent())
                     {
-                      
+                        // Get the source directory before the paste operation
+                        string sourceDir = ViewModel.GetClipboardSourceDirectory();
+
                         // Execute paste operation
                         ViewModel.PasteFolder(folderInfo);
 
-                    
+                        // First refresh the source directory (if different from destination)
+                        if (!string.IsNullOrEmpty(sourceDir) &&
+                            !path.Equals(sourceDir, StringComparison.OrdinalIgnoreCase) &&
+                            PathService.DirectoryExists(sourceDir))
+                        {
+                            RefreshTree(sourceDir, true);
+                        }
+
                         RefreshTree(path, true);
                            
                     }
