@@ -3,7 +3,7 @@
   "WorkspaceRootPath": "D:\\ImageFolderManager\\",
   "Documents": [
     {
-      "AbsoluteMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|D:\\ImageFolderManager\\views\\shelltreeview.xaml.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "AbsoluteMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|d:\\imagefoldermanager\\views\\shelltreeview.xaml.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
       "RelativeMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|solutionrelative:views\\shelltreeview.xaml.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     },
     {
@@ -38,9 +38,9 @@
               "Title": "ShellTreeView.xaml.cs",
               "DocumentMoniker": "D:\\ImageFolderManager\\Views\\ShellTreeView.xaml.cs",
               "RelativeDocumentMoniker": "Views\\ShellTreeView.xaml.cs",
-              "ToolTip": "D:\\ImageFolderManager\\Views\\ShellTreeView.xaml.cs",
-              "RelativeToolTip": "Views\\ShellTreeView.xaml.cs",
-              "ViewState": "AgIAADQBAAAAAAAAAADwv0cBAABSAAAAAAAAAA==",
+              "ToolTip": "D:\\ImageFolderManager\\Views\\ShellTreeView.xaml.cs*",
+              "RelativeToolTip": "Views\\ShellTreeView.xaml.cs*",
+              "ViewState": "AgIAACUHAAAAAAAAAAAQwDEHAAAQAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
               "WhenOpened": "2025-05-08T03:40:40.523Z",
               "EditorCaption": ""
@@ -67,8 +67,7 @@
               "RelativeToolTip": "Models\\FolderInfo.cs",
               "ViewState": "AgIAAF8AAAAAAAAAAAAAwGYAAAAeAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2025-05-07T06:57:58.714Z",
-              "EditorCaption": ""
+              "WhenOpened": "2025-05-07T06:57:58.714Z"
             },
             {
               "$type": "Document",
@@ -80,8 +79,7 @@
               "RelativeToolTip": "Services\\PathService.cs",
               "ViewState": "AgIAAEsAAAAAAAAAAAASwFUAAAAIAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2025-05-07T03:45:23.88Z",
-              "EditorCaption": ""
+              "WhenOpened": "2025-05-07T03:45:23.88Z"
             },
             {
               "$type": "Document",
@@ -93,8 +91,7 @@
               "RelativeToolTip": "ViewModels\\MainViewModel.cs",
               "ViewState": "AgIAAFoKAAAAAAAAAADgv2UKAAA2AAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2025-04-30T08:30:57.404Z",
-              "EditorCaption": ""
+              "WhenOpened": "2025-04-30T08:30:57.404Z"
             }
           ]
         },

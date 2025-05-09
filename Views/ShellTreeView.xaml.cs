@@ -242,18 +242,18 @@ namespace ImageFolderManager.Views
             if (PathService.DirectoryExists(path))
             {
                 // Check if this directory actually has any subdirectories
-                bool hasSubdirectories = false;
-                try
-                {
-                    hasSubdirectories = Directory.GetDirectories(path).Length > 0;
-                }
-                catch (Exception ex)
-                {
-                    Debug.WriteLine($"Error checking for subdirectories: {ex.Message}");
-                    // Assume no subdirectories on error
-                    hasSubdirectories = false;
-                }
-
+                //bool hasSubdirectories = false;
+                //try
+                //{
+                //    hasSubdirectories = Directory.GetDirectories(path).Length > 0;
+                //}
+                //catch (Exception ex)
+                //{
+                //    Debug.WriteLine($"Error checking for subdirectories: {ex.Message}");
+                //    Assume no subdirectories on error
+                //   hasSubdirectories = false;
+                //}
+                bool hasSubdirectories = PathService.DirectoryHasSubdirectories(path);
                 // Only add dummy item if it has subdirectories
                 if (hasSubdirectories)
                 {
@@ -1839,6 +1839,8 @@ namespace ImageFolderManager.Views
                     MessageBox.Show("Could not create folder: ViewModel is not available.",
                         "Operation Failed", MessageBoxButton.OK, MessageBoxImage.Error);
                 }
+                
+
             }
             catch (Exception ex)
             {
