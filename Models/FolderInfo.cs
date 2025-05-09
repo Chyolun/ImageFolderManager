@@ -169,7 +169,7 @@ namespace ImageFolderManager.Models
         {
             try
             {
-                return Directory.GetDirectories(path).Length > 0;
+                return PathService.DirectoryHasSubdirectories(path);
             }
             catch
             {

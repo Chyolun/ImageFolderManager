@@ -111,7 +111,6 @@
       <SubType>Designer</SubType>
     </ApplicationDefinition>
     <Compile Include="Services\AppSettings.cs" />
-    <Compile Include="Services\FileOperations.cs" />
     <Compile Include="Services\FolderManagementService.cs" />
     <Compile Include="Services\PathService.cs" />
     <Compile Include="Services\TagHelper.cs" />

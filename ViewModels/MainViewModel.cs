@@ -197,7 +197,7 @@ namespace ImageFolderManager.ViewModels
                 AppSettings.Instance.Save();
 
                 // Load the directory if it exists
-                if (Directory.Exists(path))
+                if (PathService.DirectoryExists(path))          
                 {
                     await LoadDirectoryAsync(path);
                 }
