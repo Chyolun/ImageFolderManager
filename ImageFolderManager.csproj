@@ -45,6 +45,12 @@
       <HintPath>packages\ControlzEx.4.4.0\lib\net462\ControlzEx.dll</HintPath>
     </Reference>
     <Reference Include="CustomMarshalers" />
+    <Reference Include="Magick.NET-Q8-AnyCPU, Version=14.6.0.0, Culture=neutral, PublicKeyToken=2004825badfa91ec, processorArchitecture=MSIL">
+      <HintPath>packages\Magick.NET-Q8-AnyCPU.14.6.0\lib\netstandard20\Magick.NET-Q8-AnyCPU.dll</HintPath>
+    </Reference>
+    <Reference Include="Magick.NET.Core, Version=14.6.0.0, Culture=neutral, PublicKeyToken=2004825badfa91ec, processorArchitecture=MSIL">
+      <HintPath>packages\Magick.NET.Core.14.6.0\lib\netstandard20\Magick.NET.Core.dll</HintPath>
+    </Reference>
     <Reference Include="MahApps.Metro, Version=2.0.0.0, Culture=neutral, PublicKeyToken=51482d6f650b2b3f, processorArchitecture=MSIL">
       <HintPath>packages\MahApps.Metro.2.4.10\lib\net47\MahApps.Metro.dll</HintPath>
     </Reference>
@@ -211,5 +217,7 @@
       <ErrorText>This project references NuGet package(s) that are missing on this computer. Use NuGet Package Restore to download them.  For more information, see http://go.microsoft.com/fwlink/?LinkID=322105. The missing file is {0}.</ErrorText>
     </PropertyGroup>
     <Error Condition="!Exists('packages\CommunityToolkit.Mvvm.8.4.0\build\CommunityToolkit.Mvvm.targets')" Text="$([System.String]::Format('$(ErrorText)', 'packages\CommunityToolkit.Mvvm.8.4.0\build\CommunityToolkit.Mvvm.targets'))" />
+    <Error Condition="!Exists('packages\Magick.NET-Q8-AnyCPU.14.6.0\build\netstandard20\Magick.NET-Q8-AnyCPU.targets')" Text="$([System.String]::Format('$(ErrorText)', 'packages\Magick.NET-Q8-AnyCPU.14.6.0\build\netstandard20\Magick.NET-Q8-AnyCPU.targets'))" />
   </Target>
+  <Import Project="packages\Magick.NET-Q8-AnyCPU.14.6.0\build\netstandard20\Magick.NET-Q8-AnyCPU.targets" Condition="Exists('packages\Magick.NET-Q8-AnyCPU.14.6.0\build\netstandard20\Magick.NET-Q8-AnyCPU.targets')" />
 </Project>

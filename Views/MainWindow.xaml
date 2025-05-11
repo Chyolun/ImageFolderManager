@@ -30,7 +30,7 @@
         <Menu Grid.Row="0" Background="{DynamicResource MahApps.Brushes.ThemeBackground}">
             <MenuItem Header="Settings" Foreground="White">
                 <MenuItem Header="Root Directory" Click="RootDirectory_Click"/>
-                <MenuItem Header="Preview Size" Click="PreviewSize_Click"/>
+                <MenuItem Header="Preview Settings" Click="PreviewSize_Click"/>
             </MenuItem>
             <MenuItem Header="Tools" Foreground="White">
                 <MenuItem Header="Refresh All" Click="RefreshAll_Click"/>

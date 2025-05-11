@@ -230,16 +230,24 @@ namespace ImageFolderManager.ViewModels
         }
 
         // Method to modify preview size
-        public async Task SetPreviewSize(int width, int height)
+        public async Task SetPreviewSize(int width, int height, int maxCacheSize, int threadCount)
         {
             bool sizeChanged = PreviewWidth != width || PreviewHeight != height;
-            PreviewWidth = width;
-            PreviewHeight = height;
+            bool cacheSettingsChanged = AppSettings.Instance.MaxCacheSize != maxCacheSize ||
+                                       AppSettings.Instance.ParallelThreadCount != threadCount;
+
 
             // Save settings
             AppSettings.Instance.PreviewWidth = width;
             AppSettings.Instance.PreviewHeight = height;
+            AppSettings.Instance.MaxCacheSize = maxCacheSize;
+            AppSettings.Instance.ParallelThreadCount = threadCount;
             AppSettings.Instance.Save();
+
+            if (AppSettings.Instance.ParallelThreadCount != threadCount)
+            {
+                ImageCache.UpdateParallelThreadCount(threadCount);
+            }
 
             // Clear thumbnail cache
             if (sizeChanged)

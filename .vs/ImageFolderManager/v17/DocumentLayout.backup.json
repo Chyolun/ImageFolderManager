@@ -3,28 +3,40 @@
   "WorkspaceRootPath": "D:\\ImageFolderManager\\",
   "Documents": [
     {
+      "AbsoluteMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|D:\\ImageFolderManager\\views\\mainwindow.xaml||{F11ACC28-31D1-4C80-A34B-F4E09D3D753C}",
+      "RelativeMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|solutionrelative:views\\mainwindow.xaml||{F11ACC28-31D1-4C80-A34B-F4E09D3D753C}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|d:\\imagefoldermanager\\views\\mainwindow.xaml.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|solutionrelative:views\\mainwindow.xaml.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|D:\\ImageFolderManager\\views\\previewsizedialog.xaml.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|solutionrelative:views\\previewsizedialog.xaml.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|D:\\ImageFolderManager\\services\\appsettings.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|solutionrelative:services\\appsettings.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|D:\\ImageFolderManager\\models\\imagecache.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|solutionrelative:models\\imagecache.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|D:\\ImageFolderManager\\views\\previewsizedialog.xaml||{F11ACC28-31D1-4C80-A34B-F4E09D3D753C}",
+      "RelativeMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|solutionrelative:views\\previewsizedialog.xaml||{F11ACC28-31D1-4C80-A34B-F4E09D3D753C}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|D:\\ImageFolderManager\\views\\batchtagsdialog.xaml||{F11ACC28-31D1-4C80-A34B-F4E09D3D753C}",
+      "RelativeMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|solutionrelative:views\\batchtagsdialog.xaml||{F11ACC28-31D1-4C80-A34B-F4E09D3D753C}"
+    },
+    {
       "AbsoluteMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|D:\\ImageFolderManager\\viewmodels\\mainviewmodel.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
       "RelativeMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|solutionrelative:viewmodels\\mainviewmodel.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     },
     {
-      "AbsoluteMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|d:\\imagefoldermanager\\services\\foldertagservice.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
-      "RelativeMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|solutionrelative:services\\foldertagservice.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|D:\\ImageFolderManager\\models\\folderinfo.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
-      "RelativeMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|solutionrelative:models\\folderinfo.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|D:\\ImageFolderManager\\models\\imageinfo.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
-      "RelativeMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|solutionrelative:models\\imageinfo.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|d:\\imagefoldermanager\\views\\shelltreeview.xaml.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
-      "RelativeMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|solutionrelative:views\\shelltreeview.xaml.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|D:\\ImageFolderManager\\services\\pathservice.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
-      "RelativeMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|solutionrelative:services\\pathservice.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+      "AbsoluteMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|D:\\ImageFolderManager\\views\\progressdialog.xaml.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|solutionrelative:views\\progressdialog.xaml.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     }
   ],
   "DocumentGroupContainers": [
@@ -34,84 +46,114 @@
       "DocumentGroups": [
         {
           "DockedHeight": 307,
-          "SelectedChildIndex": 5,
+          "SelectedChildIndex": 2,
           "Children": [
             {
               "$type": "Document",
-              "DocumentIndex": 1,
-              "Title": "FolderTagService.cs",
-              "DocumentMoniker": "D:\\ImageFolderManager\\Services\\FolderTagService.cs",
-              "RelativeDocumentMoniker": "Services\\FolderTagService.cs",
-              "ToolTip": "D:\\ImageFolderManager\\Services\\FolderTagService.cs",
-              "RelativeToolTip": "Services\\FolderTagService.cs",
-              "ViewState": "AgIAACkAAAAAAAAAAAArwDkAAAAtAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2025-05-09T07:36:47.818Z",
-              "EditorCaption": ""
+              "DocumentIndex": 5,
+              "Title": "PreviewSizeDialog.xaml",
+              "DocumentMoniker": "D:\\ImageFolderManager\\Views\\PreviewSizeDialog.xaml",
+              "RelativeDocumentMoniker": "Views\\PreviewSizeDialog.xaml",
+              "ToolTip": "D:\\ImageFolderManager\\Views\\PreviewSizeDialog.xaml",
+              "RelativeToolTip": "Views\\PreviewSizeDialog.xaml",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003549|",
+              "WhenOpened": "2025-05-10T03:55:39.136Z"
             },
             {
               "$type": "Document",
               "DocumentIndex": 4,
-              "Title": "ShellTreeView.xaml.cs",
-              "DocumentMoniker": "D:\\ImageFolderManager\\Views\\ShellTreeView.xaml.cs",
-              "RelativeDocumentMoniker": "Views\\ShellTreeView.xaml.cs",
-              "ToolTip": "D:\\ImageFolderManager\\Views\\ShellTreeView.xaml.cs",
-              "RelativeToolTip": "Views\\ShellTreeView.xaml.cs",
-              "ViewState": "AgIAAAAAAAAAAAAAAAAAAE0AAAAyAAAAAAAAAA==",
+              "Title": "ImageCache.cs",
+              "DocumentMoniker": "D:\\ImageFolderManager\\Models\\ImageCache.cs",
+              "RelativeDocumentMoniker": "Models\\ImageCache.cs",
+              "ToolTip": "D:\\ImageFolderManager\\Models\\ImageCache.cs",
+              "RelativeToolTip": "Models\\ImageCache.cs",
+              "ViewState": "AgIAAB4CAAAAAAAAAAAuwCwCAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2025-05-08T03:40:40.523Z",
+              "WhenOpened": "2025-05-10T03:35:48.612Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 0,
+              "Title": "MainWindow.xaml",
+              "DocumentMoniker": "D:\\ImageFolderManager\\Views\\MainWindow.xaml",
+              "RelativeDocumentMoniker": "Views\\MainWindow.xaml",
+              "ToolTip": "D:\\ImageFolderManager\\Views\\MainWindow.xaml",
+              "RelativeToolTip": "Views\\MainWindow.xaml",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003549|",
+              "WhenOpened": "2025-05-10T03:33:54.759Z",
               "EditorCaption": ""
             },
             {
               "$type": "Document",
-              "DocumentIndex": 3,
-              "Title": "ImageInfo.cs",
-              "DocumentMoniker": "D:\\ImageFolderManager\\Models\\ImageInfo.cs",
-              "RelativeDocumentMoniker": "Models\\ImageInfo.cs",
-              "ToolTip": "D:\\ImageFolderManager\\Models\\ImageInfo.cs",
-              "RelativeToolTip": "Models\\ImageInfo.cs",
-              "ViewState": "AgIAADsAAAAAAAAAAAAowFMAAAA0AAAAAAAAAA==",
+              "DocumentIndex": 1,
+              "Title": "MainWindow.xaml.cs",
+              "DocumentMoniker": "D:\\ImageFolderManager\\Views\\MainWindow.xaml.cs",
+              "RelativeDocumentMoniker": "Views\\MainWindow.xaml.cs",
+              "ToolTip": "D:\\ImageFolderManager\\Views\\MainWindow.xaml.cs",
+              "RelativeToolTip": "Views\\MainWindow.xaml.cs",
+              "ViewState": "AgIAAGYAAAAAAAAAAAAYwIsAAAAjAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2025-05-07T09:18:41.312Z",
+              "WhenOpened": "2025-05-10T03:33:56.976Z",
               "EditorCaption": ""
             },
             {
               "$type": "Document",
               "DocumentIndex": 2,
-              "Title": "FolderInfo.cs",
-              "DocumentMoniker": "D:\\ImageFolderManager\\Models\\FolderInfo.cs",
-              "RelativeDocumentMoniker": "Models\\FolderInfo.cs",
-              "ToolTip": "D:\\ImageFolderManager\\Models\\FolderInfo.cs",
-              "RelativeToolTip": "Models\\FolderInfo.cs",
-              "ViewState": "AgIAAIwAAAAAAAAAAADwv5kAAAArAAAAAAAAAA==",
+              "Title": "PreviewSizeDialog.xaml.cs",
+              "DocumentMoniker": "D:\\ImageFolderManager\\Views\\PreviewSizeDialog.xaml.cs",
+              "RelativeDocumentMoniker": "Views\\PreviewSizeDialog.xaml.cs",
+              "ToolTip": "D:\\ImageFolderManager\\Views\\PreviewSizeDialog.xaml.cs",
+              "RelativeToolTip": "Views\\PreviewSizeDialog.xaml.cs",
+              "ViewState": "AgIAAFIAAAAAAAAAAAAwwJgAAAABAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2025-05-07T06:57:58.714Z",
-              "EditorCaption": ""
+              "WhenOpened": "2025-05-10T03:56:37.462Z"
             },
             {
               "$type": "Document",
-              "DocumentIndex": 5,
-              "Title": "PathService.cs",
-              "DocumentMoniker": "D:\\ImageFolderManager\\Services\\PathService.cs",
-              "RelativeDocumentMoniker": "Services\\PathService.cs",
-              "ToolTip": "D:\\ImageFolderManager\\Services\\PathService.cs",
-              "RelativeToolTip": "Services\\PathService.cs",
-              "ViewState": "AgIAAEsAAAAAAAAAAAASwFUAAAAIAAAAAAAAAA==",
+              "DocumentIndex": 3,
+              "Title": "AppSettings.cs",
+              "DocumentMoniker": "D:\\ImageFolderManager\\Services\\AppSettings.cs",
+              "RelativeDocumentMoniker": "Services\\AppSettings.cs",
+              "ToolTip": "D:\\ImageFolderManager\\Services\\AppSettings.cs",
+              "RelativeToolTip": "Services\\AppSettings.cs",
+              "ViewState": "AgIAAJMAAAAAAAAAAAA4wBoAAAAfAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2025-05-07T03:45:23.88Z"
+              "WhenOpened": "2025-05-10T03:33:03.074Z"
             },
             {
               "$type": "Document",
-              "DocumentIndex": 0,
+              "DocumentIndex": 6,
+              "Title": "BatchTagsDialog.xaml",
+              "DocumentMoniker": "D:\\ImageFolderManager\\Views\\BatchTagsDialog.xaml",
+              "RelativeDocumentMoniker": "Views\\BatchTagsDialog.xaml",
+              "ToolTip": "D:\\ImageFolderManager\\Views\\BatchTagsDialog.xaml",
+              "RelativeToolTip": "Views\\BatchTagsDialog.xaml",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003549|",
+              "WhenOpened": "2025-05-10T04:15:10.279Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 7,
               "Title": "MainViewModel.cs",
               "DocumentMoniker": "D:\\ImageFolderManager\\ViewModels\\MainViewModel.cs",
               "RelativeDocumentMoniker": "ViewModels\\MainViewModel.cs",
               "ToolTip": "D:\\ImageFolderManager\\ViewModels\\MainViewModel.cs",
               "RelativeToolTip": "ViewModels\\MainViewModel.cs",
-              "ViewState": "AgIAANYDAAAAAAAAAAArwOkDAAApAAAAAAAAAA==",
+              "ViewState": "AgIAAOkAAAAAAAAAAAD4v/kAAAANAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2025-04-30T08:30:57.404Z",
-              "EditorCaption": ""
+              "WhenOpened": "2025-05-10T04:05:21.293Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 8,
+              "Title": "ProgressDialog.xaml.cs",
+              "DocumentMoniker": "D:\\ImageFolderManager\\Views\\ProgressDialog.xaml.cs",
+              "RelativeDocumentMoniker": "Views\\ProgressDialog.xaml.cs",
+              "ToolTip": "D:\\ImageFolderManager\\Views\\ProgressDialog.xaml.cs",
+              "RelativeToolTip": "Views\\ProgressDialog.xaml.cs",
+              "ViewState": "AgIAAB0AAAAAAAAAAAAkwFwAAAABAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2025-05-10T03:34:18.681Z"
             }
           ]
         },

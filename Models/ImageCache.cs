@@ -18,9 +18,9 @@ namespace ImageFolderManager.Models
     public static class ImageCache
     {
         // Configuration
-        private static readonly int MAX_CACHE_SIZE = 300; // Maximum number of items in memory cache
-        private static readonly int TRIM_THRESHOLD = 350; // When to start cache trimming
-        private static readonly int TRIM_TARGET = 250;    // How many items to keep after trimming
+        private static int MAX_CACHE_SIZE => AppSettings.Instance.MaxCacheSize; // Maximum number of items in memory cache
+        private static int TRIM_THRESHOLD => AppSettings.Instance.TrimThreshold; // When to start cache trimming
+        private static int TRIM_TARGET => AppSettings.Instance.TrimTarget;    // How many items to keep after trimming
 
         // Cache storage
         private class CacheItem
@@ -39,7 +39,9 @@ namespace ImageFolderManager.Models
 
         // Thread synchronization
         private static readonly SemaphoreSlim _cacheLock = new(1, 1);
-        private static readonly SemaphoreSlim _diskOperationLock = new(3, 3); // Allow multiple concurrent disk operations
+        private static  SemaphoreSlim _diskOperationLock = new SemaphoreSlim(
+                                                AppSettings.Instance.ParallelThreadCount,
+                                                AppSettings.Instance.ParallelThreadCount);
         private static bool _isTrimming = false;
 
         // Disk cache path
@@ -425,6 +427,35 @@ namespace ImageFolderManager.Models
                 _cacheLock.Release();
             }
         }
+
+        public static void UpdateParallelThreadCount(int threadCount)
+        {
+            try
+            {
+                var oldLock = _diskOperationLock;
+
+                oldLock.Wait();
+
+                try
+                {
+ 
+                    _diskOperationLock = new SemaphoreSlim(threadCount, threadCount);
+                }
+                finally
+                {
+      
+                    oldLock.Release();
+                    oldLock.Dispose();
+                }
+
+                Debug.WriteLine($"Updated parallel thread count to {threadCount}");
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error updating parallel thread count: {ex.Message}");
+            }
+        }
+
 
         /// <summary>
         /// Gets the file path for caching a thumbnail

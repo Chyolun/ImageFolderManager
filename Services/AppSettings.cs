@@ -20,6 +20,14 @@ namespace ImageFolderManager.Services
         // Default settings
         private string _defaultRootDirectory = string.Empty;
 
+        private int _maxCacheSize = 512;
+        public int TrimThreshold => (int)(MaxCacheSize * 1.2);
+        public int TrimTarget => (int)(MaxCacheSize * 0.7);
+
+        private int _previewHeight = 500;
+
+        private int _previewWidth = 500;
+
         // In AppSettings constructor
         private AppSettings()
         {   
@@ -38,8 +46,7 @@ namespace ImageFolderManager.Services
                 }
             }
         }
-
-        private int _previewWidth = 200;
+    
         public int PreviewWidth
         {
             get => _previewWidth;
@@ -54,8 +61,7 @@ namespace ImageFolderManager.Services
                 }
             }
         }
-
-        private int _previewHeight = 300;
+      
         public int PreviewHeight
         {
             get => _previewHeight;
@@ -177,6 +183,37 @@ namespace ImageFolderManager.Services
                     "Settings Error", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
             return settings;
+        }
+
+        public int MaxCacheSize
+        {
+            get => _maxCacheSize;
+            set
+            {
+                int newValue = Math.Max(100, Math.Min(2000, value));
+                if (_maxCacheSize != newValue)
+                {
+                    _maxCacheSize = newValue;
+                    OnPropertyChanged();
+                    Save();
+                }
+            }
+        }
+
+        private int _parallelThreadCount = 3;
+        public int ParallelThreadCount
+        {
+            get => _parallelThreadCount;
+            set
+            {
+                int newValue = Math.Max(1, Math.Min(16, value));
+                if (_parallelThreadCount != newValue)
+                {
+                    _parallelThreadCount = newValue;
+                    OnPropertyChanged();
+                    Save();
+                }
+            }
         }
 
         // Save settings to file

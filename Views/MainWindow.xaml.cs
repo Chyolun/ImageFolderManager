@@ -133,15 +133,23 @@ namespace ImageFolderManager
 
         private async void PreviewSize_Click(object sender, RoutedEventArgs e)
         {
-            var dialog = new PreviewSizeDialog();
+            var dialog = new Views.PreviewSizeDialog();
             dialog.Owner = this;
             dialog.ShowDialog();
 
-            if (dialog.DialogResu)
+            if (dialog.DialogResult)
             {
-                await ViewModel.SetPreviewSize(dialog.SelectedWidth, dialog.SelectedHeight);
-                MessageBox.Show("Preview size updated. Thumbnail cache has been cleared.",
-                    "Settings Updated", MessageBoxButton.OK, MessageBoxImage.Information);
+                await ViewModel.SetPreviewSize(
+                    dialog.SelectedWidth,
+                    dialog.SelectedHeight,
+                    dialog.SelectedMaxCacheSize,
+                    dialog.SelectedThreadCount);
+
+                MessageBox.Show(
+                    "Performance settings updated. Settings that affect thumbnails will clear the cache.",
+                    "Settings Updated",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
             }
         }
 

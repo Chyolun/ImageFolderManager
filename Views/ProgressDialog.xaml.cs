@@ -88,22 +88,6 @@ namespace ImageFolderManager.Views
             });
         }
 
-        /// <summary>
-        /// Closes the dialog and releases resources
-        /// </summary>
-        public void CloseDialog()
-        {
-            Dispatcher.Invoke(() =>
-            {
-                Close();
-            });
-        }
-
-        // Release resources
-        protected override void OnClosed(EventArgs e)
-        {
-            _cancellationTokenSource.Dispose();
-            base.OnClosed(e);
-        }
+      
     }
 }
