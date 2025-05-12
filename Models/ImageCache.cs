@@ -686,6 +686,9 @@ namespace ImageFolderManager.Models
         /// <summary>
         /// Saves a thumbnail to the disk cache in WebP format
         /// </summary>
+        /// <summary>
+        /// Optimized WebP encoding for disk cache storage
+        /// </summary>
         private static async Task SaveThumbnailToDiskAsync(BitmapImage image, string filePath, string contentHash)
         {
             if (image == null || string.IsNullOrEmpty(filePath))
@@ -693,7 +696,14 @@ namespace ImageFolderManager.Models
 
             try
             {
-                await _diskOperationLock.WaitAsync();
+                // Try to acquire the disk lock but don't wait too long
+                if (!await _diskOperationLock.WaitAsync(100))
+                {
+                    // If we can't quickly acquire the lock, skip this save operation
+                    // The thumbnail is already in memory cache, so it's not critical
+                    return;
+                }
+
                 try
                 {
                     // Ensure directory exists
@@ -703,34 +713,34 @@ namespace ImageFolderManager.Models
                         Directory.CreateDirectory(dirPath);
                     }
 
+                    // Check if the file already exists (avoid redundant writes)
+                    if (File.Exists(filePath))
+                    {
+                        // Skip if the file already exists
+                        return;
+                    }
+
                     // Convert BitmapImage to WebP using Magick.NET
                     using (var magickImage = ConvertBitmapImageToMagickImage(image))
                     {
                         if (magickImage != null)
                         {
+                            // Calculate optimal quality based on image content
+                            // Lower quality for larger images to save space
+                            int quality = CalculateOptimalQuality(image.PixelWidth, image.PixelHeight);
+
                             // Configure WebP settings
                             magickImage.Format = MagickFormat.WebP;
-                            magickImage.Quality = WEBP_QUALITY;
+                            magickImage.Quality = (uint)quality;
 
                             // Set WebP specific options
                             magickImage.Settings.SetDefine(MagickFormat.WebP, "lossless", "false");
-                            magickImage.Settings.SetDefine(MagickFormat.WebP, "method", "6"); // Best compression method (0-6)
+                            magickImage.Settings.SetDefine(MagickFormat.WebP, "method", "4"); // Balance between speed and quality (0-6)
                             magickImage.Settings.SetDefine(MagickFormat.WebP, "thread-level", "1"); // Multithreaded compression
 
                             // Write the WebP file
                             magickImage.Write(filePath);
                         }
-                    }
-
-                    // Store the content hash in file metadata for future verification
-                    bool saveMetadata = false;
-
-                    // Write content hash to a side-car metadata file for cross-filesystem compatibility
-                    if (saveMetadata)
-                    {
-                        string metadataPath = filePath + ".meta";
-                        // Use synchronous File.WriteAllText as WriteAllTextAsync isn't available in .NET Framework 4.8
-                        File.WriteAllText(metadataPath, contentHash);
                     }
                 }
                 finally
@@ -742,6 +752,25 @@ namespace ImageFolderManager.Models
             {
                 Debug.WriteLine($"Error saving thumbnail to disk: {ex.Message}");
             }
+        }
+
+        /// <summary>
+        /// Calculates optimal WebP quality based on image dimensions
+        /// </summary>
+        private static int CalculateOptimalQuality(int width, int height)
+        {
+            int pixelCount = width * height;
+
+            // For very small thumbnails, use higher quality
+            if (pixelCount < 10000) // e.g. 100x100
+                return 92;
+
+            // For medium-sized thumbnails, use medium quality
+            if (pixelCount < 40000) // e.g. 200x200
+                return 85;
+
+            // For larger thumbnails, use lower quality
+            return 80;
         }
 
         /// <summary>
