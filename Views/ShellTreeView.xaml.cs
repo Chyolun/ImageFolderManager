@@ -70,6 +70,9 @@ namespace ImageFolderManager.Views
 
         // For selection with mouse
         private bool _isMultiSelectActive = false;
+        private DateTime _mouseDownTime;
+        private const int DRAG_DELAY_MS = 300; // 300ms delay before starting drag
+        private const double DRAG_DISTANCE_MULTIPLIER = 1.5; // Increase drag distance threshold
 
 
         public ShellTreeView()
@@ -1494,6 +1497,7 @@ namespace ImageFolderManager.Views
         {
             // Store the mouse position for potential drag operation
             _startPoint = e.GetPosition(null);
+            _mouseDownTime = DateTime.Now; // Record when mouse was pressed
 
             // Handle multi-selection
             TreeView_PreviewMouseDown(sender, e);
@@ -1506,16 +1510,33 @@ namespace ImageFolderManager.Views
         {
             if (e.LeftButton == MouseButtonState.Pressed && !_isDragging)
             {
-                Point position = e.GetPosition(null);
+                // Calculate time since mouse button was pressed
+                TimeSpan timeSinceMouseDown = DateTime.Now - _mouseDownTime;
 
-                // Check if the mouse has moved far enough to initiate drag
-                if (Math.Abs(position.X - _startPoint.X) > SystemParameters.MinimumHorizontalDragDistance ||
-                    Math.Abs(position.Y - _startPoint.Y) > SystemParameters.MinimumVerticalDragDistance)
+                // Only start drag if mouse has been pressed for at least DRAG_DELAY_MS milliseconds
+                if (timeSinceMouseDown.TotalMilliseconds >= DRAG_DELAY_MS)
                 {
-                    StartDrag(e);
+                    Point position = e.GetPosition(null);
+
+                    // Increase drag distance threshold by multiplying system parameters
+                    double horizontalThreshold = SystemParameters.MinimumHorizontalDragDistance * DRAG_DISTANCE_MULTIPLIER;
+                    double verticalThreshold = SystemParameters.MinimumVerticalDragDistance * DRAG_DISTANCE_MULTIPLIER;
+
+                    // Check if the mouse has moved far enough to initiate drag
+                    if (Math.Abs(position.X - _startPoint.X) > horizontalThreshold ||
+                        Math.Abs(position.Y - _startPoint.Y) > verticalThreshold)
+                    {
+                        // Make sure we're actually over a draggable item
+                        var item = GetTreeViewItemUnderMouse(position);
+                        if (item != null && item.Tag is ShellObject)
+                        {
+                            StartDrag(e);
+                        }
+                    }
                 }
             }
         }
+
 
         /// <summary>
         /// Handles the TreeView.PreviewMouseLeftButtonUp event for drag & drop
@@ -1532,6 +1553,17 @@ namespace ImageFolderManager.Views
         {
             // For multi-selection, we'll need to handle dragging multiple items
             if (_selectedItems.Count <= 0) return;
+            // Add an additional check to prevent accidental drags
+            Point currentPosition = e.GetPosition(null);
+            double distance = Math.Sqrt(
+                Math.Pow(currentPosition.X - _startPoint.X, 2) +
+                Math.Pow(currentPosition.Y - _startPoint.Y, 2));
+
+            // Only proceed if distance is significant
+            if (distance < SystemParameters.MinimumHorizontalDragDistance * 2)
+            {
+                return;
+            }
 
             _isDragging = true;
 
