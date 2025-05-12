@@ -172,6 +172,8 @@ namespace ImageFolderManager.Services
                         settings.PreviewHeight = loadedSettings.PreviewHeight;
                         settings.AutoExpandFolders = loadedSettings.AutoExpandFolders;
                         settings.MaxRecentFolders = loadedSettings.MaxRecentFolders;
+                        settings.MaxCacheSize = loadedSettings.MaxCacheSize;
+                        settings.ParallelThreadCount = loadedSettings.ParallelThreadCount;
                         settings.RecentFolders = loadedSettings.RecentFolders ?? new List<string>();
                     }
                 }

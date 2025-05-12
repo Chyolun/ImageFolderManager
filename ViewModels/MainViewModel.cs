@@ -233,10 +233,6 @@ namespace ImageFolderManager.ViewModels
         public async Task SetPreviewSize(int width, int height, int maxCacheSize, int threadCount)
         {
             bool sizeChanged = PreviewWidth != width || PreviewHeight != height;
-            bool cacheSettingsChanged = AppSettings.Instance.MaxCacheSize != maxCacheSize ||
-                                       AppSettings.Instance.ParallelThreadCount != threadCount;
-
-
             // Save settings
             AppSettings.Instance.PreviewWidth = width;
             AppSettings.Instance.PreviewHeight = height;

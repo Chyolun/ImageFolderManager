@@ -33,13 +33,9 @@
 
         <!-- Preview Size Group -->
         <TextBlock Grid.Row="0" Grid.ColumnSpan="2" 
-                   Text="Preview  Settings" 
+                   Text="Preview  Size" 
                    FontSize="14" FontWeight="SemiBold"
                    Margin="0,0,0,10" Foreground="White"/>
-
-        <TextBlock Grid.Row="1" Grid.ColumnSpan="2" 
-                   Text="Adjust the size of image previews. Changing the size will clear the thumbnail cache."
-                   TextWrapping="Wrap" Margin="0,0,0,15" Foreground="White"/>
 
         <TextBlock Grid.Row="2" Grid.Column="0" Text="Width:" VerticalAlignment="Center" Margin="0,0,10,0" Foreground="White"/>
         <mah:NumericUpDown Grid.Row="2" Grid.Column="1" x:Name="WidthUpDown" Minimum="100" Maximum="1000" Interval="10" Value="200"/>
@@ -61,7 +57,7 @@
 
         <!-- Cache Information Group -->
         <TextBlock Grid.Row="7" Grid.ColumnSpan="2" 
-                   Text="Cache Information" 
+                   Text="Clear Cache" 
                    FontSize="14" FontWeight="SemiBold"
                    Margin="0,25,0,10" Foreground="White"/>
 
@@ -72,7 +68,7 @@
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
 
-            <TextBlock Grid.Column="0" Text="Disk Cache Size:" VerticalAlignment="Center" Foreground="White"/>
+            <TextBlock Grid.Column="0" Text="Local Cache:" VerticalAlignment="Center" Foreground="White"/>
             <TextBlock Grid.Column="1" x:Name="CacheSizeText" Text="Calculating..." Margin="10,0,0,0" VerticalAlignment="Center" Foreground="LightGreen" FontWeight="SemiBold"/>
             <Button Grid.Column="2" Content="Clear Cache" Width="100" Click="ClearCache_Click"/>
         </Grid>
