@@ -71,6 +71,7 @@ namespace ImageFolderManager.Views
         // For selection with mouse
         private bool _isMultiSelectActive = false;
 
+
         public ShellTreeView()
         {
             InitializeComponent();
@@ -1341,7 +1342,7 @@ namespace ImageFolderManager.Views
             // Add "Load Images" option for single selection
             if (selectedFolders.Count == 1)
             {
-                var loadImagesItem = new MenuItem { Header = "Load Images" };
+                var loadImagesItem = new MenuItem { Header = "Load Images", InputGestureText = "Double-click" };
                 loadImagesItem.Click += (s, args) => {
                     Debug.WriteLine("Load Images clicked");
                     LoadImagesForFolder(selectedFolders[0]);
@@ -1354,7 +1355,7 @@ namespace ImageFolderManager.Views
             if (selectedFolders.Count == 1)
             {
                 // Single selection menu
-                var newFolderItem = new MenuItem { Header = "New Folder" };
+                var newFolderItem = new MenuItem { Header = "New Folder", InputGestureText = "Ctrl+N" };
                 newFolderItem.Click += (s, args) => {
                     Debug.WriteLine("New Folder clicked");
                     NewFolder_Click(s, args);
@@ -1377,21 +1378,21 @@ namespace ImageFolderManager.Views
             }
 
             // Common operations for both single and multi-selections
-            var cutItem = new MenuItem { Header = "Cut" };
+            var cutItem = new MenuItem { Header = "Cut", InputGestureText = "Ctrl+X" };
             cutItem.Click += (s, args) => {
                 Debug.WriteLine("Cut clicked");
                 MultiFolderCut_Click(s, args);
             };
             contextMenu.Items.Add(cutItem);
 
-            var copyItem = new MenuItem { Header = "Copy" };
+            var copyItem = new MenuItem { Header = "Copy", InputGestureText = "Ctrl+C" };
             copyItem.Click += (s, args) => {
                 Debug.WriteLine("Copy clicked");
                 MultiFolderCopy_Click(s, args);
             };
             contextMenu.Items.Add(copyItem);
 
-            var pasteItem = new MenuItem { Header = "Paste" };
+            var pasteItem = new MenuItem { Header = "Paste", InputGestureText = "Ctrl+V" };
             pasteItem.Click += (s, args) => {
                 Debug.WriteLine("Paste clicked");
                 Paste_Click(s, args);
@@ -1414,7 +1415,7 @@ namespace ImageFolderManager.Views
             }
 
             var deleteItemText = selectedFolders.Count > 1 ? $"Delete ({selectedFolders.Count} items)" : "Delete";
-            var deleteItem = new MenuItem { Header = deleteItemText };
+            var deleteItem = new MenuItem { Header = deleteItemText , InputGestureText = "Delete" };
             deleteItem.Click += (s, args) => {
                 Debug.WriteLine("Delete clicked");
                 MultiFolderDelete_Click(s, args);
@@ -1426,7 +1427,7 @@ namespace ImageFolderManager.Views
             if (selectedFolders.Count == 1)
             {
                 // Single selection specific actions
-                var renameItem = new MenuItem { Header = "Rename" };
+                var renameItem = new MenuItem { Header = "Rename", InputGestureText = "F2" };
                 renameItem.Click += (s, args) => {
                     Debug.WriteLine("Rename clicked");
                     Rename_Click(s, args);

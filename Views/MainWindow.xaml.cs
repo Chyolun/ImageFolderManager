@@ -212,6 +212,21 @@ namespace ImageFolderManager
                 "Refresh Complete", MessageBoxButton.OK, MessageBoxImage.Information);
         }
 
+        protected override void OnKeyDown(KeyEventArgs e)
+        {
+            base.OnKeyDown(e);
+
+            // Handle Ctrl+Z for undo
+            if (e.Key == Key.Z && Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
+            {
+                if (ViewModel != null && ViewModel.UndoFolderMovementCommand.CanExecute(null))
+                {
+                    ViewModel.UndoFolderMovementCommand.Execute(null);
+                    e.Handled = true;
+                }
+            }
+        }
+
         private void SearchResultListBox_ContextMenuOpening(object sender, ContextMenuEventArgs e)
         {
             var listBox = sender as ListBox;

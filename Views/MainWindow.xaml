@@ -19,18 +19,27 @@
     <mah:MetroWindow.DataContext>
         <local:MainViewModel />
     </mah:MetroWindow.DataContext>
+    <Window.InputBindings>
+        <KeyBinding Key="Z" Modifiers="Control" Command="{Binding UndoFolderMovementCommand}" />
+    </Window.InputBindings>
 
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
+        
 
         <!-- Menu Bar -->
         <Menu Grid.Row="0" Background="{DynamicResource MahApps.Brushes.ThemeBackground}">
             <MenuItem Header="Settings" Foreground="White">
                 <MenuItem Header="Root Directory" Click="RootDirectory_Click"/>
                 <MenuItem Header="Preview Settings" Click="PreviewSize_Click"/>
+            </MenuItem>
+            <MenuItem Header="Edit" Foreground="White">
+                <MenuItem Header="Undo Folder Movement" 
+                  Command="{Binding UndoFolderMovementCommand}" 
+                  InputGestureText="Ctrl+Z"/>
             </MenuItem>
             <MenuItem Header="Tools" Foreground="White">
                 <MenuItem Header="Refresh All" Click="RefreshAll_Click"/>

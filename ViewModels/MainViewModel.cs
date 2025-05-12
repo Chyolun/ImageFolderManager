@@ -38,6 +38,8 @@ namespace ImageFolderManager.ViewModels
         private readonly FolderManagementService _folderManager;
         private bool _isLoadingImages = false;
         private CancellationTokenSource _imageLoadingCts;
+        private Stack<FolderMoveOperation> _undoStack = new Stack<FolderMoveOperation>();
+        
         public FolderInfo SelectedFolder
         {
             get => _selectedFolder;
@@ -98,6 +100,7 @@ namespace ImageFolderManager.ViewModels
         public IAsyncRelayCommand<FolderInfo> DeleteFolderCommand { get; }
         public ICommand SetRatingCommand { get; }
         public ICommand EditTagsCommand { get; }
+        public ICommand UndoFolderMovementCommand { get; }
         public ObservableCollection<FolderInfo> SearchResultFolders { get; set; } = new();
 
         private int _rating;
@@ -176,6 +179,7 @@ namespace ImageFolderManager.ViewModels
             DeleteFolderCommand = new AsyncRelayCommand<FolderInfo>(DeleteFolderAsync);
             _folderManager = new FolderManagementService(HandleFileSystemEvent);
             EditTagsCommand = new RelayCommand(_ => EditTags());
+            UndoFolderMovementCommand = new AsyncRelayCommand(UndoLastFolderMovementAsync, CanUndoFolderMovement);
 
             UpdateStars();
 
@@ -1996,19 +2000,19 @@ namespace ImageFolderManager.ViewModels
 
                             if (isCut)
                             {
-                                // Move directory
-                                Directory.Move(sourcePath, destinationPath);
-
-                                // Update progress
-                                progressDialog.UpdateProgress(0.6, "Updating UI...");
-
-                                // Remove from UI (on UI thread)
-                                await Application.Current.Dispatcher.InvokeAsync(() =>
+                                // Track operation for undo
+                                var operation = new FolderMoveOperation
                                 {
-                                    RemoveFolderFromTree(sourceFolder);
-                                    RemoveFolderAndSubfoldersFromSearchResults(sourcePath);
-                                    RemoveFolderAndSubfoldersFromAllLoaded(sourcePath);
-                                    
+                                    SourcePaths = new List<string> { sourcePath },
+                                    DestinationPath = targetFolder.FolderPath,
+                                    IsMultipleMove = false,
+                                    Timestamp = DateTime.Now,
+                                    SourceParentPaths = new List<string> { Path.GetDirectoryName(sourcePath) }
+                                };
+
+                                await Application.Current.Dispatcher.InvokeAsync(() => {
+                                    _undoStack.Push(operation);
+                                    CommandManager.InvalidateRequerySuggested(); // Refresh command state
                                 });
                             }
                             else
@@ -2333,6 +2337,193 @@ namespace ImageFolderManager.ViewModels
             }
         }
 
+        private bool CanUndoFolderMovement()
+        {
+            return _undoStack.Count > 0;
+        }
+
+        // Step 6: Add the main undo method
+        public async Task UndoLastFolderMovementAsync()
+        {
+            if (_undoStack.Count == 0)
+            {
+                StatusMessage = "Nothing to undo.";
+                return;
+            }
+
+            var lastOperation = _undoStack.Pop();
+
+            // Create progress dialog
+            var progressDialog = new Views.ProgressDialog(
+                "Undoing Folder Movement",
+                "Restoring folders to their original locations...");
+            progressDialog.Owner = Application.Current.MainWindow;
+
+            using (var cts = new CancellationTokenSource())
+            {
+                // Handle cancellation
+                progressDialog.CancelRequested += (s, e) =>
+                {
+                    cts.Cancel();
+                    StatusMessage = "Undo operation cancelled.";
+                };
+
+                try
+                {
+                    // Create task to undo the operation
+                    var undoTask = Task.Run(async () =>
+                    {
+                        try
+                        {
+                            int total = lastOperation.SourcePaths.Count;
+                            int processed = 0;
+
+                            // Reverse the operation - move from destination back to sources
+                            foreach (var sourcePath in lastOperation.SourcePaths)
+                            {
+                                if (cts.Token.IsCancellationRequested)
+                                    break;
+
+                                try
+                                {
+                                    // Update progress
+                                    double progress = (double)processed / total;
+                                    progressDialog.UpdateProgress(progress, $"Restoring folder {processed + 1} of {total}...");
+
+                                    // Get the current path in the destination folder
+                                    string folderName = Path.GetFileName(sourcePath);
+                                    string currentPath = Path.Combine(lastOperation.DestinationPath, folderName);
+
+                                    // Make sure the path exists - the user may have renamed it
+                                    if (!Directory.Exists(currentPath))
+                                    {
+                                        // Try to find the folder by looking for folders with similar names
+                                        var potentialMatches = Directory.GetDirectories(lastOperation.DestinationPath)
+                                            .Where(dir => Path.GetFileName(dir).StartsWith(folderName) ||
+                                                   Path.GetFileName(dir).EndsWith(folderName))
+                                            .ToList();
+
+                                        if (potentialMatches.Count == 1)
+                                        {
+                                            currentPath = potentialMatches[0];
+                                        }
+                                        else if (potentialMatches.Count > 0)
+                                        {
+                                            // If more than one match, just use the first one and log a warning
+                                            currentPath = potentialMatches[0];
+                                            Debug.WriteLine($"Warning: Multiple potential matches for {folderName}, using {currentPath}");
+                                        }
+                                        else
+                                        {
+                                            Debug.WriteLine($"Warning: Could not find folder {folderName} in {lastOperation.DestinationPath}");
+                                            processed++;
+                                            continue;
+                                        }
+                                    }
+
+                                    // Ensure the destination directory exists
+                                    Directory.CreateDirectory(Path.GetDirectoryName(sourcePath));
+
+                                    // If the source path already exists, create a new unique name
+                                    string targetPath = sourcePath;
+                                    if (Directory.Exists(targetPath))
+                                    {
+                                        string originalName = Path.GetFileName(sourcePath);
+                                        string parentDir = Path.GetDirectoryName(sourcePath);
+                                        targetPath = PathService.GetUniqueDirectoryPath(parentDir, originalName);
+                                    }
+
+                                    // Stop watching the source and destination paths
+                                    _folderManager.UnwatchFolder(currentPath);
+
+                                    // Move the folder back to its original location
+                                    Directory.Move(currentPath, targetPath);
+
+                                    // Brief delay to prevent UI freezing
+                                    await Task.Delay(50, cts.Token);
+                                }
+                                catch (Exception ex)
+                                {
+                                    Debug.WriteLine($"Error undoing folder move: {ex.Message}");
+                                }
+
+                                processed++;
+                            }
+
+                            // Update final progress
+                            progressDialog.UpdateProgress(1.0, "Folder restore completed");
+
+                            return true;
+                        }
+                        catch (OperationCanceledException)
+                        {
+                            return false;
+                        }
+                        catch (Exception ex)
+                        {
+                            Debug.WriteLine($"Error in undo operation: {ex.Message}");
+                            await Application.Current.Dispatcher.InvokeAsync(() =>
+                            {
+                                MessageBox.Show($"Error undoing folder movement: {ex.Message}",
+                                    "Undo Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                            });
+                            return false;
+                        }
+                    }, cts.Token);
+
+                    // Show modal progress dialog
+                    progressDialog.ShowDialog();
+
+                    // If dialog closes due to cancel button, ensure operation is cancelled
+                    if (progressDialog.IsCancelled && !cts.IsCancellationRequested)
+                    {
+                        cts.Cancel();
+                    }
+
+                    // Wait for undo task to complete
+                    bool success = await undoTask;
+
+                    // Update status
+                    if (success && !cts.IsCancellationRequested)
+                    {
+                        StatusMessage = "Successfully undid the last folder movement";
+
+                        // Refresh relevant folders in the tree
+                        var mainWindow = Application.Current.MainWindow as MainWindow;
+                        if (mainWindow?.ShellTreeViewControl != null)
+                        {
+                            // Refresh both source and destination paths
+                            foreach (var sourcePath in lastOperation.SourceParentPaths)
+                            {
+                                if (PathService.DirectoryExists(sourcePath))
+                                {
+                                    mainWindow.ShellTreeViewControl.RefreshTree(sourcePath, true);
+                                }
+                            }
+
+                            if (PathService.DirectoryExists(lastOperation.DestinationPath))
+                            {
+                                mainWindow.ShellTreeViewControl.RefreshTree(lastOperation.DestinationPath, true);
+                            }
+                        }
+
+                        // Update tag cloud
+                        await UpdateTagCloudAsync();
+                    }
+                    else if (cts.IsCancellationRequested)
+                    {
+                        StatusMessage = "Undo operation cancelled";
+                    }
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Error undoing folder movement: {ex.Message}",
+                        "Undo Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
+        }
+
+
         public async void MoveFolder(FolderInfo sourceFolder, FolderInfo targetFolder)
         {
             if (sourceFolder == null || targetFolder == null)
@@ -2373,6 +2564,16 @@ namespace ImageFolderManager.ViewModels
                         return;
                     }
 
+                    // Track the operation for undo
+                    var operation = new FolderMoveOperation
+                    {
+                        SourcePaths = new List<string> { sourceFolder.FolderPath },
+                        DestinationPath = targetFolder.FolderPath,
+                        IsMultipleMove = false,
+                        Timestamp = DateTime.Now,
+                        SourceParentPaths = new List<string> { Path.GetDirectoryName(sourceFolder.FolderPath) }
+                    };
+
                     // Create background move task
                     var moveTask = Task.Run(async () =>
                     {
@@ -2384,7 +2585,7 @@ namespace ImageFolderManager.ViewModels
                             // Build destination path
                             string sourcePath = sourceFolder.FolderPath;
                             string folderName = Path.GetFileName(sourcePath);
-                            string destinationPath = PathService.GetUniqueDirectoryPath(targetFolder.FolderPath, folderName);                         
+                            string destinationPath = PathService.GetUniqueDirectoryPath(targetFolder.FolderPath, folderName);
                             // Update progress
                             progressDialog.UpdateProgress(0.2, "Preparing to move...");
 
@@ -2434,6 +2635,13 @@ namespace ImageFolderManager.ViewModels
                             });
                             await UpdateTagCloudAsync();
                             progressDialog.UpdateProgress(1.0, "Moving folder complete!");
+
+                            // Track operation for undo
+                            await Application.Current.Dispatcher.InvokeAsync(() => {
+                                _undoStack.Push(operation);
+                                CommandManager.InvalidateRequerySuggested(); // Refresh command state
+                            });
+
                             return true;
                         }
                         catch (Exception ex)
@@ -2503,6 +2711,19 @@ namespace ImageFolderManager.ViewModels
                 // Set progress dialog owner
                 progressDialog.Owner = Application.Current.MainWindow;
 
+                // Track operation for undo
+                var operation = new FolderMoveOperation
+                {
+                    SourcePaths = sourceFolders.Select(f => f.FolderPath).ToList(),
+                    DestinationPath = targetFolder.FolderPath,
+                    IsMultipleMove = true,
+                    Timestamp = DateTime.Now,
+                    SourceParentPaths = sourceFolders
+                        .Select(f => Path.GetDirectoryName(f.FolderPath))
+                        .Distinct()
+                        .ToList()
+                };
+
                 using (var cts = new CancellationTokenSource())
                 {
                     // Handle cancellation request
@@ -2519,6 +2740,7 @@ namespace ImageFolderManager.ViewModels
                         {
                             int total = sourceFolders.Count;
                             int processed = 0;
+                            bool anySuccess = false;
 
                             // Get target path
                             string targetPath = targetFolder.FolderPath;
@@ -2547,8 +2769,6 @@ namespace ImageFolderManager.ViewModels
                                     // Build destination path
                                     string folderName = Path.GetFileName(sourcePath);
                                     string destinationPath = PathService.GetUniqueDirectoryPath(targetPath, folderName);
-                                    // Check if destination already exists
-                                    
 
                                     // Temporarily disable FileSystemWatcher
                                     _folderManager.UnwatchFolder(sourcePath);
@@ -2556,6 +2776,7 @@ namespace ImageFolderManager.ViewModels
 
                                     // Move directory
                                     Directory.Move(sourcePath, destinationPath);
+                                    anySuccess = true;
 
                                     // Update UI
                                     await Application.Current.Dispatcher.InvokeAsync(() =>
@@ -2602,6 +2823,13 @@ namespace ImageFolderManager.ViewModels
                                 // Reload target folder's children
                                 targetFolder.Children.Clear();
                                 targetFolder.LoadChildren();
+
+                                // Track the operation for undo if at least one folder was moved successfully
+                                if (anySuccess)
+                                {
+                                    _undoStack.Push(operation);
+                                    CommandManager.InvalidateRequerySuggested(); // Refresh command state
+                                }
                             });
 
                             return true;
@@ -3077,6 +3305,17 @@ namespace ImageFolderManager.ViewModels
     {
         public int Value { get; set; }
         public string Symbol { get; set; }
+    }
+
+    public class FolderMoveOperation
+    {
+        public List<string> SourcePaths { get; set; } = new List<string>();
+        public string DestinationPath { get; set; }
+        public bool IsMultipleMove { get; set; }
+        public DateTime Timestamp { get; set; }
+
+        // Store parent paths for refreshing after undo
+        public List<string> SourceParentPaths { get; set; } = new List<string>();
     }
 
 
