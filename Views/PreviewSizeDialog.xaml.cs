@@ -46,10 +46,6 @@ namespace ImageFolderManager.Views
                     Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
                     "ImageFolderManager", "Cache");
 
-                // Also check the application local cache folder
-                string localCacheFolder = Path.Combine(
-                    AppDomain.CurrentDomain.BaseDirectory, "Cache");
-
                 await Task.Run(() =>
                 {
                     long totalSize = 0;
@@ -64,16 +60,7 @@ namespace ImageFolderManager.Views
                         }
                     }
 
-                    // Check local cache folder
-                    if (Directory.Exists(localCacheFolder))
-                    {
-                        var directory = new DirectoryInfo(localCacheFolder);
-                        foreach (var file in directory.GetFiles("*", SearchOption.AllDirectories))
-                        {
-                            totalSize += file.Length;
-                        }
-                    }
-
+                 
                     // Convert to appropriate size format
                     string sizeText = FormatSize(totalSize);
 

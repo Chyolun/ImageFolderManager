@@ -7,8 +7,10 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using ImageFolderManager.Services;
+using ImageMagick;
 
 namespace ImageFolderManager.Models
 {
@@ -39,19 +41,23 @@ namespace ImageFolderManager.Models
 
         // Thread synchronization
         private static readonly SemaphoreSlim _cacheLock = new(1, 1);
-        private static  SemaphoreSlim _diskOperationLock = new SemaphoreSlim(
+        private static SemaphoreSlim _diskOperationLock = new SemaphoreSlim(
                                                 AppSettings.Instance.ParallelThreadCount,
                                                 AppSettings.Instance.ParallelThreadCount);
         private static bool _isTrimming = false;
 
-        // Disk cache path
+        // Disk cache path AppData\Roaming\ImageFolderManager\Cache
         private static readonly string _cacheFolder = Path.Combine(
-            AppDomain.CurrentDomain.BaseDirectory,
-            "Cache");
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            "ImageFolderManager", "Cache");
+
 
         // Statistics
         private static long _cacheHits = 0;
         private static long _cacheMisses = 0;
+
+        // WebP quality setting (0-100)
+        private const int WEBP_QUALITY = 85;
 
         // Cancellation tracking
         private static ConcurrentDictionary<string, CancellationTokenSource> _loadingOperations =
@@ -72,14 +78,16 @@ namespace ImageFolderManager.Models
             {
                 Debug.WriteLine($"Error initializing cache folder: {ex.Message}");
 
-                _cacheFolder = Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                    "ImageFolderManager", "Cache");
-
-                // Use PathService to check directory existence
-                if (!PathService.DirectoryExists(_cacheFolder))
+                try
                 {
-                    Directory.CreateDirectory(_cacheFolder);
+                    if (!Directory.Exists(_cacheFolder))
+                    {
+                        Directory.CreateDirectory(_cacheFolder);
+                    }
+                }
+                catch (Exception createEx)
+                {
+                    Debug.WriteLine($"Fatal error: Cannot create cache directory: {createEx.Message}");
                 }
             }
         }
@@ -181,26 +189,25 @@ namespace ImageFolderManager.Models
                         try
                         {
                             int decodeWidth = Services.AppSettings.Instance.PreviewWidth;
+                            int decodeHeight = Services.AppSettings.Instance.PreviewHeight;
 
                             // Check if operation was cancelled
                             operationCts.Token.ThrowIfCancellationRequested();
                             progressCallback?.Report(0.7);
 
-                            var bitmap = new BitmapImage();
-                            bitmap.BeginInit();
-                            bitmap.UriSource = new Uri(normalizedPath);
-                            bitmap.DecodePixelWidth = decodeWidth;
-                            bitmap.CacheOption = BitmapCacheOption.OnLoad;
-                            bitmap.EndInit();
-                            bitmap.Freeze(); // Important for cross-thread usage
+                            // Use asynchronous decoding with optimized parameters
+                            BitmapImage bitmap = await DecodeImageOptimizedAsync(normalizedPath, decodeWidth, decodeHeight, operationCts.Token);
 
-                            StoreInMemoryCache(normalizedPath, bitmap);
-                            progressCallback?.Report(0.9);
+                            if (bitmap != null)
+                            {
+                                StoreInMemoryCache(normalizedPath, bitmap);
+                                progressCallback?.Report(0.9);
 
-                            // Save to disk cache asynchronously without waiting for completion
-                            _ = SaveThumbnailToDiskAsync(bitmap, thumbPath, contentHash);
+                                // Save to disk cache asynchronously without waiting for completion
+                                _ = SaveThumbnailToDiskAsync(bitmap, thumbPath, contentHash);
 
-                            progressCallback?.Report(1.0); // Complete
+                                progressCallback?.Report(1.0); // Complete
+                            }
                             return bitmap;
                         }
                         catch (OperationCanceledException)
@@ -230,6 +237,101 @@ namespace ImageFolderManager.Models
                 _loadingOperations.TryRemove(normalizedPath, out _);
                 operationCts.Dispose();
             }
+        }
+
+        /// <summary>
+        /// Optimized image decoding with better performance parameters
+        /// </summary>
+        private static async Task<BitmapImage> DecodeImageOptimizedAsync(
+            string filePath,
+            int targetWidth,
+            int targetHeight,
+            CancellationToken cancellationToken)
+        {
+            try
+            {
+                // Create a BitmapImage optimized for quick loading
+                var bitmap = new BitmapImage();
+
+                // Use FileStream for asynchronous access
+                using (var fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, true))
+                {
+                    // Check for cancellation
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    // Access file on background thread first
+                    var memoryStream = new MemoryStream();
+                    await fileStream.CopyToAsync(memoryStream, 81920, cancellationToken);
+                    memoryStream.Position = 0;
+
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    // Switch to optimization parameters
+                    bitmap.BeginInit();
+                    bitmap.StreamSource = memoryStream;
+                    bitmap.CreateOptions = BitmapCreateOptions.DelayCreation;
+                    bitmap.CacheOption = BitmapCacheOption.OnLoad;
+                    bitmap.DecodePixelWidth = targetWidth;
+                    // Let the aspect ratio do its job rather than setting both dimensions
+                    // bitmap.DecodePixelHeight = targetHeight; 
+
+                    // Enable better downsampling to reduce aliasing
+                    RenderOptions.SetBitmapScalingMode(bitmap, BitmapScalingMode.HighQuality);
+
+                    // Use lower bit depth if possible to save memory
+                    if (IsJpegOrPng(filePath))
+                    {
+                        // For some formats, we can reduce memory usage with 8-bit format
+                        bitmap.DownloadCompleted += (s, e) => {
+                            // Additional optimization after load if needed
+                        };
+                    }
+
+                    bitmap.EndInit();
+
+                    if (bitmap.CanFreeze && !bitmap.IsFrozen)
+                    {
+                        bitmap.Freeze(); // Important for cross-thread usage and performance
+                    }
+
+                    return bitmap;
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error in optimized decoding: {ex.Message}");
+
+                // Fallback to simple decoding if optimization fails
+                try
+                {
+                    var bitmap = new BitmapImage();
+                    bitmap.BeginInit();
+                    bitmap.UriSource = new Uri(filePath);
+                    bitmap.DecodePixelWidth = targetWidth;
+                    bitmap.CacheOption = BitmapCacheOption.OnLoad;
+                    bitmap.EndInit();
+                    if (bitmap.CanFreeze)
+                        bitmap.Freeze();
+                    return bitmap;
+                }
+                catch
+                {
+                    return null;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Determines if a file is a JPEG or PNG based on extension
+        /// </summary>
+        private static bool IsJpegOrPng(string filePath)
+        {
+            string ext = Path.GetExtension(filePath).ToLowerInvariant();
+            return ext == ".jpg" || ext == ".jpeg" || ext == ".png";
         }
 
         /// <summary>
@@ -438,12 +540,10 @@ namespace ImageFolderManager.Models
 
                 try
                 {
- 
                     _diskOperationLock = new SemaphoreSlim(threadCount, threadCount);
                 }
                 finally
                 {
-      
                     oldLock.Release();
                     oldLock.Dispose();
                 }
@@ -455,7 +555,6 @@ namespace ImageFolderManager.Models
                 Debug.WriteLine($"Error updating parallel thread count: {ex.Message}");
             }
         }
-
 
         /// <summary>
         /// Gets the file path for caching a thumbnail
@@ -473,7 +572,8 @@ namespace ImageFolderManager.Models
             int height = Services.AppSettings.Instance.PreviewHeight;
 
             // Create a filename using the content hash plus dimensions
-            string filename = $"{contentHash}_{width}x{height}.jpg";
+            // Use WebP extension for the cached file
+            string filename = $"{contentHash}_{width}x{height}.webp";
 
             return Path.Combine(_cacheFolder, filename);
         }
@@ -490,35 +590,87 @@ namespace ImageFolderManager.Models
 
             try
             {
-                return await Task.Run(() =>
+                // For WebP files, use Magick.NET for decoding
+                string extension = Path.GetExtension(filePath).ToLowerInvariant();
+                if (extension == ".webp")
                 {
-                    try
+                    return await Task.Run(() =>
                     {
-                        // Check cancellation
-                        cancellationToken.ThrowIfCancellationRequested();
-
-                        // Use FileStream with async pattern for .NET Framework 4.8
-                        using (var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read))
+                        try
                         {
-                            var bitmap = new BitmapImage();
-                            bitmap.BeginInit();
-                            bitmap.StreamSource = stream;
-                            bitmap.CacheOption = BitmapCacheOption.OnLoad;
-                            bitmap.EndInit();
-                            bitmap.Freeze(); // Important for cross-thread usage
-                            return bitmap;
+                            // Check cancellation
+                            cancellationToken.ThrowIfCancellationRequested();
+
+                            // Use Magick.NET to load WebP file
+                            using (var image = new MagickImage(filePath))
+                            {
+                                // Convert to memory stream in a format WPF can display
+                                using (var memoryStream = new MemoryStream())
+                                {
+                                    // Convert to PNG in memory for WPF compatibility
+                                    image.Format = MagickFormat.Png;
+                                    image.Write(memoryStream);
+                                    memoryStream.Position = 0;
+
+                                    // Create BitmapImage from the stream
+                                    var bitmap = new BitmapImage();
+                                    bitmap.BeginInit();
+                                    bitmap.StreamSource = memoryStream;
+                                    bitmap.CacheOption = BitmapCacheOption.OnLoad;
+                                    bitmap.CreateOptions = BitmapCreateOptions.None;
+                                    bitmap.EndInit();
+                                    if (bitmap.CanFreeze)
+                                        bitmap.Freeze();
+                                    return bitmap;
+                                }
+                            }
                         }
-                    }
-                    catch (OperationCanceledException)
+                        catch (OperationCanceledException)
+                        {
+                            throw;
+                        }
+                        catch (Exception ex)
+                        {
+                            Debug.WriteLine($"Error loading WebP image: {ex.Message}");
+                            return null;
+                        }
+                    }, cancellationToken);
+                }
+                else
+                {
+                    // Standard loading for other image formats
+                    return await Task.Run(() =>
                     {
-                        throw;
-                    }
-                    catch (Exception ex)
-                    {
-                        Debug.WriteLine($"Error loading image from file {filePath}: {ex.Message}");
-                        return null;
-                    }
-                }, cancellationToken);
+                        try
+                        {
+                            // Check cancellation
+                            cancellationToken.ThrowIfCancellationRequested();
+
+                            // Use FileStream with async pattern for .NET Framework 4.8
+                            using (var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read))
+                            {
+                                var bitmap = new BitmapImage();
+                                bitmap.BeginInit();
+                                bitmap.StreamSource = stream;
+                                bitmap.CacheOption = BitmapCacheOption.OnLoad;
+                                bitmap.CreateOptions = BitmapCreateOptions.None;
+                                bitmap.EndInit();
+                                if (bitmap.CanFreeze)
+                                    bitmap.Freeze();
+                                return bitmap;
+                            }
+                        }
+                        catch (OperationCanceledException)
+                        {
+                            throw;
+                        }
+                        catch (Exception ex)
+                        {
+                            Debug.WriteLine($"Error loading image from file {filePath}: {ex.Message}");
+                            return null;
+                        }
+                    }, cancellationToken);
+                }
             }
             catch (OperationCanceledException)
             {
@@ -532,7 +684,7 @@ namespace ImageFolderManager.Models
         }
 
         /// <summary>
-        /// Saves a thumbnail to the disk cache
+        /// Saves a thumbnail to the disk cache in WebP format
         /// </summary>
         private static async Task SaveThumbnailToDiskAsync(BitmapImage image, string filePath, string contentHash)
         {
@@ -551,20 +703,27 @@ namespace ImageFolderManager.Models
                         Directory.CreateDirectory(dirPath);
                     }
 
-                    // Store the content hash in file metadata for future verification
-                    // This is stored in Windows alternate data stream for NTFS
-                    bool saveMetadata = false;
-
-                    using (var fileStream = new FileStream(filePath, FileMode.Create))
+                    // Convert BitmapImage to WebP using Magick.NET
+                    using (var magickImage = ConvertBitmapImageToMagickImage(image))
                     {
-                        var encoder = new JpegBitmapEncoder
+                        if (magickImage != null)
                         {
-                            QualityLevel = 85 // Good balance between quality and size
-                        };
+                            // Configure WebP settings
+                            magickImage.Format = MagickFormat.WebP;
+                            magickImage.Quality = WEBP_QUALITY;
 
-                        encoder.Frames.Add(BitmapFrame.Create(image));
-                        encoder.Save(fileStream);
+                            // Set WebP specific options
+                            magickImage.Settings.SetDefine(MagickFormat.WebP, "lossless", "false");
+                            magickImage.Settings.SetDefine(MagickFormat.WebP, "method", "6"); // Best compression method (0-6)
+                            magickImage.Settings.SetDefine(MagickFormat.WebP, "thread-level", "1"); // Multithreaded compression
+
+                            // Write the WebP file
+                            magickImage.Write(filePath);
+                        }
                     }
+
+                    // Store the content hash in file metadata for future verification
+                    bool saveMetadata = false;
 
                     // Write content hash to a side-car metadata file for cross-filesystem compatibility
                     if (saveMetadata)
@@ -582,6 +741,33 @@ namespace ImageFolderManager.Models
             catch (Exception ex)
             {
                 Debug.WriteLine($"Error saving thumbnail to disk: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Converts a BitmapImage to MagickImage for WebP encoding
+        /// </summary>
+        private static MagickImage ConvertBitmapImageToMagickImage(BitmapImage bitmapImage)
+        {
+            try
+            {
+                // Convert BitmapImage to PNG in memory first
+                PngBitmapEncoder encoder = new PngBitmapEncoder();
+                encoder.Frames.Add(BitmapFrame.Create(bitmapImage));
+
+                using (MemoryStream memoryStream = new MemoryStream())
+                {
+                    encoder.Save(memoryStream);
+                    memoryStream.Position = 0;
+
+                    // Create MagickImage from the PNG stream
+                    return new MagickImage(memoryStream);
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error converting BitmapImage to MagickImage: {ex.Message}");
+                return null;
             }
         }
 
