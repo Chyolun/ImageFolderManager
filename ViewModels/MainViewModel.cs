@@ -1665,147 +1665,184 @@ namespace ImageFolderManager.ViewModels
         }
 
         public async Task DeleteMultipleFolders(List<FolderInfo> folders)
+{
+    if (folders == null || folders.Count == 0)
+        return;
+
+    // Add confirmation dialog before deleting
+    var result = MessageBox.Show(
+        $"Are you sure you want to delete {folders.Count} folders?",
+        "Confirm Deletion",
+        MessageBoxButton.YesNo,
+        MessageBoxImage.Warning);
+
+    if (result != MessageBoxResult.Yes)
+        return;
+
+    try
+    {
+        // Create progress dialog
+        var progressDialog = new Views.ProgressDialog(
+            "Deleting Folders",
+            $"Deleting {folders.Count} folders...");
+
+        // Set progress dialog owner
+        progressDialog.Owner = Application.Current.MainWindow;
+
+        // Track deleted folders for undo operation
+        var operation = new FolderMoveOperation
         {
-            if (folders == null || folders.Count == 0)
-                return;
+            SourcePaths = folders.Select(f => f.FolderPath).ToList(),
+            // Use "RecycleBin" as a special destination to indicate deletion
+            DestinationPath = "RecycleBin",
+            IsMultipleMove = true,
+            Timestamp = DateTime.Now,
+            SourceParentPaths = folders
+                .Select(f => Path.GetDirectoryName(f.FolderPath))
+                .Distinct()
+                .ToList()
+        };
 
-            try
+        using (var cts = new CancellationTokenSource())
+        {
+            // Handle cancellation request
+            progressDialog.CancelRequested += (s, e) =>
             {
-                // Create progress dialog
-                var progressDialog = new Views.ProgressDialog(
-                    "Deleting Folders",
-                    $"Deleting {folders.Count} folders...");
+                cts.Cancel();
+                StatusMessage = "Delete operation cancelled.";
+            };
 
-                // Set progress dialog owner
-                progressDialog.Owner = Application.Current.MainWindow;
-
-                using (var cts = new CancellationTokenSource())
+            // Create background task to delete folders
+            var deleteTask = Task.Run(async () =>
+            {
+                try
                 {
-                    // Handle cancellation request
-                    progressDialog.CancelRequested += (s, e) =>
-                    {
-                        cts.Cancel();
-                        StatusMessage = "Delete operation cancelled.";
-                    };
+                    int total = folders.Count;
+                    int processed = 0;
+                    bool anyDeleted = false;
 
-                    // Create background task to delete folders
-                    var deleteTask = Task.Run(async () =>
+                    foreach (var folder in folders)
                     {
+                        // Check for cancellation
+                        if (cts.Token.IsCancellationRequested)
+                            break;
+
+                        // Skip the root directory
+                        if (!string.IsNullOrEmpty(AppSettings.Instance.DefaultRootDirectory) &&
+                            folder.FolderPath.Equals(AppSettings.Instance.DefaultRootDirectory, StringComparison.OrdinalIgnoreCase))
+                        {
+                            processed++;
+                            continue;
+                        }
+
                         try
                         {
-                            int total = folders.Count;
-                            int processed = 0;
+                            // Update progress
+                            double progress = (double)processed / total;
+                            progressDialog.UpdateProgress(progress, $"Deleting {processed + 1} of {total}: {folder.Name}");
 
-                            foreach (var folder in folders)
+                            // Store the parent before deletion for later use
+                            var parentFolder = folder.Parent;
+                            string folderPath = folder.FolderPath;
+
+                            // Stop watching this folder before deletion
+                            _folderManager.UnwatchFolder(folderPath);
+
+                            // Delete to recycle bin
+                            Microsoft.VisualBasic.FileIO.FileSystem.DeleteDirectory(
+                                folderPath,
+                                Microsoft.VisualBasic.FileIO.UIOption.OnlyErrorDialogs,
+                                Microsoft.VisualBasic.FileIO.RecycleOption.SendToRecycleBin);
+
+                            anyDeleted = true;
+
+                            // Remove from _allLoadedFolders
+                            RemoveFolderAndSubfoldersFromAllLoaded(folderPath);
+
+                            // Remove from search results
+                            RemoveFolderAndSubfoldersFromSearchResults(folderPath);
+
+                            // Remove from tree structure
+                            await Application.Current.Dispatcher.InvokeAsync(() =>
                             {
-                                // Check for cancellation
-                                if (cts.Token.IsCancellationRequested)
-                                    break;
+                                RemoveFolderFromTree(folder);
+                            });
 
-                                // Skip the root directory
-                                if (!string.IsNullOrEmpty(AppSettings.Instance.DefaultRootDirectory) &&
-                                    folder.FolderPath.Equals(AppSettings.Instance.DefaultRootDirectory, StringComparison.OrdinalIgnoreCase))
-                                {
-                                    processed++;
-                                    continue;
-                                }
-
-                                try
-                                {
-                                    // Update progress
-                                    double progress = (double)processed / total;
-                                    progressDialog.UpdateProgress(progress, $"Deleting {processed + 1} of {total}: {folder.Name}");
-
-                                    // Store the parent before deletion for later use
-                                    var parentFolder = folder.Parent;
-                                    string folderPath = folder.FolderPath;
-
-                                    // Stop watching this folder before deletion
-                                    _folderManager.UnwatchFolder(folderPath);
-
-                                    // Delete to recycle bin
-                                    Microsoft.VisualBasic.FileIO.FileSystem.DeleteDirectory(
-                                        folderPath,
-                                        Microsoft.VisualBasic.FileIO.UIOption.OnlyErrorDialogs,
-                                        Microsoft.VisualBasic.FileIO.RecycleOption.SendToRecycleBin);
-
-                                    // Remove from _allLoadedFolders
-                                    RemoveFolderAndSubfoldersFromAllLoaded(folderPath);
-
-                                    // Remove from search results
-                                    RemoveFolderAndSubfoldersFromSearchResults(folderPath);
-
-                                    // Remove from tree structure
-                                    await Application.Current.Dispatcher.InvokeAsync(() =>
-                                    {
-                                        RemoveFolderFromTree(folder);
-                                    });
-
-                                    // Brief delay to prevent UI freezing
-                                    await Task.Delay(50, cts.Token);
-                                }
-                                catch (Exception ex)
-                                {
-                                    Debug.WriteLine($"Error deleting folder {folder.FolderPath}: {ex.Message}");
-                                }
-
-                                processed++;
-                            }
-
-                            // Update final progress
-                            progressDialog.UpdateProgress(1.0, "Delete completed");
-
-                            return true;
-                        }
-                        catch (OperationCanceledException)
-                        {
-                            // Operation was canceled
-                            return false;
+                            // Brief delay to prevent UI freezing
+                            await Task.Delay(50, cts.Token);
                         }
                         catch (Exception ex)
                         {
-                            Debug.WriteLine($"Error in delete operation: {ex.Message}");
-                            await Application.Current.Dispatcher.InvokeAsync(() =>
-                            {
-                                MessageBox.Show($"Error deleting folders: {ex.Message}",
-                                    "Delete Error", MessageBoxButton.OK, MessageBoxImage.Error);
-                            });
-                            return false;
+                            Debug.WriteLine($"Error deleting folder {folder.FolderPath}: {ex.Message}");
                         }
-                    }, cts.Token);
 
-                    // Show modal progress dialog
-                    progressDialog.ShowDialog();
-
-                    // If dialog closes due to cancel button, ensure operation is cancelled
-                    if (progressDialog.IsCancelled && !cts.IsCancellationRequested)
-                    {
-                        cts.Cancel();
+                        processed++;
                     }
 
-                    // Wait for delete task to complete
-                    bool success = await deleteTask;
+                    // Update final progress
+                    progressDialog.UpdateProgress(1.0, "Delete completed");
 
-                    // Update status
-                    if (success && !cts.IsCancellationRequested)
+                    // Add to undo stack if any folders were deleted
+                    if (anyDeleted)
                     {
-                        StatusMessage = $"Successfully deleted {folders.Count} folders";
+                        await Application.Current.Dispatcher.InvokeAsync(() =>
+                        {
+                            _undoStack.Push(operation);
+                            CommandManager.InvalidateRequerySuggested(); // Refresh command state
+                        });
+                    }
 
-                        // Update tag cloud
-                        await UpdateTagCloudAsync();
-                    }
-                    else if (cts.IsCancellationRequested)
-                    {
-                        StatusMessage = "Delete operation cancelled";
-                    }
+                    return true;
                 }
-            }
-            catch (Exception ex)
+                catch (OperationCanceledException)
+                {
+                    // Operation was canceled
+                    return false;
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"Error in delete operation: {ex.Message}");
+                    await Application.Current.Dispatcher.InvokeAsync(() =>
+                    {
+                        MessageBox.Show($"Error deleting folders: {ex.Message}",
+                            "Delete Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                    });
+                    return false;
+                }
+            }, cts.Token);
+
+            // Show modal progress dialog
+            progressDialog.ShowDialog();
+
+            // If dialog closes due to cancel button, ensure operation is cancelled
+            if (progressDialog.IsCancelled && !cts.IsCancellationRequested)
             {
-                MessageBox.Show($"Error deleting folders: {ex.Message}",
-                    "Delete Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                cts.Cancel();
+            }
+
+            // Wait for delete task to complete
+            bool success = await deleteTask;
+
+            // Update status
+            if (success && !cts.IsCancellationRequested)
+            {
+                StatusMessage = $"Successfully deleted {folders.Count} folders";
+
+                // Update tag cloud
+                await UpdateTagCloudAsync();
+            }
+            else if (cts.IsCancellationRequested)
+            {
+                StatusMessage = "Delete operation cancelled";
             }
         }
+    }
+    catch (Exception ex)
+    {
+        MessageBox.Show($"Error deleting folders: {ex.Message}",
+            "Delete Error", MessageBoxButton.OK, MessageBoxImage.Error);
+    }
+}
 
         /// <summary>
         /// Synchronous wrapper for the async paste operation
