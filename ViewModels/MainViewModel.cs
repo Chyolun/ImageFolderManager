@@ -1443,6 +1443,7 @@ namespace ImageFolderManager.ViewModels
             _clipboardFolder = folder;
             _isCutOperation = true;
             StatusMessage = $"Cut folder '{folder.Name}' to clipboard. Select a destination folder and paste.";
+            CommandManager.InvalidateRequerySuggested();
         }
 
         public void CopyFolder(FolderInfo folder)
@@ -1452,6 +1453,7 @@ namespace ImageFolderManager.ViewModels
             _clipboardFolder = folder;
             _isCutOperation = false;
             StatusMessage = $"Copied folder '{folder.Name}' to clipboard. Select a destination folder and paste.";
+            CommandManager.InvalidateRequerySuggested();
         }
 
         /// <summary>
@@ -1654,6 +1656,7 @@ namespace ImageFolderManager.ViewModels
             _isCutOperation = true;
 
             StatusMessage = $"Cut {folders.Count} folders to clipboard. Select a destination folder and paste.";
+            CommandManager.InvalidateRequerySuggested();
         }
 
         public void CopyMultipleFolders(List<FolderInfo> folders)
@@ -1666,6 +1669,7 @@ namespace ImageFolderManager.ViewModels
             _isCutOperation = false;
 
             StatusMessage = $"Copied {folders.Count} folders to clipboard. Select a destination folder and paste.";
+            CommandManager.InvalidateRequerySuggested();
         }
 
         public bool HasClipboardContent()
