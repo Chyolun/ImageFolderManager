@@ -39,7 +39,7 @@ namespace ImageFolderManager.ViewModels
         private bool _isLoadingImages = false;
         private CancellationTokenSource _imageLoadingCts;
         private Stack<FolderMoveOperation> _undoStack = new Stack<FolderMoveOperation>();
-        
+
         public FolderInfo SelectedFolder
         {
             get => _selectedFolder;
@@ -201,7 +201,7 @@ namespace ImageFolderManager.ViewModels
                 AppSettings.Instance.Save();
 
                 // Load the directory if it exists
-                if (PathService.DirectoryExists(path))          
+                if (PathService.DirectoryExists(path))
                 {
                     await LoadDirectoryAsync(path);
                 }
@@ -212,10 +212,10 @@ namespace ImageFolderManager.ViewModels
         public async Task LoadDirectoryAsync(string path)
         {
             // Stop watching previous folders
-       
+
             _folderManager.UnwatchAllFolders();
-           var folders = await _folderManager.LoadFoldersRecursivelyAsync(path);
-            
+            var folders = await _folderManager.LoadFoldersRecursivelyAsync(path);
+
             _allLoadedFolders = folders;
 
             RootFolders.Clear();
@@ -316,7 +316,7 @@ namespace ImageFolderManager.ViewModels
                     UpdateFolderTagsAndRating(folder);
 
                     // Clear images collection (but don't load new images)
-                   // Images.Clear();
+                    // Images.Clear();
                 }
             }
             catch (Exception ex)
@@ -1247,6 +1247,84 @@ namespace ImageFolderManager.ViewModels
                 });
             }
         }
+        public async Task CreateNewFolder(FolderInfo parentFolder)
+        {
+            if (parentFolder == null) return;
+
+            // Show input dialog
+            string folderName = Microsoft.VisualBasic.Interaction.InputBox(
+                "Enter new folder name:",
+                "New Folder",
+                "New Folder");
+
+            // If user cancelled or name is empty, do nothing
+            if (string.IsNullOrWhiteSpace(folderName))
+                return;
+
+            // Check for invalid characters in folder name
+            if (folderName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+            {
+                MessageBox.Show("The folder name contains invalid characters.",
+                    "Invalid Name", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            // Construct new path
+            string normalizedPath = PathService.NormalizePath(parentFolder.FolderPath);
+            string newPath = Path.Combine(normalizedPath, folderName);
+
+            // Check if destination already exists
+            if (PathService.DirectoryExists(newPath))
+            {
+                MessageBox.Show($"A folder named '{folderName}' already exists in this location.",
+                    "Cannot Create Folder", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            try
+            {
+                // Create the directory
+                Directory.CreateDirectory(newPath);
+
+                // IMPORTANT: Invalidate the path cache for both parent folder and new folder
+                PathService.InvalidatePathCache(normalizedPath, false);
+                PathService.InvalidatePathCache(newPath, false);
+
+                // Refresh the parent node to show the new folder
+                parentFolder.LoadChildren();
+
+                // Start watching the parent folder to detect changes
+                _folderManager.WatchFolder(parentFolder);
+
+                // Notify ShellTreeView to refresh
+                if (Application.Current.MainWindow is MainWindow mainWindow &&
+                    mainWindow.ShellTreeViewControl != null)
+                {
+                    // Call RefreshTree to update the visual tree
+                    mainWindow.ShellTreeViewControl.RefreshTree();
+                }
+
+                // Find the newly created folder in the parent's children
+                FolderInfo newFolder = parentFolder.Children.FirstOrDefault(f => f.FolderPath == newPath);
+
+                if (newFolder != null)
+                {
+                    // Add to allLoadedFolders for search functionality
+                    _allLoadedFolders.Add(newFolder);
+
+                    // Watch the new folder
+                    _folderManager.WatchFolder(newFolder);
+                }
+
+                // Update tag cloud
+                await UpdateTagCloudAsync();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error creating folder: {ex.Message}",
+                    "Create Folder Failed", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
 
         public void CutFolder(FolderInfo folder)
         {
@@ -1737,7 +1815,7 @@ namespace ImageFolderManager.ViewModels
                                 {
                                     _clipboardFolder = null;
                                 }
-              
+
                                 progressDialog.UpdateProgress(1.0, "Moving folder complete!");
                                 return true;
                             }
@@ -1962,112 +2040,131 @@ namespace ImageFolderManager.ViewModels
                 }
             }
 
-            return null; 
+            return null;
         }
 
         private async Task<bool> ProcessFolderOperation(
-                FolderInfo sourceFolder,
-                FolderInfo targetFolder,
-                bool isCut,
-                Views.ProgressDialog progressDialog,
-                CancellationToken cancellationToken)
+        FolderInfo sourceFolder,
+        FolderInfo targetFolder,
+        bool isCut,
+        Views.ProgressDialog progressDialog,
+        CancellationToken cancellationToken)
+        {
+            string sourcePath = sourceFolder.FolderPath;
+            string folderName = Path.GetFileName(sourcePath);
+            // Check if cancelled
+            if (cancellationToken.IsCancellationRequested)
+                return false;
+
+            // Update progress
+            progressDialog.UpdateProgress(0.2, "Checking destination path...");
+            string destinationPath = PathService.GetUniqueDirectoryPath(targetFolder.FolderPath, folderName);
+
+            // Update progress
+            progressDialog.UpdateProgress(0.3, "Temporarily disabling file monitoring...");
+
+            // Temporarily disable FileSystemWatcher for these folders
+            _folderManager.UnwatchFolder(sourcePath);
+            _folderManager.UnwatchFolder(targetFolder.FolderPath);
+
+            try
+            {
+                // Check if cancelled
+                if (cancellationToken.IsCancellationRequested)
+                    return false;
+
+                // Update progress
+                progressDialog.UpdateProgress(0.4, isCut ? "Moving folder..." : "Copying folder...");
+
+                if (isCut)
+                {
+                    // Invalidate path cache for source folder and its parent
+                    PathService.InvalidatePathCache(sourcePath, true);
+                    string sourceParentPath = Path.GetDirectoryName(sourcePath);
+                    if (!string.IsNullOrEmpty(sourceParentPath))
                     {
-                        string sourcePath = sourceFolder.FolderPath;
-                        string folderName = Path.GetFileName(sourcePath);
-                        // Check if cancelled
-                        if (cancellationToken.IsCancellationRequested)
-                            return false;
-
-                        // Update progress
-                        progressDialog.UpdateProgress(0.2, "Checking destination path...");
-                        string destinationPath = PathService.GetUniqueDirectoryPath(targetFolder.FolderPath, folderName);
-
-                        // Update progress
-                        progressDialog.UpdateProgress(0.3, "Temporarily disabling file monitoring...");
-
-                        // Temporarily disable FileSystemWatcher for these folders
-                        _folderManager.UnwatchFolder(sourcePath);
-                        _folderManager.UnwatchFolder(targetFolder.FolderPath);
-
-                        try
-                        {
-                            // Check if cancelled
-                            if (cancellationToken.IsCancellationRequested)
-                                return false;
-
-                            // Update progress
-                            progressDialog.UpdateProgress(0.4, isCut ? "Moving folder..." : "Copying folder...");
-
-                            if (isCut)
-                            {
-                                // Track operation for undo
-                                var operation = new FolderMoveOperation
-                                {
-                                    SourcePaths = new List<string> { sourcePath },
-                                    DestinationPath = targetFolder.FolderPath,
-                                    IsMultipleMove = false,
-                                    Timestamp = DateTime.Now,
-                                    SourceParentPaths = new List<string> { Path.GetDirectoryName(sourcePath) }
-                                };
-
-                                await Application.Current.Dispatcher.InvokeAsync(() => {
-                                    _undoStack.Push(operation);
-                                    CommandManager.InvalidateRequerySuggested(); // Refresh command state
-                                });
-                            }
-                            else
-                            {
-                                // Update progress
-                                progressDialog.UpdateProgress(0.5, "Copying folder contents...");
-
-                                // Copy directory - this may take longer
-                                await Task.Run(() =>
-                                {
-                                    CopyDirectory(sourcePath, destinationPath, progressDialog, 0.5, 0.8, cancellationToken);
-                                }, cancellationToken);
-
-                                // Check if cancelled
-                                if (cancellationToken.IsCancellationRequested)
-                                    return false;
-                            }
-
-                            // Update progress
-                            progressDialog.UpdateProgress(0.8, "Refreshing folder view...");
-
-                            // Reload target folder's children (on UI thread)
-                            await Application.Current.Dispatcher.InvokeAsync(() =>
-                            {
-                                targetFolder.Children.Clear();
-                                targetFolder.LoadChildren();
-                            });
-
-                            // Create FolderInfo for the new folder
-                            var newFolder = new FolderInfo(destinationPath, targetFolder);
-
-                            // Add to _allLoadedFolders (on UI thread)
-                            await Application.Current.Dispatcher.InvokeAsync(() =>
-                            {
-                                _allLoadedFolders.Add(newFolder);
-                            });
-
-                            // Start watching folders again
-                            _folderManager.WatchFolder(targetFolder);
-                            _folderManager.WatchFolder(newFolder);
-
-                            // If cut operation, also watch source parent
-                            if (isCut && sourceFolder.Parent != null)
-                            {
-                                _folderManager.WatchFolder(sourceFolder.Parent);
-                            }
-                            progressDialog.UpdateProgress(1.0, "Moving folder complete!");
-                            return true;
-                        }
-                        finally
-                        {
-                            // Make sure we're watching target folder even if error occurred
-                            _folderManager.WatchFolder(targetFolder);
-                        }
+                        PathService.InvalidatePathCache(sourceParentPath, false);
                     }
+
+                    // Track operation for undo
+                    var operation = new FolderMoveOperation
+                    {
+                        SourcePaths = new List<string> { sourcePath },
+                        DestinationPath = targetFolder.FolderPath,
+                        IsMultipleMove = false,
+                        Timestamp = DateTime.Now,
+                        SourceParentPaths = new List<string> { Path.GetDirectoryName(sourcePath) }
+                    };
+
+                    // Move the directory
+                    Directory.Move(sourcePath, destinationPath);
+
+                    // Invalidate path cache for destination folder and target folder
+                    PathService.InvalidatePathCache(destinationPath, true);
+                    PathService.InvalidatePathCache(targetFolder.FolderPath, false);
+
+                    await Application.Current.Dispatcher.InvokeAsync(() => {
+                        _undoStack.Push(operation);
+                        CommandManager.InvalidateRequerySuggested(); // Refresh command state
+                    });
+                }
+                else
+                {
+                    // Update progress
+                    progressDialog.UpdateProgress(0.5, "Copying folder contents...");
+
+                    // Copy directory - this may take longer
+                    await Task.Run(() =>
+                    {
+                        CopyDirectory(sourcePath, destinationPath, progressDialog, 0.5, 0.8, cancellationToken);
+                    }, cancellationToken);
+
+                    // Invalidate path cache for destination and target folder
+                    PathService.InvalidatePathCache(destinationPath, true);
+                    PathService.InvalidatePathCache(targetFolder.FolderPath, false);
+
+                    // Check if cancelled
+                    if (cancellationToken.IsCancellationRequested)
+                        return false;
+                }
+
+                // Update progress
+                progressDialog.UpdateProgress(0.8, "Refreshing folder view...");
+
+                // Reload target folder's children (on UI thread)
+                await Application.Current.Dispatcher.InvokeAsync(() =>
+                {
+                    targetFolder.Children.Clear();
+                    targetFolder.LoadChildren();
+                });
+
+                // Create FolderInfo for the new folder
+                var newFolder = new FolderInfo(destinationPath, targetFolder);
+
+                // Add to _allLoadedFolders (on UI thread)
+                await Application.Current.Dispatcher.InvokeAsync(() =>
+                {
+                    _allLoadedFolders.Add(newFolder);
+                });
+
+                // Start watching folders again
+                _folderManager.WatchFolder(targetFolder);
+                _folderManager.WatchFolder(newFolder);
+
+                // If cut operation, also watch source parent
+                if (isCut && sourceFolder.Parent != null)
+                {
+                    _folderManager.WatchFolder(sourceFolder.Parent);
+                }
+                progressDialog.UpdateProgress(1.0, "Moving folder complete!");
+                return true;
+            }
+            finally
+            {
+                // Make sure we're watching target folder even if error occurred
+                _folderManager.WatchFolder(targetFolder);
+            }
+        }
 
         private void CopyDirectory(
                 string sourceDir,
@@ -2160,79 +2257,7 @@ namespace ImageFolderManager.ViewModels
         }
 
 
-        public async Task CreateNewFolder(FolderInfo parentFolder)
-        {
-            if (parentFolder == null) return;
-
-            // Show input dialog
-            string folderName = Microsoft.VisualBasic.Interaction.InputBox(
-                "Enter new folder name:",
-                "New Folder",
-                "New Folder");
-
-            // If user cancelled or name is empty, do nothing
-            if (string.IsNullOrWhiteSpace(folderName))
-                return;
-
-            // Check for invalid characters in folder name
-            if (folderName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
-            {
-                MessageBox.Show("The folder name contains invalid characters.",
-                    "Invalid Name", MessageBoxButton.OK, MessageBoxImage.Warning);
-                return;
-            }
-
-            // Construct new path
-            string normalizedPath = PathService.NormalizePath(parentFolder.FolderPath);
-            string newPath = Path.Combine(normalizedPath, folderName);
-
-            // Check if destination already exists
-            if (PathService.DirectoryExists(newPath))
-            {
-                MessageBox.Show($"A folder named '{folderName}' already exists in this location.",
-                    "Cannot Create Folder", MessageBoxButton.OK, MessageBoxImage.Warning);
-                return;
-            }
-
-            try
-            {
-                // Create the directory
-                Directory.CreateDirectory(newPath);
-
-                // Refresh the parent node to show the new folder
-                parentFolder.LoadChildren();
-
-                // Start watching the parent folder to detect changes
-                _folderManager.WatchFolder(parentFolder);
-                // Add this: Notify ShellTreeView to refresh
-                if (Application.Current.MainWindow is MainWindow mainWindow &&
-                    mainWindow.ShellTreeViewControl != null)
-                {
-                    // Call RefreshTree to update the visual tree
-                    mainWindow.ShellTreeViewControl.RefreshTree();
-                }
-
-                // Find the newly created folder in the parent's children
-                FolderInfo newFolder = parentFolder.Children.FirstOrDefault(f => f.FolderPath == newPath);
-
-                if (newFolder != null)
-                {
-                    // Add to allLoadedFolders for search functionality
-                    _allLoadedFolders.Add(newFolder);
-
-                    // Watch the new folder
-                    _folderManager.WatchFolder(newFolder);
-                }
-
-                // Update tag cloud
-                await UpdateTagCloudAsync();
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Error creating folder: {ex.Message}",
-                    "Create Folder Failed", MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-        }
+        
 
         public async Task RenameFolder(FolderInfo folder)
         {
@@ -2774,8 +2799,21 @@ namespace ImageFolderManager.ViewModels
                                     _folderManager.UnwatchFolder(sourcePath);
                                     _folderManager.UnwatchFolder(targetPath);
 
+                                    // Invalidate path cache for source and parent
+                                    PathService.InvalidatePathCache(sourcePath, true);
+                                    string sourceParentPath = Path.GetDirectoryName(sourcePath);
+                                    if (!string.IsNullOrEmpty(sourceParentPath))
+                                    {
+                                        PathService.InvalidatePathCache(sourceParentPath, false);
+                                    }
+
                                     // Move directory
                                     Directory.Move(sourcePath, destinationPath);
+
+                                    // Invalidate path cache for destination and target
+                                    PathService.InvalidatePathCache(destinationPath, true);
+                                    PathService.InvalidatePathCache(targetPath, false);
+
                                     anySuccess = true;
 
                                     // Update UI

@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
@@ -169,7 +170,27 @@ namespace ImageFolderManager.Models
         {
             try
             {
-                return PathService.DirectoryHasSubdirectories(path);
+                // Always check the file system directly to ensure we have the latest state
+                // Don't rely on cached information
+                if (!Directory.Exists(path))
+                    return false;
+
+                try
+                {
+                    // Use GetDirectories with TopDirectoryOnly for better performance
+                    var dirs = Directory.GetDirectories(path, "*", SearchOption.TopDirectoryOnly);
+                    return dirs.Length > 0;
+                }
+                catch (UnauthorizedAccessException)
+                {
+                    // For unauthorized directories, assume they might have subdirectories
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"Error checking for subdirectories in {path}: {ex.Message}");
+                    return false;
+                }
             }
             catch
             {

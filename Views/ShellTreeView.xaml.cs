@@ -246,18 +246,26 @@ namespace ImageFolderManager.Views
             if (PathService.DirectoryExists(path))
             {
                 // Check if this directory actually has any subdirectories
-                //bool hasSubdirectories = false;
-                //try
-                //{
-                //    hasSubdirectories = Directory.GetDirectories(path).Length > 0;
-                //}
-                //catch (Exception ex)
-                //{
-                //    Debug.WriteLine($"Error checking for subdirectories: {ex.Message}");
-                //    Assume no subdirectories on error
-                //   hasSubdirectories = false;
-                //}
-                bool hasSubdirectories = PathService.DirectoryHasSubdirectories(path);
+                bool hasSubdirectories = false;
+                try
+                {
+                    // Always check directly with the filesystem for the most up-to-date information
+                    // This is crucial for newly created or moved folders
+                    string[] subdirectories = Directory.GetDirectories(path, "*", SearchOption.TopDirectoryOnly);
+                    hasSubdirectories = subdirectories.Length > 0;
+                }
+                catch (UnauthorizedAccessException)
+                {
+                    // For unauthorized directories, assume they might have subdirectories
+                    hasSubdirectories = true;
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"Error checking for subdirectories: {ex.Message}");
+                    // Assume no subdirectories on error
+                    hasSubdirectories = false;
+                }
+
                 // Only add dummy item if it has subdirectories
                 if (hasSubdirectories)
                 {
@@ -277,6 +285,7 @@ namespace ImageFolderManager.Views
                 item.IsExpanded = true;
             }
         }
+
 
         /// <summary>
         /// Comprehensive tree refresh method that handles various refresh scenarios
@@ -512,61 +521,76 @@ namespace ImageFolderManager.Views
         /// Creates a TreeViewItem for a ShellObject
         /// </summary>
         private TreeViewItem CreateShellTreeViewItem(ShellObject shellObject)
+{
+    // Create the tree item
+    var item = new TreeViewItem
+    {
+        Tag = shellObject,
+        IsExpanded = false
+    };
+
+    // Set header with icon and text
+    item.Header = CreateShellObjectHeader(shellObject);
+
+    try
+    {
+        // Only add a dummy node if this is a folder AND it contains subfolders
+        if (shellObject is ShellFolder)
         {
-            // Create the tree item
-            var item = new TreeViewItem
-            {
-                Tag = shellObject,
-                IsExpanded = false
-            };
+            string path = PathService.GetPathFromShellObject(shellObject);
 
-            // Set header with icon and text
-            item.Header = CreateShellObjectHeader(shellObject);
-
-            try
+            // Only check for subfolders if we have a valid file system path
+            if (!string.IsNullOrEmpty(path) && Directory.Exists(path))
             {
-                // Only add a dummy node if this is a folder AND it contains subfolders
-                if (shellObject is ShellFolder)
+                // Check directly with the file system - don't use cached information
+                bool hasSubfolders = false;
+                try
                 {
-                    string path = PathService.GetPathFromShellObject(shellObject);
+                    string[] subdirectories = Directory.GetDirectories(path, "*", SearchOption.TopDirectoryOnly);
+                    hasSubfolders = subdirectories.Length > 0;
+                }
+                catch (UnauthorizedAccessException)
+                {
+                    // For unauthorized directories, assume they might have subdirectories
+                    hasSubfolders = true;
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"Error checking for subdirectories: {ex.Message}");
+                    hasSubfolders = false;
+                }
 
-                    // Only check for subfolders if we have a valid file system path
-                    if (!string.IsNullOrEmpty(path) && PathService.DirectoryExists(path))
-                    {
-                        // Use PathService to check for subdirectories
-                        bool hasSubfolders = PathService.DirectoryHasSubdirectories(path);
-
-                        if (hasSubfolders)
-                        {
-                            // Only add the dummy node if there are actually subdirectories
-                            item.Items.Add(new TreeViewItem { Header = "Loading..." });
-                        }
-                    }
-                    else
-                    {
-                        // For special shell folders (like This PC, etc.), add dummy node as before
-                        item.Items.Add(new TreeViewItem { Header = "Loading..." });
-                    }
+                if (hasSubfolders)
+                {
+                    // Only add the dummy node if there are actually subdirectories
+                    item.Items.Add(new TreeViewItem { Header = "Loading..." });
                 }
             }
-            catch (Exception ex)
+            else
             {
-                Debug.WriteLine($"Error checking for subfolders: {ex.Message}");
-                // If there's an error, don't add dummy node to be safe
+                // For special shell folders (like This PC, etc.), add dummy node as before
+                item.Items.Add(new TreeViewItem { Header = "Loading..." });
             }
-
-            // Store in dictionary for quick lookups
-            if (!string.IsNullOrEmpty(shellObject.ParsingName))
-            {
-                string path = PathService.GetPathFromShellObject(shellObject);
-                if (!string.IsNullOrEmpty(path))
-                {
-                    _pathToTreeViewItem[path] = item;
-                }
-            }
-
-            return item;
         }
+    }
+    catch (Exception ex)
+    {
+        Debug.WriteLine($"Error checking for subfolders: {ex.Message}");
+        // If there's an error, don't add dummy node to be safe
+    }
+
+    // Store in dictionary for quick lookups
+    if (!string.IsNullOrEmpty(shellObject.ParsingName))
+    {
+        string path = PathService.GetPathFromShellObject(shellObject);
+        if (!string.IsNullOrEmpty(path))
+        {
+            _pathToTreeViewItem[path] = item;
+        }
+    }
+
+    return item;
+}
 
         /// <summary>
         /// Creates a header for a ShellObject with an icon and text
@@ -1750,8 +1774,14 @@ namespace ImageFolderManager.Views
                         {
                             sourceParentPaths.Add(parentPath);
                         }
+
+                        // Invalidate path cache for source folder and its contents
+                        PathService.InvalidatePathCache(sourcePath, true);
                     }
                 }
+
+                // Invalidate path cache for target folder
+                PathService.InvalidatePathCache(targetPath, false);
 
                 try
                 {
@@ -1800,17 +1830,26 @@ namespace ImageFolderManager.Views
                         }
                     }
 
-  
-                        RefreshTree(targetPath, true);
-                        // Also refresh all source parent paths
-                        foreach (var parentPath in sourceParentPaths)
+                    // After the operation completes, invalidate path cache again for the target folder
+                    PathService.InvalidatePathCache(targetPath, true);
+
+                    // Also invalidate path cache for all source parent paths
+                    foreach (var parentPath in sourceParentPaths)
+                    {
+                        PathService.InvalidatePathCache(parentPath, true);
+                    }
+
+                    // Refresh the tree with proper cache state
+                    RefreshTree(targetPath, true);
+
+                    // Also refresh all source parent paths
+                    foreach (var parentPath in sourceParentPaths)
+                    {
+                        if (PathService.DirectoryExists(parentPath))
                         {
-                            if (PathService.DirectoryExists(parentPath))
-                            {
-                                RefreshTree(parentPath, true);
-                            }
+                            RefreshTree(parentPath, true);
                         }
-       
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -1823,6 +1862,7 @@ namespace ImageFolderManager.Views
                     "Operation Failed", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
+
 
         #endregion
 
