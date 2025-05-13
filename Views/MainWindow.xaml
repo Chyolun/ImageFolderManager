@@ -32,7 +32,7 @@
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
-        
+
         <!-- Menu Bar -->
         <Menu Grid.Row="0" Background="{DynamicResource MahApps.Brushes.ThemeBackground}">
             <MenuItem Header="Settings" Foreground="White">

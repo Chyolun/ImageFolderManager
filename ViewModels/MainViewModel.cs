@@ -102,10 +102,6 @@ namespace ImageFolderManager.ViewModels
         public ICommand SetRatingCommand { get; }
         public ICommand EditTagsCommand { get; }
         public ICommand UndoFolderMovementCommand { get; }
-        public ICommand CutSelectedCommand { get; }
-        public ICommand CopySelectedCommand { get; }
-        public ICommand PasteCommand { get; }
-        public ICommand DeleteSelectedCommand { get; }
         public ObservableCollection<FolderInfo> SearchResultFolders { get; set; } = new();
 
         private int _rating;
@@ -185,12 +181,6 @@ namespace ImageFolderManager.ViewModels
             _folderManager = new FolderManagementService(HandleFileSystemEvent);
             EditTagsCommand = new RelayCommand(_ => EditTags());
             UndoFolderMovementCommand = new AsyncRelayCommand(UndoLastFolderMovementAsync, CanUndoFolderMovement);
-
-            CutSelectedCommand = new AsyncRelayCommand(CutSelectedFolders, CanManipulateSelectedFolders);
-            CopySelectedCommand = new AsyncRelayCommand(CopySelectedFolders, CanManipulateSelectedFolders);
-            PasteCommand = new AsyncRelayCommand(PasteToSelectedFolder, CanPaste);
-            DeleteSelectedCommand = new AsyncRelayCommand(DeleteSelectedFolders, CanManipulateSelectedFolders);
-
             UpdateStars();
 
         }
@@ -1429,12 +1419,12 @@ namespace ImageFolderManager.ViewModels
         }
 
         private List<FolderInfo> GetSelectedFoldersFromTreeView()
-    {
-        var mainWindow = Application.Current.MainWindow as MainWindow;
-        if (mainWindow?.ShellTreeViewControl == null) return new List<FolderInfo>();
-        
-        return mainWindow.ShellTreeViewControl.GetSelectedFolderInfos();
-    }
+        {
+            var mainWindow = Application.Current.MainWindow as MainWindow;
+            if (mainWindow?.ShellTreeViewControl == null) return new List<FolderInfo>();
+
+            return mainWindow.ShellTreeViewControl.GetSelectedFolderInfos();
+        }
 
         public void CutFolder(FolderInfo folder)
         {
@@ -1443,7 +1433,6 @@ namespace ImageFolderManager.ViewModels
             _clipboardFolder = folder;
             _isCutOperation = true;
             StatusMessage = $"Cut folder '{folder.Name}' to clipboard. Select a destination folder and paste.";
-            CommandManager.InvalidateRequerySuggested();
         }
 
         public void CopyFolder(FolderInfo folder)
@@ -1453,7 +1442,6 @@ namespace ImageFolderManager.ViewModels
             _clipboardFolder = folder;
             _isCutOperation = false;
             StatusMessage = $"Copied folder '{folder.Name}' to clipboard. Select a destination folder and paste.";
-            CommandManager.InvalidateRequerySuggested();
         }
 
         /// <summary>
@@ -1656,7 +1644,6 @@ namespace ImageFolderManager.ViewModels
             _isCutOperation = true;
 
             StatusMessage = $"Cut {folders.Count} folders to clipboard. Select a destination folder and paste.";
-            CommandManager.InvalidateRequerySuggested();
         }
 
         public void CopyMultipleFolders(List<FolderInfo> folders)
@@ -1669,7 +1656,6 @@ namespace ImageFolderManager.ViewModels
             _isCutOperation = false;
 
             StatusMessage = $"Copied {folders.Count} folders to clipboard. Select a destination folder and paste.";
-            CommandManager.InvalidateRequerySuggested();
         }
 
         public bool HasClipboardContent()
@@ -2371,7 +2357,7 @@ namespace ImageFolderManager.ViewModels
         }
 
 
-        
+
 
         public async Task RenameFolder(FolderInfo folder)
         {
