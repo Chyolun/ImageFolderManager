@@ -21,6 +21,10 @@
     </mah:MetroWindow.DataContext>
     <Window.InputBindings>
         <KeyBinding Key="Z" Modifiers="Control" Command="{Binding UndoFolderMovementCommand}" />
+        <KeyBinding Key="X" Modifiers="Control" Command="{Binding CutSelectedCommand}" />
+        <KeyBinding Key="C" Modifiers="Control" Command="{Binding CopySelectedCommand}" />
+        <KeyBinding Key="V" Modifiers="Control" Command="{Binding PasteCommand}" />
+        <KeyBinding Key="Delete" Command="{Binding DeleteSelectedCommand}" />
     </Window.InputBindings>
 
     <Grid>
@@ -29,7 +33,6 @@
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
         
-
         <!-- Menu Bar -->
         <Menu Grid.Row="0" Background="{DynamicResource MahApps.Brushes.ThemeBackground}">
             <MenuItem Header="Settings" Foreground="White">
@@ -37,9 +40,43 @@
                 <MenuItem Header="Preview Settings" Click="PreviewSize_Click"/>
             </MenuItem>
             <MenuItem Header="Edit" Foreground="White">
+                <MenuItem Header="Cut" 
+              Command="{Binding CutSelectedCommand}" 
+              InputGestureText="Ctrl+X">
+                    <MenuItem.Icon>
+                        <TextBlock Text="✂" FontSize="14" VerticalAlignment="Center" />
+                    </MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="Copy" 
+              Command="{Binding CopySelectedCommand}" 
+              InputGestureText="Ctrl+C">
+                    <MenuItem.Icon>
+                        <TextBlock Text="📋" FontSize="14" VerticalAlignment="Center" />
+                    </MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="Paste" 
+              Command="{Binding PasteCommand}" 
+              InputGestureText="Ctrl+V">
+                    <MenuItem.Icon>
+                        <TextBlock Text="📌" FontSize="14" VerticalAlignment="Center" />
+                    </MenuItem.Icon>
+                </MenuItem>
+                <Separator />
+                <MenuItem Header="Delete" 
+              Command="{Binding DeleteSelectedCommand}" 
+              InputGestureText="Delete">
+                    <MenuItem.Icon>
+                        <TextBlock Text="🗑" FontSize="14" VerticalAlignment="Center" />
+                    </MenuItem.Icon>
+                </MenuItem>
+                <Separator />
                 <MenuItem Header="Undo Folder Movement" 
-                  Command="{Binding UndoFolderMovementCommand}" 
-                  InputGestureText="Ctrl+Z"/>
+              Command="{Binding UndoFolderMovementCommand}" 
+              InputGestureText="Ctrl+Z">
+                    <MenuItem.Icon>
+                        <TextBlock Text="↩" FontSize="14" VerticalAlignment="Center" />
+                    </MenuItem.Icon>
+                </MenuItem>
             </MenuItem>
             <MenuItem Header="Tools" Foreground="White">
                 <MenuItem Header="Refresh All" Click="RefreshAll_Click"/>

@@ -766,9 +766,9 @@ namespace ImageFolderManager.Views
         }
 
         /// <summary>
-        /// Gets a list of FolderInfo objects for all selected items
+        /// Public method to get selected folder infos for integration with menu commands
         /// </summary>
-        private List<FolderInfo> GetSelectedFolderInfos()
+        public List<FolderInfo> GetSelectedFolderInfos()
         {
             var selectedFolders = new List<FolderInfo>();
 
@@ -784,7 +784,6 @@ namespace ImageFolderManager.Views
                     }
                 }
             }
-
             return selectedFolders;
         }
 

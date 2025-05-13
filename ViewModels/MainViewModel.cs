@@ -22,6 +22,7 @@ using MahApps.Metro.Controls.Dialogs;
 using Application = System.Windows.Application;
 using System.Threading;
 using System.Windows.Media;
+using Microsoft.WindowsAPICodePack.Shell;
 
 
 namespace ImageFolderManager.ViewModels
@@ -101,6 +102,10 @@ namespace ImageFolderManager.ViewModels
         public ICommand SetRatingCommand { get; }
         public ICommand EditTagsCommand { get; }
         public ICommand UndoFolderMovementCommand { get; }
+        public ICommand CutSelectedCommand { get; }
+        public ICommand CopySelectedCommand { get; }
+        public ICommand PasteCommand { get; }
+        public ICommand DeleteSelectedCommand { get; }
         public ObservableCollection<FolderInfo> SearchResultFolders { get; set; } = new();
 
         private int _rating;
@@ -180,6 +185,11 @@ namespace ImageFolderManager.ViewModels
             _folderManager = new FolderManagementService(HandleFileSystemEvent);
             EditTagsCommand = new RelayCommand(_ => EditTags());
             UndoFolderMovementCommand = new AsyncRelayCommand(UndoLastFolderMovementAsync, CanUndoFolderMovement);
+
+            CutSelectedCommand = new AsyncRelayCommand(CutSelectedFolders, CanManipulateSelectedFolders);
+            CopySelectedCommand = new AsyncRelayCommand(CopySelectedFolders, CanManipulateSelectedFolders);
+            PasteCommand = new AsyncRelayCommand(PasteToSelectedFolder, CanPaste);
+            DeleteSelectedCommand = new AsyncRelayCommand(DeleteSelectedFolders, CanManipulateSelectedFolders);
 
             UpdateStars();
 
@@ -1325,6 +1335,106 @@ namespace ImageFolderManager.ViewModels
                     "Create Folder Failed", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
+
+        // Check if there are folders selected to manipulate
+        private bool CanManipulateSelectedFolders()
+        {
+            // Get selected folders from the view
+            var mainWindow = Application.Current.MainWindow as MainWindow;
+            if (mainWindow?.ShellTreeViewControl == null) return false;
+
+            var selectedFolders = mainWindow.ShellTreeViewControl.SelectedItems
+                .OfType<TreeViewItem>()
+                .Where(item => item.Tag is ShellObject)
+                .Select(item => {
+                    string path = PathService.GetPathFromShellObject(item.Tag as ShellObject);
+                    return PathService.DirectoryExists(path) ? new FolderInfo(path) : null;
+                })
+                .Where(folder => folder != null)
+                .ToList();
+
+            return selectedFolders.Count > 0;
+        }
+
+        // Check if paste operation is available
+        private bool CanPaste()
+        {
+            return HasClipboardContent() && SelectedFolder != null;
+        }
+
+        // Cut the selected folders
+        private async Task CutSelectedFolders()
+        {
+            var mainWindow = Application.Current.MainWindow as MainWindow;
+            if (mainWindow?.ShellTreeViewControl == null) return;
+
+            var selectedFolders = GetSelectedFoldersFromTreeView();
+            if (selectedFolders.Count == 0) return;
+
+            // If only one folder is selected, use the single folder cut
+            if (selectedFolders.Count == 1)
+            {
+                CutFolder(selectedFolders[0]);
+            }
+            else
+            {
+                // Use the multiple folders cut
+                CutMultipleFolders(selectedFolders);
+            }
+        }
+
+        // Copy the selected folders
+        private async Task CopySelectedFolders()
+        {
+            var selectedFolders = GetSelectedFoldersFromTreeView();
+            if (selectedFolders.Count == 0) return;
+
+            // If only one folder is selected, use the single folder copy
+            if (selectedFolders.Count == 1)
+            {
+                CopyFolder(selectedFolders[0]);
+            }
+            else
+            {
+                // Use the multiple folders copy
+                CopyMultipleFolders(selectedFolders);
+            }
+        }
+
+        // Paste to the selected folder
+        private async Task PasteToSelectedFolder()
+        {
+            if (SelectedFolder == null || !HasClipboardContent()) return;
+
+            // Use the existing paste method
+            await PasteFolderAsync(SelectedFolder);
+        }
+
+        // Delete the selected folders
+        private async Task DeleteSelectedFolders()
+        {
+            var selectedFolders = GetSelectedFoldersFromTreeView();
+            if (selectedFolders.Count == 0) return;
+
+            // If only one folder is selected, use the single folder delete
+            if (selectedFolders.Count == 1)
+            {
+                await DeleteFolderAsync(selectedFolders[0]);
+            }
+            else
+            {
+                // Use the multiple folders delete
+                await DeleteMultipleFolders(selectedFolders);
+            }
+        }
+
+        private List<FolderInfo> GetSelectedFoldersFromTreeView()
+    {
+        var mainWindow = Application.Current.MainWindow as MainWindow;
+        if (mainWindow?.ShellTreeViewControl == null) return new List<FolderInfo>();
+        
+        return mainWindow.ShellTreeViewControl.GetSelectedFolderInfos();
+    }
 
         public void CutFolder(FolderInfo folder)
         {

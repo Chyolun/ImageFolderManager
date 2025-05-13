@@ -225,7 +225,44 @@ namespace ImageFolderManager
                     e.Handled = true;
                 }
             }
+            // Handle Ctrl+X for cut
+            else if (e.Key == Key.X && Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
+            {
+                if (ViewModel != null && ViewModel.CutSelectedCommand.CanExecute(null))
+                {
+                    ViewModel.CutSelectedCommand.Execute(null);
+                    e.Handled = true;
+                }
+            }
+            // Handle Ctrl+C for copy
+            else if (e.Key == Key.C && Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
+            {
+                if (ViewModel != null && ViewModel.CopySelectedCommand.CanExecute(null))
+                {
+                    ViewModel.CopySelectedCommand.Execute(null);
+                    e.Handled = true;
+                }
+            }
+            // Handle Ctrl+V for paste
+            else if (e.Key == Key.V && Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
+            {
+                if (ViewModel != null && ViewModel.PasteCommand.CanExecute(null))
+                {
+                    ViewModel.PasteCommand.Execute(null);
+                    e.Handled = true;
+                }
+            }
+            // Handle Delete for delete
+            else if (e.Key == Key.Delete)
+            {
+                if (ViewModel != null && ViewModel.DeleteSelectedCommand.CanExecute(null))
+                {
+                    ViewModel.DeleteSelectedCommand.Execute(null);
+                    e.Handled = true;
+                }
+            }
         }
+
 
         private void SearchResultListBox_ContextMenuOpening(object sender, ContextMenuEventArgs e)
         {
