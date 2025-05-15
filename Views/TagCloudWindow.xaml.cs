@@ -91,6 +91,14 @@ namespace ImageFolderManager.Views
                 // Create context menu
                 ContextMenu contextMenu = new ContextMenu();
 
+                // Add "Add Tag" menu item - NEW
+                MenuItem addTagItem = new MenuItem { Header = "Add Tag" };
+                addTagItem.Click += (s, args) => AddTagToTagInput(tag);
+                contextMenu.Items.Add(addTagItem);
+
+                // Add separator
+                contextMenu.Items.Add(new Separator());
+
                 // Add "Rename Tag" menu item
                 MenuItem renameItem = new MenuItem { Header = "Rename Tag" };
                 renameItem.Click += (s, args) => ShowRenameTagDialog(tag);
@@ -107,12 +115,71 @@ namespace ImageFolderManager.Views
             }
         }
 
+        private void AddTagToTagInput(string tag)
+        {
+            try
+            {
+                // Get the MainViewModel
+                if (_mainViewModel != null)
+                {
+                    // Check if TagInputText already has content
+                    string currentText = _mainViewModel.TagInputText ?? string.Empty;
+
+                    // Check if tag is already in the edit area
+                    if (!currentText.Contains($"#{tag}"))
+                    {
+                        // Add space if needed and append the tag
+                        if (!string.IsNullOrWhiteSpace(currentText) && !currentText.EndsWith(" "))
+                        {
+                            currentText += " ";
+                        }
+
+                        // Add the tag with # prefix
+                        currentText += $"#{tag}";
+
+                        // Update the TagInputText property
+                        _mainViewModel.TagInputText = currentText;
+
+                        // Update status
+                        if (StatusText != null)
+                        {
+                            StatusText.Text = $"Added tag #{tag} to tag input";
+                        }
+                    }
+                    else
+                    {
+                        // Tag already exists in edit area
+                        if (StatusText != null)
+                        {
+                            StatusText.Text = $"Tag #{tag} already exists in tag input";
+                        }
+                    }
+                }
+                else
+                {
+                    // MainViewModel is not available
+                    if (StatusText != null)
+                    {
+                        StatusText.Text = "Cannot add tag: Main view model not available";
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error adding tag to tag input: {ex.Message}");
+                if (StatusText != null)
+                {
+                    StatusText.Text = "Error adding tag to tag input";
+                }
+            }
+        }
+
         private void CopyTagToClipboard(string tag)
         {
             try
             {
-                // Use TextDataFormat.Text explicitly for better compatibility
-                Clipboard.SetDataObject($"#{tag}", true);
+                // Use SetText instead of SetDataObject for better reliability
+                Clipboard.SetText($"#{tag}");
 
                 // Update status text on success
                 if (StatusText != null)
@@ -122,18 +189,20 @@ namespace ImageFolderManager.Views
             }
             catch (Exception ex)
             {
-                // Even though an exception occurred, the clipboard operation might still succeed
-                // because Windows may retry clipboard operations internally
-
-                // Check if clipboard now contains our text despite the exception
+                // Even with an exception, the clipboard operation might still succeed
+                // Let's check if the text is actually in the clipboard
                 bool clipboardContainsTag = false;
+
                 try
                 {
-                    if (Clipboard.ContainsText())
-                    {
-                        string clipboardText = Clipboard.GetText();
-                        clipboardContainsTag = clipboardText == $"#{tag}";
-                    }
+                    // Attempt to read the clipboard on the UI thread
+                    Application.Current.Dispatcher.Invoke(() => {
+                        if (Clipboard.ContainsText())
+                        {
+                            string clipboardText = Clipboard.GetText();
+                            clipboardContainsTag = clipboardText == $"#{tag}";
+                        }
+                    });
                 }
                 catch
                 {
@@ -148,11 +217,21 @@ namespace ImageFolderManager.Views
                         StatusText.Text = "Could not copy tag to clipboard";
                     }
 
-                    MessageBox.Show(
-                        "Could not copy tag to clipboard. Please try again in a moment.",
-                        "Clipboard Operation Failed",
-                        MessageBoxButton.OK,
-                        MessageBoxImage.Information);
+                    // Use a less intrusive status message instead of a popup
+                    if (StatusText != null)
+                    {
+                        StatusText.Foreground = new SolidColorBrush(Colors.OrangeRed);
+                        StatusText.Text = "Could not copy to clipboard. Please try again.";
+
+                        // Reset color after a delay
+                        var timer = new System.Windows.Threading.DispatcherTimer();
+                        timer.Interval = TimeSpan.FromSeconds(3);
+                        timer.Tick += (s, args) => {
+                            StatusText.Foreground = new SolidColorBrush(Colors.LightGray);
+                            timer.Stop();
+                        };
+                        timer.Start();
+                    }
                 }
                 else
                 {

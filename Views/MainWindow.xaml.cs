@@ -1,8 +1,12 @@
 ﻿using System;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
+using System.Linq;
+using System.Text;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Media;
 using ImageFolderManager.Models;
@@ -319,6 +323,156 @@ namespace ImageFolderManager
             // Set owner but don't make it modal - use Show() instead of ShowDialog()
             tagCloudWindow.Owner = this;
             tagCloudWindow.Show();
+        }
+    }
+
+    public class EnhancedTagCloudButton : Button
+    {
+        // Add custom properties for more control over appearance
+        public double InitialFontSize { get; set; }
+        public string TagText { get; set; }
+        public int Count { get; set; }
+
+        public EnhancedTagCloudButton()
+        {
+            // Apply advanced styling
+            this.Background = Brushes.Transparent;
+            this.Foreground = Brushes.White;
+            this.BorderThickness = new Thickness(0);
+            this.Padding = new Thickness(8, 4, 8, 4);
+            this.Margin = new Thickness(3);
+            this.Cursor = Cursors.Hand;
+
+            // Set corner radius via template
+            ControlTemplate template = new ControlTemplate(typeof(Button));
+            var border = new FrameworkElementFactory(typeof(Border));
+            border.Name = "border";
+            border.SetValue(Border.BackgroundProperty, new TemplateBindingExtension(BackgroundProperty));
+            border.SetValue(Border.BorderBrushProperty, new TemplateBindingExtension(BorderBrushProperty));
+            border.SetValue(Border.BorderThicknessProperty, new TemplateBindingExtension(BorderThicknessProperty));
+            border.SetValue(Border.CornerRadiusProperty, new CornerRadius(10));
+
+            var contentPresenter = new FrameworkElementFactory(typeof(ContentPresenter));
+            contentPresenter.SetValue(ContentPresenter.HorizontalAlignmentProperty, HorizontalAlignment.Center);
+            contentPresenter.SetValue(ContentPresenter.VerticalAlignmentProperty, VerticalAlignment.Center);
+
+            border.AppendChild(contentPresenter);
+            template.VisualTree = border;
+
+            // Add triggers for mouse over and pressed states
+            var mouseOverTrigger = new Trigger { Property = IsMouseOverProperty, Value = true };
+            mouseOverTrigger.Setters.Add(new Setter(Border.BackgroundProperty, new SolidColorBrush(Color.FromArgb(60, 100, 100, 240)), "border"));
+            mouseOverTrigger.Setters.Add(new Setter(Border.BorderThicknessProperty, new Thickness(1), "border"));
+            template.Triggers.Add(mouseOverTrigger);
+
+            var pressedTrigger = new Trigger { Property = IsPressedProperty, Value = true };
+            pressedTrigger.Setters.Add(new Setter(RenderTransformProperty, new ScaleTransform(0.95, 0.95)));
+            pressedTrigger.Setters.Add(new Setter(RenderTransformOriginProperty, new Point(0.5, 0.5)));
+            template.Triggers.Add(pressedTrigger);
+
+            this.Template = template;
+        }
+    }
+
+    public class CountToVisibilityConverter : IValueConverter
+    {
+        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            if (value is int count)
+            {
+                return count > 0 ? Visibility.Collapsed : Visibility.Visible;
+            }
+            return Visibility.Collapsed;
+        }
+
+        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            throw new NotImplementedException();
+        }
+    }
+
+    public class RatingToStarsDisplayConverter : IValueConverter
+    {
+        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            if (value == null)
+                return "☆☆☆☆☆";  // Default: all empty stars
+
+            // Get the rating value (should be between 0-5)
+            if (!int.TryParse(value.ToString(), out int rating))
+                return "☆☆☆☆☆";
+
+            // Ensure rating is within range
+            rating = Math.Max(0, Math.Min(5, rating));
+
+            // Build the star string efficiently
+            StringBuilder stars = new StringBuilder(5);
+
+            // Add filled stars
+            for (int i = 0; i < rating; i++)
+            {
+                stars.Append('★');
+            }
+
+            // Add empty stars
+            for (int i = rating; i < 5; i++)
+            {
+                stars.Append('☆');
+            }
+
+            return stars.ToString();
+        }
+
+        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            throw new NotImplementedException();
+        }
+    }
+
+    /// <summary>
+    /// Converter that transforms a collection of tags into a formatted string
+    /// with an optional fallback message when no tags are present
+    /// </summary>
+    public class TagsToStringConverter : IValueConverter
+    {
+        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            if (value == null)
+                return "No tags";
+
+            var tags = value as System.Collections.ObjectModel.ObservableCollection<string>;
+            if (tags == null || tags.Count == 0)
+                return "No tags";
+
+            // Format tags with # prefix
+            return string.Join(" ", tags.Select(tag => $"#{tag}"));
+        }
+
+        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            throw new NotImplementedException();
+        }
+    }
+
+    /// <summary>
+    /// Converter that returns visibility based on whether tags exist
+    /// </summary>
+    public class HasTagsToVisibilityConverter : IValueConverter
+    {
+        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            if (value == null)
+                return System.Windows.Visibility.Collapsed;
+
+            var tags = value as System.Collections.ObjectModel.ObservableCollection<string>;
+            return (tags != null && tags.Count > 0)
+                ? System.Windows.Visibility.Visible
+                : System.Windows.Visibility.Collapsed;
+        }
+
+        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            throw new NotImplementedException();
         }
     }
 }

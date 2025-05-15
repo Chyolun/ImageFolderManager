@@ -123,8 +123,7 @@
     <Compile Include="Views\BatchTagsDialog.xaml.cs">
       <DependentUpon>BatchTagsDialog.xaml</DependentUpon>
     </Compile>
-    <Compile Include="Views\CountToVisibilityConverter.cs" />
-    <Compile Include="Views\EnhancedTagCloudButton.cs" />
+    <Compile Include="Views\Converter.cs" />
     <Compile Include="Views\PreviewSizeDialog.xaml.cs">
       <DependentUpon>PreviewSizeDialog.xaml</DependentUpon>
     </Compile>
