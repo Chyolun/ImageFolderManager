@@ -123,6 +123,8 @@
     <Compile Include="Views\BatchTagsDialog.xaml.cs">
       <DependentUpon>BatchTagsDialog.xaml</DependentUpon>
     </Compile>
+    <Compile Include="Views\CountToVisibilityConverter.cs" />
+    <Compile Include="Views\EnhancedTagCloudButton.cs" />
     <Compile Include="Views\PreviewSizeDialog.xaml.cs">
       <DependentUpon>PreviewSizeDialog.xaml</DependentUpon>
     </Compile>
@@ -137,6 +139,9 @@
     </Compile>
     <Compile Include="Views\TagCloudControl.xaml.cs">
       <DependentUpon>TagCloudControl.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="Views\TagCloudWindow.xaml.cs">
+      <DependentUpon>TagCloudWindow.xaml</DependentUpon>
     </Compile>
     <Page Include="Views\BatchTagsDialog.xaml">
       <SubType>Designer</SubType>
@@ -178,6 +183,10 @@
       <Generator>MSBuild:Compile</Generator>
     </Page>
     <Page Include="Views\TagCloudControl.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="Views\TagCloudWindow.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>

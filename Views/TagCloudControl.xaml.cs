@@ -1,63 +1,38 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using ImageFolderManager.ViewModels;
-using System.Windows.Threading;
-using System.Collections.Generic;
 
 namespace ImageFolderManager.Views
 {
-    public partial class TagCloudControl : UserControl
+    /// <summary>
+    /// Interaction logic for ResponsiveTagCloudControl.xaml
+    /// </summary>
+    public partial class ResponsiveTagCloudControl : UserControl
     {
-        // Cache for animations
-        private readonly Dictionary<string, Storyboard> _animationCache = new Dictionary<string, Storyboard>();
-
         // Event to notify parent about tag rename requests
         public event Action<string, string> TagRenamed;
 
-        // Debounce timer for rapid UI updates
-        private DispatcherTimer _updateTimer;
+        // Cache for animations
+        private readonly Dictionary<string, Storyboard> _animationCache = new Dictionary<string, Storyboard>();
 
-        public TagCloudControl()
+        public ResponsiveTagCloudControl()
         {
             InitializeComponent();
 
-            // Setup timer for debounced updates
-            _updateTimer = new DispatcherTimer
-            {
-                Interval = TimeSpan.FromMilliseconds(100)
-            };
-            _updateTimer.Tick += (s, e) =>
-            {
-                _updateTimer.Stop();
-                RefreshVisualState();
-            };
-
-            // Listen for collection changes
-            Loaded += (s, e) =>
-            {
-                if (DataContext is TagCloudViewModel viewModel)
-                {
-                    viewModel.TagItems.CollectionChanged += (sender, args) =>
-                    {
-                        // Debounce UI updates
-                        _updateTimer.Stop();
-                        _updateTimer.Start();
-                    };
-                }
-            };
+            // Handle size changes to ensure tags rewrap correctly
+            this.SizeChanged += ResponsiveTagCloudControl_SizeChanged;
         }
 
-        /// <summary>
-        /// Refresh the visual state of the control
-        /// </summary>
-        private void RefreshVisualState()
+        private void ResponsiveTagCloudControl_SizeChanged(object sender, SizeChangedEventArgs e)
         {
-            // This method can be used to update virtualization or layout optimization
-            // if needed in the future
+            // When the control size changes, ensure the WrapPanel adapts
+            // This is automatically handled by the WrapPanel but we could add
+            // additional logic here if needed
         }
 
         private void TagButton_Click(object sender, RoutedEventArgs e)
@@ -65,16 +40,14 @@ namespace ImageFolderManager.Views
             if (sender is Button button && button.Tag is string tag)
             {
                 // Get the MainViewModel
-                if (Window.GetWindow(this) is MainWindow mainWindow &&
-                    mainWindow.DataContext is MainViewModel viewModel)
+                if (Window.GetWindow(this) is TagCloudWindow tagCloudWindow &&
+                    tagCloudWindow.DataContext is TagCloudViewModel viewModel)
                 {
                     e.Handled = true;
 
-                    // Set the search text to search for this tag
-                    viewModel.SearchText = $"#{tag}";
-
-                    // Execute search
-                    viewModel.SearchCommand.Execute(null);
+                    // Notify for search by tag
+                    // We'll handle this in the parent window
+                    SearchForTag(tag);
 
                     // Visual feedback for tag selection
                     AnimateTagSelection(button);
@@ -96,13 +69,40 @@ namespace ImageFolderManager.Views
                 renameItem.Click += (s, args) => ShowRenameTagDialog(tag);
                 contextMenu.Items.Add(renameItem);
 
-                // Add "Add to Folder" menu item
-                var addToFolderItem = new MenuItem { Header = "Add to Folder" };
-                addToFolderItem.Click += (s, args) => AddTagToFolder(tag);
-                contextMenu.Items.Add(addToFolderItem);
+                // Add "Copy Tag" menu item
+                var copyItem = new MenuItem { Header = "Copy Tag" };
+                copyItem.Click += (s, args) => CopyTagToClipboard(tag);
+                contextMenu.Items.Add(copyItem);
 
                 // Show context menu
                 contextMenu.IsOpen = true;
+            }
+        }
+
+        private void CopyTagToClipboard(string tag)
+        {
+            try
+            {
+                Clipboard.SetText($"#{tag}");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error copying tag: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private void SearchForTag(string tag)
+        {
+            // Get the parent window
+            var parentWindow = Window.GetWindow(this);
+            if (parentWindow is TagCloudWindow tagCloudWindow && tagCloudWindow.MainViewModel != null)
+            {
+                // Set the search text to search for this tag and execute search
+                tagCloudWindow.MainViewModel.SearchText = $"#{tag}";
+                tagCloudWindow.MainViewModel.SearchCommand.Execute(null);
+
+                // Optionally close the tag cloud window after search
+                // parentWindow.Close();
             }
         }
 
@@ -122,21 +122,15 @@ namespace ImageFolderManager.Views
                     // If user confirmed the rename
                     if (!string.IsNullOrEmpty(dialog.NewTag))
                     {
-                        // Get main window and view model
-                        if (Window.GetWindow(this) is MainWindow mainWindow &&
-                            mainWindow.DataContext is MainViewModel viewModel)
+                        // Get parent window
+                        if (Window.GetWindow(this) is TagCloudWindow tagCloudWindow &&
+                            tagCloudWindow.DataContext is TagCloudViewModel viewModel)
                         {
-                            // Execute tag rename in the view model
-                            await viewModel.RenameTag(currentTag, dialog.NewTag);
-
                             // Notify any subscribers
                             TagRenamed?.Invoke(currentTag, dialog.NewTag);
 
                             // Force tag cloud to refresh
-                            if (DataContext is TagCloudViewModel tagCloudViewModel)
-                            {
-                                tagCloudViewModel.InvalidateCache();
-                            }
+                            viewModel.InvalidateCache();
                         }
                     }
                 }
@@ -144,45 +138,6 @@ namespace ImageFolderManager.Views
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"Error showing rename dialog: {ex.Message}");
-            }
-        }
-
-        private void AddTagToFolder(string tag)
-        {
-            // Get main window and view model
-            if (Window.GetWindow(this) is MainWindow mainWindow &&
-                mainWindow.DataContext is MainViewModel viewModel)
-            {
-                // Add the tag to the current tag input text
-                string currentText = viewModel.TagInputText ?? string.Empty;
-
-                // Determine if we need to add a separator
-                if (!string.IsNullOrWhiteSpace(currentText))
-                {
-                    // Check if the current text already ends with # or whitespace
-                    if (!currentText.EndsWith("#") && !char.IsWhiteSpace(currentText[currentText.Length - 1]))
-                    {
-                        currentText += " ";
-                    }
-
-                    // Add the tag with # prefix
-                    currentText += $"#{tag}";
-                }
-                else
-                {
-                    // If the text box is empty, just add the tag with # prefix
-                    currentText = $"#{tag}";
-                }
-
-                // Update the view model
-                viewModel.TagInputText = currentText;
-
-                // Optional: Focus on the tags text box
-                if (mainWindow.FindName("TagsTextBox") is TextBox tagsTextBox)
-                {
-                    tagsTextBox.Focus();
-                    tagsTextBox.CaretIndex = tagsTextBox.Text.Length;
-                }
             }
         }
 
@@ -243,18 +198,6 @@ namespace ImageFolderManager.Views
 
             // Start the animation
             storyboard.Begin();
-        }
-
-        // Clean up on unload
-        private void UserControl_Unloaded(object sender, RoutedEventArgs e)
-        {
-            _updateTimer.Stop();
-            _animationCache.Clear();
-
-            if (DataContext is TagCloudViewModel viewModel)
-            {
-                // Unsubscribe from events if needed
-            }
         }
     }
 }

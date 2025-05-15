@@ -236,7 +236,7 @@ namespace ImageFolderManager
                     e.Handled = true;
                 }
             }
-            
+
         }
 
 
@@ -259,7 +259,7 @@ namespace ImageFolderManager
             var loadImagesItem = new MenuItem { Header = "Load Images" };
             loadImagesItem.Click += (s, args) =>
             {
-              
+
                 ViewModel.SetSelectedFolderAsync(folderInfo);
             };
             contextMenu.Items.Add(loadImagesItem);
@@ -299,5 +299,22 @@ namespace ImageFolderManager
             item.ContextMenu = contextMenu;
         }
 
+        private void TagsCloud_Click(object sender, RoutedEventArgs e)
+        {
+            // Check if the window is already open
+            if (TagCloudWindow.Instance != null)
+            {
+                // If already open, just bring it to front
+                TagCloudWindow.Instance.Activate();
+                return;
+            }
+
+            // Create the tag cloud window
+            var tagCloudWindow = new TagCloudWindow(ViewModel.TagCloud, ViewModel);
+
+            // Set owner but don't make it modal - use Show() instead of ShowDialog()
+            tagCloudWindow.Owner = this;
+            tagCloudWindow.Show();
+        }
     }
 }

@@ -80,15 +80,20 @@
                 </MenuItem>
                 <MenuItem Header="Restore Deleted Folders" 
                       Command="{Binding RestoreDeletedFoldersCommand}" 
-                      InputGestureText="Ctrl+Shift+Z">      
+                      InputGestureText="Ctrl+Shift+Z">
                     <MenuItem.Icon>
                         <TextBlock Text="♻" FontSize="14" VerticalAlignment="Center" />
                     </MenuItem.Icon>
                 </MenuItem>
             </MenuItem>
-                
+
             <MenuItem Header="Tools" Foreground="White">
                 <MenuItem Header="Refresh All" Click="RefreshAll_Click"/>
+                <MenuItem Header="Tags Cloud" Click="TagsCloud_Click">
+                    <MenuItem.Icon>
+                        <TextBlock Text="🏷" FontSize="14" VerticalAlignment="Center" />
+                    </MenuItem.Icon>
+                </MenuItem>
             </MenuItem>
         </Menu>
 
@@ -161,8 +166,6 @@
                 <Grid.RowDefinitions>
                     <RowDefinition Height="35"/>
                     <!-- Search bar -->
-                    <RowDefinition Height="Auto"/>
-                    <!-- Tag Cloud -->
                     <RowDefinition Height="*"/>
                     <!-- Image area -->
                     <RowDefinition Height="Auto"/>
@@ -185,14 +188,8 @@
                            Command="{Binding SearchCommand}" />
                 </StackPanel>
 
-                <GroupBox Header="Popular Tags" Grid.Row="1" Margin="0,5,0,5" Foreground="White">
-                    <views:TagCloudControl DataContext="{Binding TagCloud}" 
-                                  MaxHeight="100"  
-                                  Margin="0,5,0,5"/>
-                </GroupBox>
-
                 <!-- Image preview -->
-                <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
+                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
                     <ItemsControl ItemsSource="{Binding Images}">
                         <ItemsControl.ItemsPanel>
                             <ItemsPanelTemplate>
@@ -223,7 +220,7 @@
                 </ScrollViewer>
 
                 <!-- Tag + Rating area -->
-                <GroupBox Header="Folder Info" Grid.Row="3" Margin="0,10,0,0" Foreground="White">
+                <GroupBox Header="Folder Info" Grid.Row="2" Margin="0,10,0,0" Foreground="White">
                     <StackPanel>
                         <!-- Current Folder Path -->
                         <TextBlock Text="{Binding SelectedFolder.FolderPath}" 
@@ -289,7 +286,7 @@
                                      Command="{Binding SaveTagsCommand}"/>
                     </StackPanel>
                 </GroupBox>
-                <StackPanel Grid.Row="4" Margin="10,5,20,3">
+                <StackPanel Grid.Row="3" Margin="10,5,20,3">
                     <TextBlock Text="{Binding StatusMessage}" 
                        Foreground="LightGray" 
                        TextWrapping="Wrap"
