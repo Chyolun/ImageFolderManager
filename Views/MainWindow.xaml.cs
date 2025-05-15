@@ -87,6 +87,17 @@ namespace ImageFolderManager
             }
         }
 
+        private void SearchResults_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+        {
+            var listBox = sender as ListBox;
+            if (listBox == null) return;
+            var folderInfo = listBox.SelectedItem as FolderInfo;
+            if (folderInfo == null) return;
+            _ = ViewModel.SetSelectedFolderAsync(folderInfo);
+            ShellTreeViewControl?.SelectPath(folderInfo.FolderPath);
+            e.Handled = true;
+        }
+
         // Menu event handlers
         private async void RootDirectory_Click(object sender, RoutedEventArgs e)
         {
@@ -244,6 +255,16 @@ namespace ImageFolderManager
             if (folderInfo == null) return;
 
             var contextMenu = new ContextMenu();
+
+            var loadImagesItem = new MenuItem { Header = "Load Images" };
+            loadImagesItem.Click += (s, args) =>
+            {
+              
+                ViewModel.SetSelectedFolderAsync(folderInfo);
+            };
+            contextMenu.Items.Add(loadImagesItem);
+
+            contextMenu.Items.Add(new Separator());
 
             var selectItem = new MenuItem { Header = "Select in Tree" };
             selectItem.Click += (s, args) =>

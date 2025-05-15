@@ -102,6 +102,11 @@ namespace ImageFolderManager.ViewModels
         public ICommand SetRatingCommand { get; }
         public ICommand EditTagsCommand { get; }
         public ICommand UndoFolderMovementCommand { get; }
+
+        private ICommand _restoreDeletedFoldersCommand;
+        public ICommand RestoreDeletedFoldersCommand => _restoreDeletedFoldersCommand ??=
+            new RelayCommand(_ => RestoreDeletedFolders(), _ => CanRestoreDeletedFolders());
+
         public ObservableCollection<FolderInfo> SearchResultFolders { get; set; } = new();
 
         private int _rating;
@@ -181,6 +186,7 @@ namespace ImageFolderManager.ViewModels
             _folderManager = new FolderManagementService(HandleFileSystemEvent);
             EditTagsCommand = new RelayCommand(_ => EditTags());
             UndoFolderMovementCommand = new AsyncRelayCommand(UndoLastFolderMovementAsync, CanUndoFolderMovement);
+
             UpdateStars();
 
         }
@@ -1326,105 +1332,77 @@ namespace ImageFolderManager.ViewModels
             }
         }
 
-        // Check if there are folders selected to manipulate
-        private bool CanManipulateSelectedFolders()
+        /// <summary>
+        /// Checks if deleted folders can be restored
+        /// </summary>
+        private bool CanRestoreDeletedFolders()
         {
-            // Get selected folders from the view
+            // Look through the undo stack to see if there are any delete operations
+            return _undoStack.Count > 0 &&
+                   _undoStack.Any(op => op.DestinationPath == "RecycleBin");
+        }
+
+        /// <summary>
+        /// Restores the most recently deleted folders from the recycle bin
+        /// </summary>
+        private async void RestoreDeletedFolders()
+        {
+            if (_undoStack.Count == 0)
+            {
+                StatusMessage = "No deleted folders to restore.";
+                return;
+            }
+
+            // Find the most recent delete operation in the undo stack
+            int indexToRestore = -1;
+            for (int i = 0; i < _undoStack.Count; i++)
+            {
+                if (_undoStack.ElementAt(i).DestinationPath == "RecycleBin")
+                {
+                    indexToRestore = i;
+                    break;
+                }
+            }
+
+            if (indexToRestore == -1)
+            {
+                StatusMessage = "No deleted folders to restore.";
+                return;
+            }
+
+            // If we need to restore an operation that's not at the top of the stack,
+            // we'll first need to pop any operations on top of it
+            var operationsToRestore = new Stack<FolderMoveOperation>();
+
+            // Pop operations until we reach the one we want to restore
+            for (int i = 0; i < indexToRestore; i++)
+            {
+                if (_undoStack.Count > 0)
+                {
+                    operationsToRestore.Push(_undoStack.Pop());
+                }
+            }
+
+            // Now restore the deleted folders
+            await UndoLastFolderMovementAsync();
+
+            // Push back any operations we popped earlier
+            while (operationsToRestore.Count > 0)
+            {
+                _undoStack.Push(operationsToRestore.Pop());
+            }
+
+            // Refresh the UI
             var mainWindow = Application.Current.MainWindow as MainWindow;
-            if (mainWindow?.ShellTreeViewControl == null) return false;
-
-            var selectedFolders = mainWindow.ShellTreeViewControl.SelectedItems
-                .OfType<TreeViewItem>()
-                .Where(item => item.Tag is ShellObject)
-                .Select(item => {
-                    string path = PathService.GetPathFromShellObject(item.Tag as ShellObject);
-                    return PathService.DirectoryExists(path) ? new FolderInfo(path) : null;
-                })
-                .Where(folder => folder != null)
-                .ToList();
-
-            return selectedFolders.Count > 0;
-        }
-
-        // Check if paste operation is available
-        private bool CanPaste()
-        {
-            return HasClipboardContent() && SelectedFolder != null;
-        }
-
-        // Cut the selected folders
-        private async Task CutSelectedFolders()
-        {
-            var mainWindow = Application.Current.MainWindow as MainWindow;
-            if (mainWindow?.ShellTreeViewControl == null) return;
-
-            var selectedFolders = GetSelectedFoldersFromTreeView();
-            if (selectedFolders.Count == 0) return;
-
-            // If only one folder is selected, use the single folder cut
-            if (selectedFolders.Count == 1)
+            if (mainWindow?.ShellTreeViewControl != null)
             {
-                CutFolder(selectedFolders[0]);
+                mainWindow.ShellTreeViewControl.RefreshTree();
             }
-            else
-            {
-                // Use the multiple folders cut
-                CutMultipleFolders(selectedFolders);
-            }
+
+            StatusMessage = "Successfully restored deleted folders.";
+            CommandManager.InvalidateRequerySuggested(); // Refresh command state
         }
 
-        // Copy the selected folders
-        private async Task CopySelectedFolders()
-        {
-            var selectedFolders = GetSelectedFoldersFromTreeView();
-            if (selectedFolders.Count == 0) return;
-
-            // If only one folder is selected, use the single folder copy
-            if (selectedFolders.Count == 1)
-            {
-                CopyFolder(selectedFolders[0]);
-            }
-            else
-            {
-                // Use the multiple folders copy
-                CopyMultipleFolders(selectedFolders);
-            }
-        }
-
-        // Paste to the selected folder
-        private async Task PasteToSelectedFolder()
-        {
-            if (SelectedFolder == null || !HasClipboardContent()) return;
-
-            // Use the existing paste method
-            await PasteFolderAsync(SelectedFolder);
-        }
-
-        // Delete the selected folders
-        private async Task DeleteSelectedFolders()
-        {
-            var selectedFolders = GetSelectedFoldersFromTreeView();
-            if (selectedFolders.Count == 0) return;
-
-            // If only one folder is selected, use the single folder delete
-            if (selectedFolders.Count == 1)
-            {
-                await DeleteFolderAsync(selectedFolders[0]);
-            }
-            else
-            {
-                // Use the multiple folders delete
-                await DeleteMultipleFolders(selectedFolders);
-            }
-        }
-
-        private List<FolderInfo> GetSelectedFoldersFromTreeView()
-        {
-            var mainWindow = Application.Current.MainWindow as MainWindow;
-            if (mainWindow?.ShellTreeViewControl == null) return new List<FolderInfo>();
-
-            return mainWindow.ShellTreeViewControl.GetSelectedFolderInfos();
-        }
 
         public void CutFolder(FolderInfo folder)
         {

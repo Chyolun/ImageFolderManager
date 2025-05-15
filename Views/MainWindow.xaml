@@ -21,10 +21,11 @@
     </mah:MetroWindow.DataContext>
     <Window.InputBindings>
         <KeyBinding Key="Z" Modifiers="Control" Command="{Binding UndoFolderMovementCommand}" />
-        <KeyBinding Key="X" Modifiers="Control" Command="{Binding CutSelectedCommand}" />
+        <KeyBinding Key="Z" Modifiers="Control+Shift" Command="{Binding RestoreDeletedFoldersCommand}" />
+        <!--<KeyBinding Key="X" Modifiers="Control" Command="{Binding CutSelectedCommand}" />
         <KeyBinding Key="C" Modifiers="Control" Command="{Binding CopySelectedCommand}" />
         <KeyBinding Key="V" Modifiers="Control" Command="{Binding PasteCommand}" />
-        <KeyBinding Key="Delete" Command="{Binding DeleteSelectedCommand}" />
+        <KeyBinding Key="Delete" Command="{Binding DeleteSelectedCommand}" />-->
     </Window.InputBindings>
 
     <Grid>
@@ -40,7 +41,7 @@
                 <MenuItem Header="Preview Settings" Click="PreviewSize_Click"/>
             </MenuItem>
             <MenuItem Header="Edit" Foreground="White">
-                <MenuItem Header="Cut" 
+                <!--<MenuItem Header="Cut" 
               Command="{Binding CutSelectedCommand}" 
               InputGestureText="Ctrl+X">
                     <MenuItem.Icon>
@@ -69,15 +70,23 @@
                         <TextBlock Text="🗑" FontSize="14" VerticalAlignment="Center" />
                     </MenuItem.Icon>
                 </MenuItem>
-                <Separator />
+                <Separator />-->
                 <MenuItem Header="Undo Folder Movement" 
-              Command="{Binding UndoFolderMovementCommand}" 
-              InputGestureText="Ctrl+Z">
+                      Command="{Binding UndoFolderMovementCommand}" 
+                      InputGestureText="Ctrl+Z">
                     <MenuItem.Icon>
                         <TextBlock Text="↩" FontSize="14" VerticalAlignment="Center" />
                     </MenuItem.Icon>
                 </MenuItem>
+                <MenuItem Header="Restore Deleted Folders" 
+                      Command="{Binding RestoreDeletedFoldersCommand}" 
+                      InputGestureText="Ctrl+Shift+Z">      
+                    <MenuItem.Icon>
+                        <TextBlock Text="♻" FontSize="14" VerticalAlignment="Center" />
+                    </MenuItem.Icon>
+                </MenuItem>
             </MenuItem>
+                
             <MenuItem Header="Tools" Foreground="White">
                 <MenuItem Header="Refresh All" Click="RefreshAll_Click"/>
             </MenuItem>
@@ -122,9 +131,10 @@
                 <!-- Search Results List -->
                 <ScrollViewer Grid.Row="3" VerticalScrollBarVisibility="Auto">
                     <ListBox ItemsSource="{Binding SearchResultFolders}"
-                 SelectedItem="{Binding SelectedSearchResult, Mode=TwoWay}"
-                 ContextMenuOpening="SearchResultListBox_ContextMenuOpening"
-                 SelectionChanged="SearchResults_SelectionChanged">
+                                             SelectedItem="{Binding SelectedSearchResult, Mode=TwoWay}"
+                                             ContextMenuOpening="SearchResultListBox_ContextMenuOpening"
+                                             SelectionChanged="SearchResults_SelectionChanged"
+                                             MouseDoubleClick="SearchResults_MouseDoubleClick">
                         <ListBox.ItemTemplate>
                             <DataTemplate>
                                 <StackPanel Orientation="Vertical">

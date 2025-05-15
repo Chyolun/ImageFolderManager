@@ -38,7 +38,6 @@
                     <EventSetter Event="Expanded" Handler="TreeViewItem_Expanded"/>
                     <Setter Property="Foreground" Value="White"/>
                     <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
-                    <Setter Property="HorizontalAlignment" Value="Left" />
                     <!-- Add a custom template for the selection state -->
                     <Setter Property="Template">
                         <Setter.Value>
@@ -65,19 +64,16 @@
                                             Background="{TemplateBinding Background}"
                                             BorderBrush="{TemplateBinding BorderBrush}" 
                                             BorderThickness="{TemplateBinding BorderThickness}" 
-                                            Padding="{TemplateBinding Padding}"
-                                            HorizontalAlignment="Left">
+                                            Padding="{TemplateBinding Padding}">
                                         <ContentPresenter x:Name="PART_Header" 
-                                                          ContentSource="Header" 
-                                                          HorizontalAlignment="Left"/>
+                                                          ContentSource="Header" />
                                     </Border>
 
                                     <!-- Child items -->
                                     <ItemsPresenter x:Name="ItemsHost" 
                                                     Grid.Row="1" 
                                                     Grid.Column="1" 
-                                                    Visibility="Collapsed"
-                                                    HorizontalAlignment="Left"/>
+                                                    Visibility="Collapsed"/>
                                 </Grid>
                                 <ControlTemplate.Triggers>
                                     <!-- Handle expansion state -->
@@ -88,7 +84,6 @@
                                     <Trigger Property="HasItems" Value="False">
                                         <Setter TargetName="Expander" Property="Visibility" Value="Hidden"/>
                                     </Trigger>
-       
                                 </ControlTemplate.Triggers>
                             </ControlTemplate>
                         </Setter.Value>
