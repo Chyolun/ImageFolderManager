@@ -301,12 +301,16 @@ namespace ImageFolderManager
 
         private void TagsCloud_Click(object sender, RoutedEventArgs e)
         {
-            // Check if the window is already open
-            if (TagCloudWindow.Instance != null)
+            // Check if there is already an open TagCloudWindow
+            foreach (Window window in Application.Current.Windows)
             {
-                // If already open, just bring it to front
-                TagCloudWindow.Instance.Activate();
-                return;
+                if (window is TagCloudWindow existingWindow)
+                {
+                    // If found, activate it and bring it to front
+                    existingWindow.Activate();
+                    existingWindow.Focus();
+                    return;
+                }
             }
 
             // Create the tag cloud window

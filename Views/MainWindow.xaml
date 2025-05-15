@@ -110,7 +110,7 @@
                     <RowDefinition Height="auto" />
                     <RowDefinition Height="3" />
                     <RowDefinition Height="25" />
-                    <RowDefinition Height="*" />
+                    <RowDefinition Height="auto" />
                 </Grid.RowDefinitions>
 
                 <!-- IMPORTANT: Ensure ShellTreeView gets the MainViewModel DataContext -->

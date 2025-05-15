@@ -3,20 +3,24 @@
   "WorkspaceRootPath": "D:\\ImageFolderManager\\",
   "Documents": [
     {
-      "AbsoluteMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|d:\\imagefoldermanager\\views\\mainwindow.xaml.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
-      "RelativeMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|solutionrelative:views\\mainwindow.xaml.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|d:\\imagefoldermanager\\views\\tagcloudwindow.xaml.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "AbsoluteMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|D:\\ImageFolderManager\\views\\tagcloudwindow.xaml.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
       "RelativeMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|solutionrelative:views\\tagcloudwindow.xaml.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|d:\\imagefoldermanager\\views\\tagcloudwindow.xaml||{F11ACC28-31D1-4C80-A34B-F4E09D3D753C}",
-      "RelativeMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|solutionrelative:views\\tagcloudwindow.xaml||{F11ACC28-31D1-4C80-A34B-F4E09D3D753C}"
     },
     {
       "AbsoluteMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|D:\\ImageFolderManager\\views\\mainwindow.xaml||{F11ACC28-31D1-4C80-A34B-F4E09D3D753C}",
       "RelativeMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|solutionrelative:views\\mainwindow.xaml||{F11ACC28-31D1-4C80-A34B-F4E09D3D753C}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|d:\\imagefoldermanager\\views\\mainwindow.xaml.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|solutionrelative:views\\mainwindow.xaml.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|D:\\ImageFolderManager\\views\\shelltreeview.xaml||{F11ACC28-31D1-4C80-A34B-F4E09D3D753C}",
+      "RelativeMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|solutionrelative:views\\shelltreeview.xaml||{F11ACC28-31D1-4C80-A34B-F4E09D3D753C}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|d:\\imagefoldermanager\\views\\tagcloudwindow.xaml||{F11ACC28-31D1-4C80-A34B-F4E09D3D753C}",
+      "RelativeMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|solutionrelative:views\\tagcloudwindow.xaml||{F11ACC28-31D1-4C80-A34B-F4E09D3D753C}"
     },
     {
       "AbsoluteMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|D:\\ImageFolderManager\\views\\tagcloudcontrol.xaml||{F11ACC28-31D1-4C80-A34B-F4E09D3D753C}",
@@ -35,10 +39,6 @@
       "RelativeMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|solutionrelative:models\\imagecache.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     },
     {
-      "AbsoluteMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|D:\\ImageFolderManager\\views\\shelltreeview.xaml||{F11ACC28-31D1-4C80-A34B-F4E09D3D753C}",
-      "RelativeMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|solutionrelative:views\\shelltreeview.xaml||{F11ACC28-31D1-4C80-A34B-F4E09D3D753C}"
-    },
-    {
       "AbsoluteMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|D:\\ImageFolderManager\\models\\folderinfo.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
       "RelativeMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|solutionrelative:models\\folderinfo.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     }
@@ -49,18 +49,42 @@
       "VerticalTabListWidth": 256,
       "DocumentGroups": [
         {
-          "DockedHeight": 220,
-          "SelectedChildIndex": 8,
+          "DockedHeight": 300,
+          "SelectedChildIndex": 2,
           "Children": [
             {
               "$type": "Document",
+              "DocumentIndex": 4,
+              "Title": "TagCloudWindow.xaml",
+              "DocumentMoniker": "D:\\ImageFolderManager\\Views\\TagCloudWindow.xaml",
+              "RelativeDocumentMoniker": "Views\\TagCloudWindow.xaml",
+              "ToolTip": "D:\\ImageFolderManager\\Views\\TagCloudWindow.xaml",
+              "RelativeToolTip": "Views\\TagCloudWindow.xaml",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003549|",
+              "WhenOpened": "2025-05-15T11:40:27.408Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
               "DocumentIndex": 1,
+              "Title": "MainWindow.xaml",
+              "DocumentMoniker": "D:\\ImageFolderManager\\Views\\MainWindow.xaml",
+              "RelativeDocumentMoniker": "Views\\MainWindow.xaml",
+              "ToolTip": "D:\\ImageFolderManager\\Views\\MainWindow.xaml",
+              "RelativeToolTip": "Views\\MainWindow.xaml",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003549|",
+              "WhenOpened": "2025-05-12T08:30:19.378Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 0,
               "Title": "TagCloudWindow.xaml.cs",
               "DocumentMoniker": "D:\\ImageFolderManager\\Views\\TagCloudWindow.xaml.cs",
               "RelativeDocumentMoniker": "Views\\TagCloudWindow.xaml.cs",
               "ToolTip": "D:\\ImageFolderManager\\Views\\TagCloudWindow.xaml.cs",
               "RelativeToolTip": "Views\\TagCloudWindow.xaml.cs",
-              "ViewState": "AgIAAMMAAAAAAAAAAAAiwNgAAAABAAAAAAAAAA==",
+              "ViewState": "AgIAAN4AAAAAAAAAAAAswP8AAAABAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
               "WhenOpened": "2025-05-15T08:31:55.579Z",
               "EditorCaption": ""
@@ -68,39 +92,39 @@
             {
               "$type": "Document",
               "DocumentIndex": 2,
-              "Title": "TagCloudWindow.xaml",
-              "DocumentMoniker": "D:\\ImageFolderManager\\Views\\TagCloudWindow.xaml",
-              "RelativeDocumentMoniker": "Views\\TagCloudWindow.xaml",
-              "ToolTip": "D:\\ImageFolderManager\\Views\\TagCloudWindow.xaml",
-              "RelativeToolTip": "Views\\TagCloudWindow.xaml",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003549|",
-              "WhenOpened": "2025-05-15T08:31:41.897Z",
-              "EditorCaption": ""
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 5,
-              "Title": "FolderManagementService.cs",
-              "DocumentMoniker": "D:\\ImageFolderManager\\Services\\FolderManagementService.cs",
-              "RelativeDocumentMoniker": "Services\\FolderManagementService.cs",
-              "ToolTip": "D:\\ImageFolderManager\\Services\\FolderManagementService.cs",
-              "RelativeToolTip": "Services\\FolderManagementService.cs",
-              "ViewState": "AgIAAC8AAAAAAAAAAAAqwAAAAAAAAAAAAAAAAA==",
+              "Title": "MainWindow.xaml.cs",
+              "DocumentMoniker": "D:\\ImageFolderManager\\Views\\MainWindow.xaml.cs",
+              "RelativeDocumentMoniker": "Views\\MainWindow.xaml.cs",
+              "ToolTip": "D:\\ImageFolderManager\\Views\\MainWindow.xaml.cs",
+              "RelativeToolTip": "Views\\MainWindow.xaml.cs",
+              "ViewState": "AgIAAPIAAAAAHiqDTJf6v0MBAAABAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2025-05-15T06:28:17.881Z",
+              "WhenOpened": "2025-05-10T03:33:56.976Z",
               "EditorCaption": ""
             },
             {
               "$type": "Document",
-              "DocumentIndex": 4,
-              "Title": "TagCloudControl.xaml",
-              "DocumentMoniker": "D:\\ImageFolderManager\\Views\\TagCloudControl.xaml",
-              "RelativeDocumentMoniker": "Views\\TagCloudControl.xaml",
-              "ToolTip": "D:\\ImageFolderManager\\Views\\TagCloudControl.xaml",
-              "RelativeToolTip": "Views\\TagCloudControl.xaml",
+              "DocumentIndex": 3,
+              "Title": "ShellTreeView.xaml",
+              "DocumentMoniker": "D:\\ImageFolderManager\\Views\\ShellTreeView.xaml",
+              "RelativeDocumentMoniker": "Views\\ShellTreeView.xaml",
+              "ToolTip": "D:\\ImageFolderManager\\Views\\ShellTreeView.xaml",
+              "RelativeToolTip": "Views\\ShellTreeView.xaml",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003549|",
-              "WhenOpened": "2025-05-15T06:23:43.324Z",
+              "WhenOpened": "2025-05-12T08:31:59.271Z",
               "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 8,
+              "Title": "ImageCache.cs",
+              "DocumentMoniker": "D:\\ImageFolderManager\\Models\\ImageCache.cs",
+              "RelativeDocumentMoniker": "Models\\ImageCache.cs",
+              "ToolTip": "D:\\ImageFolderManager\\Models\\ImageCache.cs",
+              "RelativeToolTip": "Models\\ImageCache.cs",
+              "ViewState": "AgIAAAIBAAAAAAAAAAAkwA0AAAAVAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2025-05-15T07:57:50.276Z"
             },
             {
               "$type": "Document",
@@ -116,55 +140,30 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 7,
-              "Title": "ImageCache.cs",
-              "DocumentMoniker": "D:\\ImageFolderManager\\Models\\ImageCache.cs",
-              "RelativeDocumentMoniker": "Models\\ImageCache.cs",
-              "ToolTip": "D:\\ImageFolderManager\\Models\\ImageCache.cs",
-              "RelativeToolTip": "Models\\ImageCache.cs",
-              "ViewState": "AgIAAAIBAAAAAAAAAAAkwA0AAAAVAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2025-05-15T07:57:50.276Z"
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 8,
-              "Title": "ShellTreeView.xaml",
-              "DocumentMoniker": "D:\\ImageFolderManager\\Views\\ShellTreeView.xaml",
-              "RelativeDocumentMoniker": "Views\\ShellTreeView.xaml",
-              "ToolTip": "D:\\ImageFolderManager\\Views\\ShellTreeView.xaml",
-              "RelativeToolTip": "Views\\ShellTreeView.xaml",
+              "DocumentIndex": 5,
+              "Title": "TagCloudControl.xaml",
+              "DocumentMoniker": "D:\\ImageFolderManager\\Views\\TagCloudControl.xaml",
+              "RelativeDocumentMoniker": "Views\\TagCloudControl.xaml",
+              "ToolTip": "D:\\ImageFolderManager\\Views\\TagCloudControl.xaml",
+              "RelativeToolTip": "Views\\TagCloudControl.xaml",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003549|",
-              "WhenOpened": "2025-05-12T08:31:59.271Z"
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 3,
-              "Title": "MainWindow.xaml",
-              "DocumentMoniker": "D:\\ImageFolderManager\\Views\\MainWindow.xaml",
-              "RelativeDocumentMoniker": "Views\\MainWindow.xaml",
-              "ToolTip": "D:\\ImageFolderManager\\Views\\MainWindow.xaml",
-              "RelativeToolTip": "Views\\MainWindow.xaml",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003549|",
-              "WhenOpened": "2025-05-12T08:30:19.378Z",
-              "EditorCaption": ""
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 0,
-              "Title": "MainWindow.xaml.cs",
-              "DocumentMoniker": "D:\\ImageFolderManager\\Views\\MainWindow.xaml.cs",
-              "RelativeDocumentMoniker": "Views\\MainWindow.xaml.cs",
-              "ToolTip": "D:\\ImageFolderManager\\Views\\MainWindow.xaml.cs",
-              "RelativeToolTip": "Views\\MainWindow.xaml.cs",
-              "ViewState": "AgIAAC0BAAAAAAAAAAAiwD8BAAABAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2025-05-10T03:33:56.976Z",
-              "EditorCaption": ""
+              "WhenOpened": "2025-05-15T06:23:43.324Z"
             },
             {
               "$type": "Document",
               "DocumentIndex": 6,
+              "Title": "FolderManagementService.cs",
+              "DocumentMoniker": "D:\\ImageFolderManager\\Services\\FolderManagementService.cs",
+              "RelativeDocumentMoniker": "Services\\FolderManagementService.cs",
+              "ToolTip": "D:\\ImageFolderManager\\Services\\FolderManagementService.cs",
+              "RelativeToolTip": "Services\\FolderManagementService.cs",
+              "ViewState": "AgIAAC8AAAAAAAAAAAAqwAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2025-05-15T06:28:17.881Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 7,
               "Title": "MainViewModel.cs",
               "DocumentMoniker": "D:\\ImageFolderManager\\ViewModels\\MainViewModel.cs",
               "RelativeDocumentMoniker": "ViewModels\\MainViewModel.cs",
@@ -177,7 +176,7 @@
           ]
         },
         {
-          "DockedHeight": 180,
+          "DockedHeight": 140,
           "SelectedChildIndex": -1,
           "Children": [
             {
@@ -186,7 +185,7 @@
             },
             {
               "$type": "Bookmark",
-              "Name": "ST:0:0:{004be353-6879-467c-9d1e-9ac23cdf6d49}"
+              "Name": "ST:0:0:{3822e751-eb69-4b0e-b301-595a9e4c74d5}"
             },
             {
               "$type": "Bookmark",

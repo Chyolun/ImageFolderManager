@@ -16,9 +16,6 @@ namespace ImageFolderManager.Views
     {
         private readonly MainViewModel _mainViewModel;
 
-        // Event to handle tag renaming
-        public event Action<string, string> TagRenamed;
-
         // Expose the MainViewModel for the responsive tag cloud control to access
         public MainViewModel MainViewModel => _mainViewModel;
 
@@ -114,7 +111,10 @@ namespace ImageFolderManager.Views
         {
             try
             {
-                Clipboard.SetText($"#{tag}");
+                // Use TextDataFormat.Text explicitly for better compatibility
+                Clipboard.SetDataObject($"#{tag}", true);
+
+                // Update status text on success
                 if (StatusText != null)
                 {
                     StatusText.Text = $"Copied #{tag} to clipboard";
@@ -122,7 +122,46 @@ namespace ImageFolderManager.Views
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Error copying tag: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                // Even though an exception occurred, the clipboard operation might still succeed
+                // because Windows may retry clipboard operations internally
+
+                // Check if clipboard now contains our text despite the exception
+                bool clipboardContainsTag = false;
+                try
+                {
+                    if (Clipboard.ContainsText())
+                    {
+                        string clipboardText = Clipboard.GetText();
+                        clipboardContainsTag = clipboardText == $"#{tag}";
+                    }
+                }
+                catch
+                {
+                    // Ignore errors in this check
+                }
+
+                // If the clipboard doesn't contain our text, show an error
+                if (!clipboardContainsTag)
+                {
+                    if (StatusText != null)
+                    {
+                        StatusText.Text = "Could not copy tag to clipboard";
+                    }
+
+                    MessageBox.Show(
+                        "Could not copy tag to clipboard. Please try again in a moment.",
+                        "Clipboard Operation Failed",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Information);
+                }
+                else
+                {
+                    // The clipboard operation actually succeeded despite the exception
+                    if (StatusText != null)
+                    {
+                        StatusText.Text = $"Copied #{tag} to clipboard";
+                    }
+                }
             }
         }
 
