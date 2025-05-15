@@ -141,7 +141,6 @@
                                     <TextBlock Text="{Binding Name}" Foreground="White"/>
                                     <TextBlock Text="{Binding FolderPath}" Foreground="Gray" FontSize="10"/>
                                     <TextBlock Text="{Binding Rating, StringFormat={}Rating: {0}/5}" Foreground="Gold" FontSize="10"/>
-                                    <TextBlock Text="{Binding TagsDisplay}" Foreground="LightBlue" FontSize="10"/>
                                 </StackPanel>
                             </DataTemplate>
                         </ListBox.ItemTemplate>

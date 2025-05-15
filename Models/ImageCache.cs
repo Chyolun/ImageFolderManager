@@ -11,6 +11,7 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using ImageFolderManager.Services;
 using ImageMagick;
+using System.Windows;
 
 namespace ImageFolderManager.Models
 {
@@ -243,59 +244,66 @@ namespace ImageFolderManager.Models
         /// Optimized image decoding with better performance parameters
         /// </summary>
         private static async Task<BitmapImage> DecodeImageOptimizedAsync(
-            string filePath,
-            int targetWidth,
-            int targetHeight,
-            CancellationToken cancellationToken)
+                string filePath,
+                int targetWidth,
+                int targetHeight,
+                CancellationToken cancellationToken)
         {
             try
             {
-                // Create a BitmapImage optimized for quick loading
-                var bitmap = new BitmapImage();
-
-                // Use FileStream for asynchronous access
+                // Read the file data on a background thread
+                byte[] imageData;
                 using (var fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, true))
                 {
                     // Check for cancellation
                     cancellationToken.ThrowIfCancellationRequested();
 
-                    // Access file on background thread first
+                    // Read the file into memory
                     var memoryStream = new MemoryStream();
                     await fileStream.CopyToAsync(memoryStream, 81920, cancellationToken);
-                    memoryStream.Position = 0;
-
-                    cancellationToken.ThrowIfCancellationRequested();
-
-                    // Switch to optimization parameters
-                    bitmap.BeginInit();
-                    bitmap.StreamSource = memoryStream;
-                    bitmap.CreateOptions = BitmapCreateOptions.DelayCreation;
-                    bitmap.CacheOption = BitmapCacheOption.OnLoad;
-                    bitmap.DecodePixelWidth = targetWidth;
-                    // Let the aspect ratio do its job rather than setting both dimensions
-                    // bitmap.DecodePixelHeight = targetHeight; 
-
-                    // Enable better downsampling to reduce aliasing
-                    RenderOptions.SetBitmapScalingMode(bitmap, BitmapScalingMode.HighQuality);
-
-                    // Use lower bit depth if possible to save memory
-                    if (IsJpegOrPng(filePath))
-                    {
-                        // For some formats, we can reduce memory usage with 8-bit format
-                        bitmap.DownloadCompleted += (s, e) => {
-                            // Additional optimization after load if needed
-                        };
-                    }
-
-                    bitmap.EndInit();
-
-                    if (bitmap.CanFreeze && !bitmap.IsFrozen)
-                    {
-                        bitmap.Freeze(); // Important for cross-thread usage and performance
-                    }
-
-                    return bitmap;
+                    imageData = memoryStream.ToArray();
                 }
+
+                cancellationToken.ThrowIfCancellationRequested();
+
+                // Create and initialize BitmapImage on the UI thread
+                return await Application.Current.Dispatcher.InvokeAsync(() => {
+                    try
+                    {
+                        var bitmap = new BitmapImage();
+                        bitmap.BeginInit();
+                        bitmap.StreamSource = new MemoryStream(imageData);
+                        bitmap.CreateOptions = BitmapCreateOptions.DelayCreation;
+                        bitmap.CacheOption = BitmapCacheOption.OnLoad;
+                        bitmap.DecodePixelWidth = targetWidth;
+
+                        // Enable better downsampling to reduce aliasing
+                        RenderOptions.SetBitmapScalingMode(bitmap, BitmapScalingMode.HighQuality);
+
+                        // Use lower bit depth if possible to save memory
+                        if (IsJpegOrPng(filePath))
+                        {
+                            // For some formats, we can reduce memory usage with 8-bit format
+                            bitmap.DownloadCompleted += (s, e) => {
+                                // Additional optimization after load if needed
+                            };
+                        }
+
+                        bitmap.EndInit();
+
+                        if (bitmap.CanFreeze && !bitmap.IsFrozen)
+                        {
+                            bitmap.Freeze(); // Important for cross-thread usage and performance
+                        }
+
+                        return bitmap;
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"Error creating bitmap on UI thread: {ex.Message}");
+                        return null;
+                    }
+                });
             }
             catch (OperationCanceledException)
             {
@@ -308,18 +316,28 @@ namespace ImageFolderManager.Models
                 // Fallback to simple decoding if optimization fails
                 try
                 {
-                    var bitmap = new BitmapImage();
-                    bitmap.BeginInit();
-                    bitmap.UriSource = new Uri(filePath);
-                    bitmap.DecodePixelWidth = targetWidth;
-                    bitmap.CacheOption = BitmapCacheOption.OnLoad;
-                    bitmap.EndInit();
-                    if (bitmap.CanFreeze)
-                        bitmap.Freeze();
-                    return bitmap;
+                    return await Application.Current.Dispatcher.InvokeAsync(() => {
+                        try
+                        {
+                            var bitmap = new BitmapImage();
+                            bitmap.BeginInit();
+                            bitmap.UriSource = new Uri(filePath);
+                            bitmap.DecodePixelWidth = targetWidth;
+                            bitmap.CacheOption = BitmapCacheOption.OnLoad;
+                            bitmap.EndInit();
+                            if (bitmap.CanFreeze)
+                                bitmap.Freeze();
+                            return bitmap;
+                        }
+                        catch
+                        {
+                            return null;
+                        }
+                    });
                 }
-                catch
+                catch (Exception innerEx)
                 {
+                    Debug.WriteLine($"Error in fallback decoding: {innerEx.Message}");
                     return null;
                 }
             }

@@ -76,11 +76,11 @@ namespace ImageFolderManager
             {
                 Debug.WriteLine($"SearchResults_SelectionChanged with folder: {folder.FolderPath}");
 
-                // Select the item in the tree view
-                if (ShellTreeViewControl != null)
-                {
-                    ShellTreeViewControl.SelectPath(folder.FolderPath);
-                }
+                //// Select the item in the tree view
+                //if (ShellTreeViewControl != null)
+                //{
+                //    ShellTreeViewControl.SelectPath(folder.FolderPath);
+                //}
 
                 // Just update selection without loading images
                 ViewModel.SetSelectedFolderWithoutLoading(folder);
