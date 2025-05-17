@@ -227,6 +227,41 @@ namespace ImageFolderManager
                 "Refresh Complete", MessageBoxButton.OK, MessageBoxImage.Information);
         }
 
+        /// <summary>
+        /// Event handler for the "Collapse Parent Directory" menu item
+        /// </summary>
+        private void CollapseParentDirectory_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                // Execute the command if available
+                if (ViewModel?.CollapseParentDirectoryCommand?.CanExecute(null) == true)
+                {
+                    // First call the ViewModel method (for status updates)
+                    ViewModel.CollapseParentDirectoryCommand.Execute(null);
+
+                    // Then perform the actual collapsing in the tree view
+                    if (ViewModel?.SelectedFolder != null)
+                    {
+                        string selectedPath = ViewModel.SelectedFolder.FolderPath;
+                        string parentPath = Path.GetDirectoryName(selectedPath);
+
+                        if (!string.IsNullOrEmpty(parentPath))
+                        {
+                            ShellTreeViewControl.CollapseDirectory(parentPath);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error collapsing parent directory: {ex.Message}",
+                    "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+
+                Debug.WriteLine($"Error in CollapseParentDirectory_Click: {ex.Message}");
+            }
+        }
+
         protected override void OnKeyDown(KeyEventArgs e)
         {
             base.OnKeyDown(e);

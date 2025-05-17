@@ -10,12 +10,9 @@
             <views:TagsToStringConverter x:Key="TagsToStringConverter"/>
             <ResourceDictionary.MergedDictionaries>
 
-                <!-- 必须添加 MahApps.Metro 的基本资源 -->
                 <ResourceDictionary Source="pack://application:,,,/MahApps.Metro;component/Styles/Controls.xaml" />
                 <ResourceDictionary Source="pack://application:,,,/MahApps.Metro;component/Styles/Fonts.xaml" />
                 
-
-                <!-- Dark.Blue 是你使用的暗色主题 -->
                 <ResourceDictionary Source="pack://application:,,,/MahApps.Metro;component/Styles/Themes/Dark.Blue.xaml" />
 
             </ResourceDictionary.MergedDictionaries>

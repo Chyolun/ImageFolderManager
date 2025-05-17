@@ -102,11 +102,9 @@ namespace ImageFolderManager.ViewModels
         public ICommand SetRatingCommand { get; }
         public ICommand EditTagsCommand { get; }
         public ICommand UndoFolderMovementCommand { get; }
-
-        private ICommand _restoreDeletedFoldersCommand;
-        public ICommand RestoreDeletedFoldersCommand => _restoreDeletedFoldersCommand ??=
-            new RelayCommand(_ => RestoreDeletedFolders(), _ => CanRestoreDeletedFolders());
-
+        private ICommand _collapseParentDirectoryCommand;
+        public ICommand CollapseParentDirectoryCommand => _collapseParentDirectoryCommand ??=
+            new RelayCommand(_ => CollapseParentDirectory(), _ => CanCollapseParentDirectory());
         public ObservableCollection<FolderInfo> SearchResultFolders { get; set; } = new();
 
         private int _rating;
@@ -832,6 +830,41 @@ namespace ImageFolderManager.ViewModels
             }
         }
 
+        /// Determines if the parent directory can be collapsed
+        /// </summary>
+        private bool CanCollapseParentDirectory()
+        {
+            // Can collapse if there's a selected folder with a parent directory
+            return SelectedFolder != null &&
+                   !string.IsNullOrEmpty(SelectedFolder.FolderPath) &&
+                   !string.IsNullOrEmpty(Path.GetDirectoryName(SelectedFolder.FolderPath));
+        }
+
+        /// <summary>
+        /// Collapses the parent directory of the current selected folder
+        /// </summary>
+        private void CollapseParentDirectory()
+        {
+            if (SelectedFolder == null || string.IsNullOrEmpty(SelectedFolder.FolderPath))
+            {
+                StatusMessage = "No folder selected.";
+                return;
+            }
+
+            string parentPath = Path.GetDirectoryName(SelectedFolder.FolderPath);
+
+            if (string.IsNullOrEmpty(parentPath))
+            {
+                StatusMessage = "Selected folder has no parent directory.";
+                return;
+            }
+
+            // This method will be called from the view
+            StatusMessage = $"Collapsing parent directory: {Path.GetFileName(parentPath)}";
+
+            // The actual collapsing is handled by the view
+        }
+
         // Add these methods to the MainViewModel class
         public async Task RenameTag(string oldTag, string newTag)
         {
@@ -1160,99 +1193,6 @@ namespace ImageFolderManager.ViewModels
             }
         }
 
-        // Updated PerformSearch method with proper thread synchronization
-        public async Task PerformSearch()
-        {
-            try
-            {
-                // Clear search results on UI thread
-                await Application.Current.Dispatcher.InvokeAsync(() => {
-                    SearchResultFolders.Clear();
-
-                    // Set status in the UI (assuming you have a status text property)
-                    StatusMessage = "Searching...";
-                    IsSearching = true;  // Add this property to control UI elements visibility
-                });
-
-                if (string.IsNullOrWhiteSpace(SearchText))
-                {
-                    await Application.Current.Dispatcher.InvokeAsync(() => {
-                        StatusMessage = "Ready";
-                        IsSearching = false;
-                    });
-                    return;
-                }
-
-                // Use a simple Task.Run to perform the search operation
-                await Task.Run(async () =>
-                {
-                    try
-                    {
-                        // Update UI status
-                        await Application.Current.Dispatcher.InvokeAsync(() => {
-                            StatusMessage = "Reading folder data...";
-                        });
-
-                        // Load latest data from file system
-                        _allLoadedFolders = await _folderManager.LoadFoldersRecursivelyAsync(
-                            AppSettings.Instance.DefaultRootDirectory);
-
-                        // Update tag cloud with fresh data
-                        await Application.Current.Dispatcher.InvokeAsync(async () => {
-                            await UpdateTagCloudAsync();
-                            StatusMessage = "Ready";
-                        });
-
-                        // Find matching folders
-                        var matchingFolders = ParseSearchCriteria();
-
-                        // Update UI with search results
-                        await Application.Current.Dispatcher.InvokeAsync(() => {
-                            foreach (var folder in matchingFolders)
-                            {
-                                SearchResultFolders.Add(folder);
-                            }
-
-                            StatusMessage = $"Found {matchingFolders.Count} matching folders";
-                            IsSearching = false;
-                        });
-
-                        Debug.WriteLine($"Search completed. Found {matchingFolders.Count} matching folders");
-                    }
-                    catch (Exception ex)
-                    {
-                        // Handle exceptions in the background task
-                        Debug.WriteLine($"Search error: {ex.Message}");
-
-                        await Application.Current.Dispatcher.InvokeAsync(() => {
-                            StatusMessage = $"Error: {ex.Message}";
-                            IsSearching = false;
-
-                            MessageBox.Show(
-                                $"An error occurred during search: {ex.Message}",
-                                "Search Error",
-                                MessageBoxButton.OK,
-                                MessageBoxImage.Error);
-                        });
-                    }
-                });
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"Search error in main thread: {ex.Message}");
-
-                await Application.Current.Dispatcher.InvokeAsync(() => {
-                    StatusMessage = "Search failed";
-                    IsSearching = false;
-
-                    MessageBox.Show(
-                        $"An error occurred during search: {ex.Message}",
-                        "Search Error",
-                        MessageBoxButton.OK,
-                        MessageBoxImage.Error);
-                });
-            }
-        }
         public async Task CreateNewFolder(FolderInfo parentFolder)
         {
             if (parentFolder == null) return;
@@ -1330,77 +1270,6 @@ namespace ImageFolderManager.ViewModels
                 MessageBox.Show($"Error creating folder: {ex.Message}",
                     "Create Folder Failed", MessageBoxButton.OK, MessageBoxImage.Error);
             }
-        }
-
-        /// <summary>
-        /// Checks if deleted folders can be restored
-        /// </summary>
-        private bool CanRestoreDeletedFolders()
-        {
-            // Look through the undo stack to see if there are any delete operations
-            return _undoStack.Count > 0 &&
-                   _undoStack.Any(op => op.DestinationPath == "RecycleBin");
-        }
-
-        /// <summary>
-        /// Restores the most recently deleted folders from the recycle bin
-        /// </summary>
-        private async void RestoreDeletedFolders()
-        {
-            if (_undoStack.Count == 0)
-            {
-                StatusMessage = "No deleted folders to restore.";
-                return;
-            }
-
-            // Find the most recent delete operation in the undo stack
-            int indexToRestore = -1;
-            for (int i = 0; i < _undoStack.Count; i++)
-            {
-                if (_undoStack.ElementAt(i).DestinationPath == "RecycleBin")
-                {
-                    indexToRestore = i;
-                    break;
-                }
-            }
-
-            if (indexToRestore == -1)
-            {
-                StatusMessage = "No deleted folders to restore.";
-                return;
-            }
-
-            // If we need to restore an operation that's not at the top of the stack,
-            // we'll first need to pop any operations on top of it
-            var operationsToRestore = new Stack<FolderMoveOperation>();
-
-            // Pop operations until we reach the one we want to restore
-            for (int i = 0; i < indexToRestore; i++)
-            {
-                if (_undoStack.Count > 0)
-                {
-                    operationsToRestore.Push(_undoStack.Pop());
-                }
-            }
-
-            // Now restore the deleted folders
-            await UndoLastFolderMovementAsync();
-
-            // Push back any operations we popped earlier
-            while (operationsToRestore.Count > 0)
-            {
-                _undoStack.Push(operationsToRestore.Pop());
-            }
-
-            // Refresh the UI
-            var mainWindow = Application.Current.MainWindow as MainWindow;
-            if (mainWindow?.ShellTreeViewControl != null)
-            {
-                mainWindow.ShellTreeViewControl.RefreshTree();
-            }
-
-            StatusMessage = "Successfully restored deleted folders.";
-            CommandManager.InvalidateRequerySuggested(); // Refresh command state
         }
 
 
@@ -2372,8 +2241,6 @@ namespace ImageFolderManager.ViewModels
         }
 
 
-
-
         public async Task RenameFolder(FolderInfo folder)
         {
             if (folder == null) return;
@@ -3049,13 +2916,14 @@ namespace ImageFolderManager.ViewModels
             }
         }
 
-        /// <summary>
-        /// Parses search criteria and finds matching folders
         /// </summary>
         /// <returns>List of folders matching the search criteria</returns>
         private List<FolderInfo> ParseSearchCriteria()
         {
             var matchingFolders = new List<FolderInfo>();
+
+            // Add debugging for folder structure
+            DebugFolderStructure();
 
             // Trim the input and normalize whitespace
             var input = SearchText?.Trim() ?? string.Empty;
@@ -3065,6 +2933,8 @@ namespace ImageFolderManager.ViewModels
                 Debug.WriteLine("Search text is empty");
                 return matchingFolders;
             }
+
+            Debug.WriteLine($"Parsing search criteria: '{input}'");
 
             // Split by '&' (AND operator)
             var andGroups = input.Split(new[] { '&' }, StringSplitOptions.RemoveEmptyEntries)
@@ -3083,6 +2953,8 @@ namespace ImageFolderManager.ViewModels
 
             foreach (var group in andGroups)
             {
+                Debug.WriteLine($"Processing AND group: '{group}'");
+
                 // Create OR predicates for this group
                 var orPredicates = new List<Func<FolderInfo, bool>>();
                 bool hasValidCondition = false;
@@ -3109,6 +2981,18 @@ namespace ImageFolderManager.ViewModels
                     hasValidCondition = true;
                 }
 
+                // Process folder name search conditions (new @ prefix feature)
+                var folderNameSearchTerms = ExtractFolderNameSearchTerms(group);
+
+                if (folderNameSearchTerms.Any())
+                {
+                    // Use the improved folder name predicate
+                    orPredicates.Add(CreateFolderNamePredicate(folderNameSearchTerms));
+
+                    hasValidCondition = true;
+                    Debug.WriteLine($"Added folder name search conditions: {string.Join(", ", folderNameSearchTerms)}");
+                }
+
                 // Process name/path search terms
                 var textSearchTerms = ExtractTextSearchTerms(group);
 
@@ -3116,8 +3000,8 @@ namespace ImageFolderManager.ViewModels
                 {
                     orPredicates.Add(folder =>
                         textSearchTerms.Any(term =>
-                            folder.Name.ToLowerInvariant().Contains(term) ||
-                            folder.FolderPath.ToLowerInvariant().Contains(term)));
+                            (folder.Name?.ToLowerInvariant().Contains(term) ?? false) ||
+                            (folder.FolderPath?.ToLowerInvariant().Contains(term) ?? false)));
 
                     hasValidCondition = true;
                     Debug.WriteLine($"Added text search conditions: {string.Join(", ", textSearchTerms)}");
@@ -3127,7 +3011,14 @@ namespace ImageFolderManager.ViewModels
                 if (hasValidCondition && orPredicates.Count > 0)
                 {
                     // Create a single predicate that combines all OR conditions
-                    andPredicates.Add(folder => orPredicates.Any(p => p(folder)));
+                    andPredicates.Add(folder => {
+                        bool result = orPredicates.Any(p => p(folder));
+                        if (folderNameSearchTerms.Any())
+                        {
+                            Debug.WriteLine($"Folder {folder.Name} OR predicate result: {result}");
+                        }
+                        return result;
+                    });
                 }
             }
 
@@ -3150,6 +3041,130 @@ namespace ImageFolderManager.ViewModels
 
             Debug.WriteLine($"Search completed, found {matchingFolders.Count} matching folders");
             return matchingFolders;
+        }
+
+        public async Task PerformSearch()
+        {
+            try
+            {
+                // Clear search results on UI thread
+                await Application.Current.Dispatcher.InvokeAsync(() => {
+                    SearchResultFolders.Clear();
+
+                    // Set status in the UI
+                    StatusMessage = "Searching...";
+                    IsSearching = true;
+                });
+
+                if (string.IsNullOrWhiteSpace(SearchText))
+                {
+                    await Application.Current.Dispatcher.InvokeAsync(() => {
+                        StatusMessage = "Ready";
+                        IsSearching = false;
+                    });
+                    return;
+                }
+
+                // Use a simple Task.Run to perform the search operation
+                await Task.Run(async () =>
+                {
+                    try
+                    {
+                        // Update UI status
+                        await Application.Current.Dispatcher.InvokeAsync(() => {
+                            StatusMessage = "Reading folder data...";
+                        });
+
+                        // Reload data (only if needed)
+                        if (_allLoadedFolders.Count == 0)
+                        {
+                            _allLoadedFolders = await _folderManager.LoadFoldersRecursivelyAsync(
+                                AppSettings.Instance.DefaultRootDirectory);
+                        }
+
+                        // Ensure all folders have properly initialized Name property
+                        foreach (var folder in _allLoadedFolders)
+                        {
+                            if (string.IsNullOrEmpty(folder.Name) && !string.IsNullOrEmpty(folder.FolderPath))
+                            {
+                                // Get folder name from path if it's missing
+                                var directoryInfo = new DirectoryInfo(folder.FolderPath);
+                                // Force property changed notification by setting the FolderPath again
+                                // This will trigger the Name property to update
+                                folder.FolderPath = folder.FolderPath;
+
+                                Debug.WriteLine($"Fixed missing folder name for: {folder.FolderPath}, Name is now: {folder.Name}");
+                            }
+                        }
+
+                        // Update UI status
+                        await Application.Current.Dispatcher.InvokeAsync(() => {
+                            StatusMessage = "Searching folders...";
+                        });
+
+                        // Find matching folders
+                        var matchingFolders = ParseSearchCriteria();
+
+                        // Update UI with search results
+                        await Application.Current.Dispatcher.InvokeAsync(() => {
+                            foreach (var folder in matchingFolders)
+                            {
+                                SearchResultFolders.Add(folder);
+                            }
+
+                            StatusMessage = $"Found {matchingFolders.Count} matching folders";
+                            IsSearching = false;
+                        });
+
+                        Debug.WriteLine($"Search completed. Found {matchingFolders.Count} matching folders");
+                    }
+                    catch (Exception ex)
+                    {
+                        // Handle exceptions in the background task
+                        Debug.WriteLine($"Search error: {ex.Message}");
+
+                        await Application.Current.Dispatcher.InvokeAsync(() => {
+                            StatusMessage = $"Error: {ex.Message}";
+                            IsSearching = false;
+
+                            MessageBox.Show(
+                                $"An error occurred during search: {ex.Message}",
+                                "Search Error",
+                                MessageBoxButton.OK,
+                                MessageBoxImage.Error);
+                        });
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Search error in main thread: {ex.Message}");
+
+                await Application.Current.Dispatcher.InvokeAsync(() => {
+                    StatusMessage = "Search failed";
+                    IsSearching = false;
+
+                    MessageBox.Show(
+                        $"An error occurred during search: {ex.Message}",
+                        "Search Error",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Error);
+                });
+            }
+        }
+
+
+        /// <summary>
+        /// Extracts text search terms (terms not starting with #, *, or @)
+        /// </summary>
+        private List<string> ExtractTextSearchTerms(string searchGroup)
+        {
+            // Get terms that don't start with #, *, or @
+            return searchGroup.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries)
+                .Where(term => !term.StartsWith("#") && !term.StartsWith("*") &&
+                               !term.StartsWith("@") && !string.IsNullOrWhiteSpace(term))
+                .Select(term => term.ToLowerInvariant())
+                .ToList();
         }
 
         /// <summary>
@@ -3223,15 +3238,46 @@ namespace ImageFolderManager.ViewModels
         }
 
         /// <summary>
-        /// Extracts text search terms from a search group
+        /// Extracts folder name search terms (search terms starting with @)
         /// </summary>
-        private List<string> ExtractTextSearchTerms(string searchGroup)
+        private List<string> ExtractFolderNameSearchTerms(string searchGroup)
         {
-            // Get terms that don't start with # or *
+            // Extract search terms that start with @ symbol
             return searchGroup.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries)
-                .Where(term => !term.StartsWith("#") && !term.StartsWith("*") && !string.IsNullOrWhiteSpace(term))
-                .Select(term => term.ToLowerInvariant())
+                .Where(term => term.StartsWith("@") && term.Length > 1)
+                .Select(term => term.Substring(1).ToLowerInvariant()) // Remove @ prefix and convert to lowercase
+                .Where(term => !string.IsNullOrWhiteSpace(term))
                 .ToList();
+        }
+
+        /// <summary>
+        /// Fixed implementation of folder name matching logic
+        /// </summary>
+        private Func<FolderInfo, bool> CreateFolderNamePredicate(List<string> folderNameSearchTerms)
+        {
+            return folder => {
+                // Get the folder name and ensure it's lowercase for comparison
+                string folderName = folder.Name?.ToLowerInvariant() ?? string.Empty;
+
+                // Debugging: Print folder name being checked
+                Debug.WriteLine($"Checking folder name: {folderName} against terms: {string.Join(", ", folderNameSearchTerms)}");
+
+                // Check if any search term is contained in the folder name
+                return folderNameSearchTerms.Any(term => folderName.Contains(term));
+            };
+        }
+
+        /// <summary>
+        /// Debug helper to check folder structure and naming
+        /// </summary>
+        private void DebugFolderStructure()
+        {
+            Debug.WriteLine("=== FOLDER STRUCTURE DEBUG ===");
+            foreach (var folder in _allLoadedFolders)
+            {
+                Debug.WriteLine($"Folder: {folder.Name} (Path: {folder.FolderPath})");
+            }
+            Debug.WriteLine("==============================");
         }
 
         // Add this method to MainViewModel.cs to recursively read all folder tags and ratings

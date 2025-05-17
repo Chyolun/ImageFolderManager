@@ -21,7 +21,7 @@
     </mah:MetroWindow.DataContext>
     <Window.InputBindings>
         <KeyBinding Key="Z" Modifiers="Control" Command="{Binding UndoFolderMovementCommand}" />
-        <KeyBinding Key="Z" Modifiers="Control+Shift" Command="{Binding RestoreDeletedFoldersCommand}" />
+        <KeyBinding Key="Left" Modifiers="Alt" Command="{Binding CollapseParentDirectoryCommand}" />
         <!--<KeyBinding Key="X" Modifiers="Control" Command="{Binding CutSelectedCommand}" />
         <KeyBinding Key="C" Modifiers="Control" Command="{Binding CopySelectedCommand}" />
         <KeyBinding Key="V" Modifiers="Control" Command="{Binding PasteCommand}" />
@@ -78,20 +78,18 @@
                         <TextBlock Text="↩" FontSize="14" VerticalAlignment="Center" />
                     </MenuItem.Icon>
                 </MenuItem>
-                <MenuItem Header="Restore Deleted Folders" 
-                      Command="{Binding RestoreDeletedFoldersCommand}" 
-                      InputGestureText="Ctrl+Shift+Z">
-                    <MenuItem.Icon>
-                        <TextBlock Text="♻" FontSize="14" VerticalAlignment="Center" />
-                    </MenuItem.Icon>
-                </MenuItem>
             </MenuItem>
 
             <MenuItem Header="Tools" Foreground="White">
-                <MenuItem Header="Refresh All" Click="RefreshAll_Click"/>
+                <MenuItem Header="Refresh Folder Tree" Click="RefreshAll_Click"/>
                 <MenuItem Header="Tags Cloud" Click="TagsCloud_Click">
                     <MenuItem.Icon>
                         <TextBlock Text="🏷" FontSize="14" VerticalAlignment="Center" />
+                    </MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="Collapse Parent Directory" Click="CollapseParentDirectory_Click">
+                    <MenuItem.Icon>
+                        <TextBlock Text="↑" FontSize="14" VerticalAlignment="Center" />
                     </MenuItem.Icon>
                 </MenuItem>
             </MenuItem>
@@ -107,110 +105,123 @@
             <!-- Left Panel -->
             <Grid Grid.Column="0" Margin="5">
                 <Grid.RowDefinitions>
-                    <RowDefinition Height="auto" />
-                    <RowDefinition Height="3" />
-                    <RowDefinition Height="25" />
-                    <RowDefinition Height="auto" />
+                    <!-- ShellTreeView with star sizing and minimum height -->
+                    <RowDefinition Height="*" MinHeight="100" />
+                    <!-- Splitter between tree view and search results -->
+                    <RowDefinition Height="5" />
+                    <!-- Search Results section with star sizing and minimum height -->
+                    <RowDefinition Height="*" MinHeight="125" />
                 </Grid.RowDefinitions>
 
-                <!-- IMPORTANT: Ensure ShellTreeView gets the MainViewModel DataContext -->
+                <!-- ShellTreeView -->
                 <views:ShellTreeView Grid.Row="0" x:Name="ShellTreeViewControl" 
-                                    FolderSelected="OnFolderSelected"
-                                    DataContext="{Binding}" />
+                        FolderSelected="OnFolderSelected"
+                        DataContext="{Binding}" />
 
-                <!-- Vertical Splitter -->
+                <!-- Vertical Splitter - user can adjust relative heights -->
                 <GridSplitter Grid.Row="1"
-                  Height="3"
+                  Height="5"
                   HorizontalAlignment="Stretch"
                   VerticalAlignment="Center"
                   Background="Gray"
                   ShowsPreview="True" />
 
-                <!-- Search Results Header -->
-                <StackPanel Grid.Row="2">
-                    <TextBlock Text="Search Results" FontSize="13" 
-                   Foreground="LightGreen" FontWeight="Bold" 
-                   Margin="5,2,5,0"/>
-                </StackPanel>
+                <!-- Search Results Section (contains both title and list) -->
+                <Grid Grid.Row="2">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="25" />
+                        <!-- Fixed height for title -->
+                        <RowDefinition Height="*" />
+                        <!-- Remaining space for the list -->
+                    </Grid.RowDefinitions>
 
-                <!-- Search Results List -->
-                <ScrollViewer Grid.Row="3" VerticalScrollBarVisibility="Auto">
-                    <ListBox ItemsSource="{Binding SearchResultFolders}"
-                         SelectedItem="{Binding SelectedSearchResult, Mode=TwoWay}"
-                         ContextMenuOpening="SearchResultListBox_ContextMenuOpening"
-                         SelectionChanged="SearchResults_SelectionChanged"
-                         MouseDoubleClick="SearchResults_MouseDoubleClick"
-                         Background="Transparent"
-                         BorderThickness="0">
-                        <ListBox.ItemTemplate>
-                            <DataTemplate>
-                                <Border Background="Transparent" 
-                        Padding="5" 
-                        Margin="0,2" 
-                        CornerRadius="4">
-                                    <Grid>
-                                        <Grid.RowDefinitions>
-                                            <RowDefinition Height="Auto"/>
-                                            <RowDefinition Height="Auto"/>
-                                            <RowDefinition Height="Auto"/>
-                                        </Grid.RowDefinitions>
+                    <!-- Search Results Header - always stays with the list -->
+                    <TextBlock Grid.Row="0" 
+                  Text="Search Results" 
+                  FontSize="13" 
+                  Foreground="LightGreen" 
+                  FontWeight="Bold" 
+                  Margin="5,2,5,0"/>
 
-                                        <!-- Folder Name -->
-                                        <TextBlock Grid.Row="0" 
-                                  Text="{Binding Name}" 
-                                  Foreground="White" 
-                                  FontWeight="SemiBold"/>
+                    <!-- Search Results List -->
+                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                        <ListBox ItemsSource="{Binding SearchResultFolders}"
+                   SelectedItem="{Binding SelectedSearchResult, Mode=TwoWay}"
+                   ContextMenuOpening="SearchResultListBox_ContextMenuOpening"
+                   SelectionChanged="SearchResults_SelectionChanged"
+                   MouseDoubleClick="SearchResults_MouseDoubleClick"
+                   Background="Transparent"
+                   BorderThickness="0">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Background="Transparent" 
+                                Padding="5" 
+                                Margin="0,2" 
+                                CornerRadius="4">
+                                        <Grid>
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="Auto"/>
+                                                <RowDefinition Height="Auto"/>
+                                                <RowDefinition Height="Auto"/>
+                                            </Grid.RowDefinitions>
 
-                                        <!-- Folder Path -->
-                                        <TextBlock Grid.Row="1" 
-                                  Text="{Binding FolderPath}" 
-                                  Foreground="Gray" 
-                                  FontSize="10" 
-                                  TextTrimming="CharacterEllipsis"/>
+                                            <!-- Folder Name -->
+                                            <TextBlock Grid.Row="0" 
+                                          Text="{Binding Name}" 
+                                          Foreground="White" 
+                                          FontWeight="SemiBold"/>
 
-                                        <!-- Rating and Tags on the same line -->
-                                        <StackPanel Grid.Row="2" 
-                                   Orientation="Horizontal" 
-                                   Margin="0,3,0,0">
+                                            <!-- Folder Path -->
+                                            <TextBlock Grid.Row="1" 
+                                          Text="{Binding FolderPath}" 
+                                          Foreground="Gray" 
+                                          FontSize="10" 
+                                          TextTrimming="CharacterEllipsis"/>
 
-                                            <!-- Rating Stars -->
-                                            <TextBlock Text="{Binding Rating, Converter={StaticResource RatingToStarsDisplayConverter}}"
-                                     Foreground="Gold"
-                                     FontSize="14"
-                                     VerticalAlignment="Center"
-                                     Margin="0,0,8,0"/>
+                                            <!-- Rating and Tags on the same line -->
+                                            <StackPanel Grid.Row="2" 
+                                           Orientation="Horizontal" 
+                                           Margin="0,3,0,0">
 
-                                            <!-- Tags with "No tags" fallback -->
-                                            <TextBlock Text="{Binding Tags, Converter={StaticResource TagsToStringConverter}}" 
-                                     Foreground="LightGreen" 
-                                     FontSize="11" 
-                                     VerticalAlignment="Center"
-                                     TextTrimming="CharacterEllipsis"/>
-                                        </StackPanel>
-                                    </Grid>
-                                </Border>
-                            </DataTemplate>
-                        </ListBox.ItemTemplate>
+                                                <!-- Rating Stars -->
+                                                <TextBlock Text="{Binding Rating, Converter={StaticResource RatingToStarsDisplayConverter}}"
+                                             Foreground="Gold"
+                                             FontSize="14"
+                                             VerticalAlignment="Center"
+                                             Margin="0,0,8,0"/>
 
-                        <ListBox.ItemContainerStyle>
-                            <Style TargetType="ListBoxItem">
-                                <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
-                                <Setter Property="Padding" Value="1"/>
-                                <Setter Property="Background" Value="Transparent"/>
-                                <Style.Triggers>
-                                    <Trigger Property="IsSelected" Value="True">
-                                        <Setter Property="Background" Value="#3F3F3F"/>
-                                        <Setter Property="BorderBrush" Value="#1E90FF"/>
-                                        <Setter Property="BorderThickness" Value="1"/>
-                                    </Trigger>
-                                    <Trigger Property="IsMouseOver" Value="True">
-                                        <Setter Property="Background" Value="#2A2A2A"/>
-                                    </Trigger>
-                                </Style.Triggers>
-                            </Style>
-                        </ListBox.ItemContainerStyle>
-                    </ListBox>
-                </ScrollViewer>
+                                                <!-- Tags with "No tags" fallback -->
+                                                <TextBlock Text="{Binding Tags, Converter={StaticResource TagsToStringConverter}}" 
+                                             Foreground="LightGreen" 
+                                             FontSize="11" 
+                                             VerticalAlignment="Center"
+                                             TextTrimming="CharacterEllipsis"/>
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+
+                            <ListBox.ItemContainerStyle>
+                                <Style TargetType="ListBoxItem">
+                                    <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                    <Setter Property="Padding" Value="1"/>
+                                    <Setter Property="Background" Value="Transparent"/>
+                                    <Style.Triggers>
+                                        <Trigger Property="IsSelected" Value="True">
+                                            <Setter Property="Background" Value="#3F3F3F"/>
+                                            <Setter Property="BorderBrush" Value="#1E90FF"/>
+                                            <Setter Property="BorderThickness" Value="1"/>
+                                        </Trigger>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter Property="Background" Value="#2A2A2A"/>
+                                        </Trigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </ListBox.ItemContainerStyle>
+                        </ListBox>
+                    </ScrollViewer>
+                </Grid>
             </Grid>
 
             <!-- Vertical Splitter -->

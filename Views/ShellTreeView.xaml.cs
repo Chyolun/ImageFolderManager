@@ -920,6 +920,143 @@ namespace ImageFolderManager.Views
             }
         }
 
+        /// <summary>
+        /// Collapses a directory in the tree view
+        /// </summary>
+        /// <param name="directoryPath">The path of the directory to collapse</param>
+        /// <returns>True if the directory was successfully collapsed, false otherwise</returns>
+        public bool CollapseDirectory(string directoryPath)
+        {
+            try
+            {
+                // Normalize the path
+                directoryPath = PathService.NormalizePath(directoryPath);
+
+                // Check if the path exists
+                if (!PathService.DirectoryExists(directoryPath))
+                {
+                    Debug.WriteLine($"Cannot collapse directory - path does not exist: {directoryPath}");
+                    return false;
+                }
+
+                // Try to find the TreeViewItem corresponding to this directory
+                if (_pathToTreeViewItem.TryGetValue(directoryPath, out var treeViewItem))
+                {
+                    // If found, collapse it
+                    treeViewItem.IsExpanded = false;
+
+                    // Bring the collapsed item into view
+                    treeViewItem.BringIntoView();
+
+                    Debug.WriteLine($"Successfully collapsed directory: {directoryPath}");
+                    return true;
+                }
+                else
+                {
+                    // If not found in the dictionary, try to search for it
+                    Debug.WriteLine($"Directory not found in path mapping, attempting to search: {directoryPath}");
+
+                    // Search for the item in the tree view
+                    TreeViewItem foundItem = FindTreeViewItemByPath(directoryPath);
+
+                    if (foundItem != null)
+                    {
+                        // If found, collapse it
+                        foundItem.IsExpanded = false;
+
+                        // Bring the collapsed item into view
+                        foundItem.BringIntoView();
+
+                        Debug.WriteLine($"Successfully found and collapsed directory: {directoryPath}");
+                        return true;
+                    }
+
+                    Debug.WriteLine($"Failed to find directory in tree view: {directoryPath}");
+                    return false;
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error collapsing directory: {ex.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Finds a TreeViewItem by its path
+        /// </summary>
+        /// <param name="path">The path to find</param>
+        /// <returns>The found TreeViewItem or null if not found</returns>
+        private TreeViewItem FindTreeViewItemByPath(string path)
+        {
+            // Normalize the path
+            path = PathService.NormalizePath(path);
+
+            // First check in our dictionary
+            if (_pathToTreeViewItem.TryGetValue(path, out var item))
+            {
+                return item;
+            }
+
+            // If not found in dictionary, search recursively through the tree view
+            foreach (var rootItem in ShellTreeViewControl.Items)
+            {
+                var treeViewItem = rootItem as TreeViewItem;
+                if (treeViewItem != null)
+                {
+                    var result = FindTreeViewItemByPathRecursive(treeViewItem, path);
+                    if (result != null)
+                    {
+                        return result;
+                    }
+                }
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// Recursively searches for a TreeViewItem by its path
+        /// </summary>
+        /// <param name="parentItem">The parent item to search within</param>
+        /// <param name="path">The path to find</param>
+        /// <returns>The found TreeViewItem or null if not found</returns>
+        private TreeViewItem FindTreeViewItemByPathRecursive(TreeViewItem parentItem, string path)
+        {
+            // Check if this is the item we're looking for
+            if (parentItem.Tag is ShellObject shellObject)
+            {
+                string itemPath = PathService.GetPathFromShellObject(shellObject);
+                if (PathService.PathsEqual(itemPath, path))
+                {
+                    return parentItem;
+                }
+            }
+
+            // If this item is not expanded, we can't search its children
+            if (!parentItem.IsExpanded)
+            {
+                return null;
+            }
+
+            // Search through all children
+            foreach (var childObj in parentItem.Items)
+            {
+                var childItem = parentItem.ItemContainerGenerator.ContainerFromItem(childObj) as TreeViewItem;
+                if (childItem != null)
+                {
+                    var result = FindTreeViewItemByPathRecursive(childItem, path);
+                    if (result != null)
+                    {
+                        return result;
+                    }
+                }
+            }
+
+            return null;
+        }
+
+
         private void SelectAllVisibleItems()
         {
             // Clear current selection
