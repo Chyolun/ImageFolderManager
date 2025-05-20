@@ -96,14 +96,15 @@
 
             <!-- Scrollable Tag Cloud -->
             <ScrollViewer VerticalScrollBarVisibility="Auto" 
-                          HorizontalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Disabled"
                           x:Name="TagScrollViewer">
                 <!-- Use WrapPanel for responsive layout -->
                 <ItemsControl ItemsSource="{Binding TagItems}"
                               x:Name="TagItemsControl">
                     <ItemsControl.ItemsPanel>
                         <ItemsPanelTemplate>
-                            <WrapPanel Orientation="Horizontal" IsItemsHost="True" />
+                            <WrapPanel Orientation="Horizontal" IsItemsHost="True"
+                                       Width="{Binding ActualWidth, RelativeSource={RelativeSource AncestorType=ScrollViewer}}" />
                         </ItemsPanelTemplate>
                     </ItemsControl.ItemsPanel>
                     <ItemsControl.ItemTemplate>

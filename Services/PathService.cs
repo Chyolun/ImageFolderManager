@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using Microsoft.WindowsAPICodePack.Shell;
 
 namespace ImageFolderManager.Services
@@ -12,6 +13,10 @@ namespace ImageFolderManager.Services
     public static class PathService
     {
         #region Path Normalization and Comparison
+
+        private static readonly Dictionary<string, bool> _pathCache =
+        new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+        private static readonly object _cacheLock = new object();
 
         /// <summary>
         /// Normalizes a file system path
@@ -174,6 +179,48 @@ namespace ImageFolderManager.Services
             {
                 Debug.WriteLine($"Error creating file hash: {ex.Message}");
                 return null;
+            }
+        }
+
+        /// </summary>
+        /// <param name="path">Path to invalidate</param>
+        /// <param name="recursive">Whether to invalidate child paths</param>
+        public static void InvalidatePathCache(string path, bool recursive = false)
+        {
+            if (string.IsNullOrEmpty(path))
+                return;
+
+            path = NormalizePath(path);
+
+            lock (_cacheLock)
+            {
+                // For direct path
+                if (_pathCache.ContainsKey(path))
+                    _pathCache.Remove(path);
+
+                // For recursive invalidation
+                if (recursive)
+                {
+                    var keysToRemove = _pathCache.Keys
+                        .Where(key => IsPathWithin(path, key))
+                        .ToList();
+
+                    foreach (var key in keysToRemove)
+                    {
+                        _pathCache.Remove(key);
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// Clears the entire path cache
+        /// </summary>
+        public static void ClearPathCache()
+        {
+            lock (_cacheLock)
+            {
+                _pathCache.Clear();
             }
         }
 
