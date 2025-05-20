@@ -17,6 +17,46 @@
         WindowStartupLocation="CenterOwner"
         Background="{DynamicResource MahApps.Brushes.Control.Background}">
 
+    <Window.Resources>
+        <!-- Style for tag buttons with animations and hover effects -->
+        <Style x:Key="TagButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Margin" Value="4" />
+            <Setter Property="Padding" Value="8,4" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="CacheMode" Value="BitmapCache" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="border" Background="{TemplateBinding Background}" 
+                                BorderThickness="{TemplateBinding BorderThickness}" 
+                                BorderBrush="{TemplateBinding BorderBrush}" 
+                                CornerRadius="8">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Opacity" Value="0.8" TargetName="border" />
+                                <Setter Property="Background" Value="#333333" TargetName="border" />
+                                <Setter Property="BorderThickness" Value="1" TargetName="border" />
+                                <Setter Property="BorderBrush" Value="{Binding Color}" TargetName="border" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter Property="RenderTransform">
+                                    <Setter.Value>
+                                        <ScaleTransform ScaleX="0.95" ScaleY="0.95" />
+                                    </Setter.Value>
+                                </Setter>
+                                <Setter Property="RenderTransformOrigin" Value="0.5,0.5" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
     <Grid Margin="15">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -24,7 +64,7 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <!-- Header -->
+        <!-- Header with title and refresh button -->
         <Grid Grid.Row="0" Margin="0,0,0,10">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
@@ -32,18 +72,18 @@
             </Grid.ColumnDefinitions>
 
             <TextBlock Grid.Column="0" 
-                   Text="Tag Cloud" 
-                   FontSize="20" 
-                   FontWeight="Bold" 
-                   Foreground="White"/>
+                       Text="Tag Cloud" 
+                       FontSize="20" 
+                       FontWeight="Bold" 
+                       Foreground="White"/>
 
             <Button Grid.Column="1"
-                Name="RefreshButton"
-                Content="Refresh"
-                Width="80"
-                Height="30"
-                Click="RefreshButton_Click"
-                Margin="0,0,10,0"/>
+                    Name="RefreshButton"
+                    Content="Refresh"
+                    Width="80"
+                    Height="30"
+                    Click="RefreshButton_Click"
+                    Margin="0,0,10,0"/>
         </Grid>
 
         <!-- Main Tag Cloud Area -->
@@ -54,85 +94,39 @@
                 Background="#1A1A1A"
                 Padding="10">
 
-            <Grid>
-                <!-- Direct implementation of the tag cloud with WrapPanel -->
-                <ScrollViewer VerticalScrollBarVisibility="Auto" 
-                  HorizontalScrollBarVisibility="Disabled">
-                    <ItemsControl ItemsSource="{Binding TagItems}"
-                     x:Name="TagItemsControl">
-                        <ItemsControl.ItemsPanel>
-                            <ItemsPanelTemplate>
-                                <!-- Ensure the WrapPanel fills the available width and has a proper orientation -->
-                                <WrapPanel Orientation="Horizontal" 
-                               Width="{Binding ActualWidth, RelativeSource={RelativeSource AncestorType=ScrollViewer}}" />
-                            </ItemsPanelTemplate>
-                        </ItemsControl.ItemsPanel>
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <Button Margin="5" 
-                          Padding="8,4" 
-                          Tag="{Binding Tag}" 
-                          Background="Transparent"
-                          BorderThickness="0"
-                          Click="TagItem_Click"
-                          PreviewMouseRightButtonDown="TagItem_RightClick">
-                                    <Button.Template>
-                                        <ControlTemplate TargetType="Button">
-                                            <Border x:Name="border" 
-                                      CornerRadius="6" 
-                                      Background="{TemplateBinding Background}" 
-                                      BorderBrush="{Binding Color}" 
-                                      BorderThickness="0">
-                                                <ContentPresenter HorizontalAlignment="Center" 
-                                                    VerticalAlignment="Center"/>
-                                            </Border>
-                                            <ControlTemplate.Triggers>
-                                                <Trigger Property="IsMouseOver" Value="True">
-                                                    <Setter Property="Background" Value="#333333" TargetName="border"/>
-                                                    <Setter Property="BorderThickness" Value="1" TargetName="border"/>
-                                                </Trigger>
-                                                <Trigger Property="IsPressed" Value="True">
-                                                    <Setter Property="RenderTransform">
-                                                        <Setter.Value>
-                                                            <ScaleTransform ScaleX="0.95" ScaleY="0.95" />
-                                                        </Setter.Value>
-                                                    </Setter>
-                                                    <Setter Property="RenderTransformOrigin" Value="0.5,0.5" />
-                                                </Trigger>
-                                            </ControlTemplate.Triggers>
-                                        </ControlTemplate>
-                                    </Button.Template>
-                                    <StackPanel Orientation="Horizontal">
-                                        <TextBlock Text="#" Foreground="{Binding Color}" FontSize="{Binding FontSize}" />
-                                        <TextBlock Text="{Binding Tag}" Foreground="{Binding Color}" FontSize="{Binding FontSize}" />
-                                        <TextBlock Text="{Binding Count}" Foreground="#777777" FontSize="10" 
-                                   VerticalAlignment="Top" Margin="2,0,0,0" />
-                                    </StackPanel>
-                                </Button>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                </ScrollViewer>
-
-                <!-- Overlay for empty tag cloud -->
-                <TextBlock Text="No tags found. Add tags to folders to see them here." 
-                       Foreground="#888888" 
-                       FontSize="14" 
-                       HorizontalAlignment="Center" 
-                       VerticalAlignment="Center" 
-                       TextWrapping="Wrap">
-                    <TextBlock.Visibility>
-                        <Binding Path="TagItems.Count">
-                            <Binding.Converter>
-                                <views:CountToVisibilityConverter/>
-                            </Binding.Converter>
-                        </Binding>
-                    </TextBlock.Visibility>
-                </TextBlock>
-            </Grid>
+            <!-- Scrollable Tag Cloud -->
+            <ScrollViewer VerticalScrollBarVisibility="Auto" 
+                          HorizontalScrollBarVisibility="Auto"
+                          x:Name="TagScrollViewer">
+                <!-- Use WrapPanel for responsive layout -->
+                <ItemsControl ItemsSource="{Binding TagItems}"
+                              x:Name="TagItemsControl">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <WrapPanel Orientation="Horizontal" IsItemsHost="True" />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Button Style="{StaticResource TagButtonStyle}"
+                                    Click="TagButton_Click"
+                                    Tag="{Binding Tag}"
+                                    MouseRightButtonDown="TagButton_RightClick"
+                                    ToolTip="{Binding CountDisplay}">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="#" Foreground="{Binding Color}" FontSize="{Binding FontSize}" />
+                                    <TextBlock Text="{Binding Tag}" Foreground="{Binding Color}" FontSize="{Binding FontSize}" />
+                                    <TextBlock Text="{Binding Count}" Foreground="#777777" FontSize="10" 
+                                               VerticalAlignment="Top" Margin="2,0,0,0" />
+                                </StackPanel>
+                            </Button>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
         </Border>
 
-        <!-- Footer -->
+        <!-- Footer with status and close button -->
         <Grid Grid.Row="2" Margin="0,10,0,0">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>

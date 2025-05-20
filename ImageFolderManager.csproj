@@ -139,9 +139,6 @@
     <Compile Include="Views\ShellTreeView.xaml.cs">
       <DependentUpon>ShellTreeView.xaml</DependentUpon>
     </Compile>
-    <Compile Include="Views\TagCloudControl.xaml.cs">
-      <DependentUpon>TagCloudControl.xaml</DependentUpon>
-    </Compile>
     <Compile Include="Views\TagCloudWindow.xaml.cs">
       <DependentUpon>TagCloudWindow.xaml</DependentUpon>
     </Compile>
@@ -185,10 +182,6 @@
       <Generator>MSBuild:Compile</Generator>
     </Page>
     <Page Include="Views\ShellTreeView.xaml">
-      <SubType>Designer</SubType>
-      <Generator>MSBuild:Compile</Generator>
-    </Page>
-    <Page Include="Views\TagCloudControl.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>

@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -16,27 +17,55 @@ namespace ImageFolderManager.Views
     {
         private readonly MainViewModel _mainViewModel;
 
-        // Expose the MainViewModel for the responsive tag cloud control to access
+        // Expose the MainViewModel for external access
         public MainViewModel MainViewModel => _mainViewModel;
+
+        // Cache for animations to improve performance
+        private readonly Dictionary<string, Storyboard> _animationCache = new Dictionary<string, Storyboard>();
 
         public TagCloudWindow(TagCloudViewModel viewModel, MainViewModel mainViewModel)
         {
             InitializeComponent();
 
-            // Set the DataContext for the whole window
-            this.DataContext = viewModel;
+            // Set DataContext for data binding
+            DataContext = viewModel;
             _mainViewModel = mainViewModel;
 
-            // Set title with tag count
+            // Handle window load event
             this.Loaded += (s, e) => {
-                if (viewModel.TagItems != null)
+                if (viewModel?.TagItems != null)
                 {
                     this.Title = $"Tag Cloud - {viewModel.TagItems.Count} tags";
+
+                    // Show empty message if no tags
+                    if (viewModel.TagItems.Count == 0)
+                    {
+                        StatusText.Text = "No tags found. Add tags to folders to see them here.";
+                    }
                 }
             };
+
+            // Handle window size changes
+            this.SizeChanged += TagCloudWindow_SizeChanged;
         }
 
-        private void TagItem_Click(object sender, RoutedEventArgs e)
+        private void TagCloudWindow_SizeChanged(object sender, SizeChangedEventArgs e)
+        {
+            // Ensure WrapPanel adapts to window size changes
+            var scrollViewer = TagScrollViewer;
+            var itemsControl = TagItemsControl;
+
+            if (scrollViewer != null && itemsControl != null)
+            {
+                // Refresh layout
+                itemsControl.UpdateLayout();
+            }
+        }
+
+        /// <summary>
+        /// Handles tag button click event
+        /// </summary>
+        private void TagButton_Click(object sender, RoutedEventArgs e)
         {
             if (sender is Button button && button.Tag is string tag)
             {
@@ -48,51 +77,29 @@ namespace ImageFolderManager.Views
                     _mainViewModel.SearchText = $"#{tag}";
                     _mainViewModel.SearchCommand.Execute(null);
 
-                    // Animate the tag button for visual feedback
-                    AnimateTagButton(button);
+                    // Visual feedback for tag selection
+                    AnimateTagSelection(button);
+
+                    // Update status message
+                    StatusText.Text = $"Searching for #{tag}";
                 }
             }
         }
 
-        private void AnimateTagButton(Button button)
-        {
-            // Simple scale animation for feedback
-            ScaleTransform scaleTransform = new ScaleTransform(1, 1);
-            button.RenderTransform = scaleTransform;
-            button.RenderTransformOrigin = new Point(0.5, 0.5);
-
-            // Create animations
-            DoubleAnimation scaleXAnimation = new DoubleAnimation
-            {
-                From = 1.0,
-                To = 1.3,
-                Duration = TimeSpan.FromMilliseconds(150),
-                AutoReverse = true
-            };
-            DoubleAnimation scaleYAnimation = new DoubleAnimation
-            {
-                From = 1.0,
-                To = 1.3,
-                Duration = TimeSpan.FromMilliseconds(150),
-                AutoReverse = true
-            };
-
-            // Apply animations
-            scaleTransform.BeginAnimation(ScaleTransform.ScaleXProperty, scaleXAnimation);
-            scaleTransform.BeginAnimation(ScaleTransform.ScaleYProperty, scaleYAnimation);
-        }
-
-        private void TagItem_RightClick(object sender, MouseButtonEventArgs e)
+        /// <summary>
+        /// Handles right-click on tag buttons
+        /// </summary>
+        private void TagButton_RightClick(object sender, MouseButtonEventArgs e)
         {
             if (sender is Button button && button.Tag is string tag)
             {
                 e.Handled = true;
 
                 // Create context menu
-                ContextMenu contextMenu = new ContextMenu();
+                var contextMenu = new ContextMenu();
 
-                // Add "Add Tag" menu item - NEW
-                MenuItem addTagItem = new MenuItem { Header = "Add Tag" };
+                // Add "Add Tag" menu item - for adding to the tag input field
+                var addTagItem = new MenuItem { Header = "Add Tag" };
                 addTagItem.Click += (s, args) => AddTagToTagInput(tag);
                 contextMenu.Items.Add(addTagItem);
 
@@ -100,21 +107,24 @@ namespace ImageFolderManager.Views
                 contextMenu.Items.Add(new Separator());
 
                 // Add "Rename Tag" menu item
-                MenuItem renameItem = new MenuItem { Header = "Rename Tag" };
+                var renameItem = new MenuItem { Header = "Rename Tag" };
                 renameItem.Click += (s, args) => ShowRenameTagDialog(tag);
                 contextMenu.Items.Add(renameItem);
 
                 // Add "Copy Tag" menu item
-                MenuItem copyItem = new MenuItem { Header = "Copy Tag" };
+                var copyItem = new MenuItem { Header = "Copy Tag" };
                 copyItem.Click += (s, args) => CopyTagToClipboard(tag);
                 contextMenu.Items.Add(copyItem);
 
-                // Show the context menu
+                // Show context menu
                 contextMenu.PlacementTarget = button;
                 contextMenu.IsOpen = true;
             }
         }
 
+        /// <summary>
+        /// Adds the selected tag to the tag input field in the main window
+        /// </summary>
         private void AddTagToTagInput(string tag)
         {
             try
@@ -141,39 +151,30 @@ namespace ImageFolderManager.Views
                         _mainViewModel.TagInputText = currentText;
 
                         // Update status
-                        if (StatusText != null)
-                        {
-                            StatusText.Text = $"Added tag #{tag} to tag input";
-                        }
+                        StatusText.Text = $"Added tag #{tag} to tag input";
                     }
                     else
                     {
                         // Tag already exists in edit area
-                        if (StatusText != null)
-                        {
-                            StatusText.Text = $"Tag #{tag} already exists in tag input";
-                        }
+                        StatusText.Text = $"Tag #{tag} already exists in tag input";
                     }
                 }
                 else
                 {
                     // MainViewModel is not available
-                    if (StatusText != null)
-                    {
-                        StatusText.Text = "Cannot add tag: Main view model not available";
-                    }
+                    StatusText.Text = "Cannot add tag: Main view model not available";
                 }
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"Error adding tag to tag input: {ex.Message}");
-                if (StatusText != null)
-                {
-                    StatusText.Text = "Error adding tag to tag input";
-                }
+                StatusText.Text = "Error adding tag to tag input";
             }
         }
 
+        /// <summary>
+        /// Copies the tag to clipboard
+        /// </summary>
         private void CopyTagToClipboard(string tag)
         {
             try
@@ -182,10 +183,7 @@ namespace ImageFolderManager.Views
                 Clipboard.SetText($"#{tag}");
 
                 // Update status text on success
-                if (StatusText != null)
-                {
-                    StatusText.Text = $"Copied #{tag} to clipboard";
-                }
+                StatusText.Text = $"Copied #{tag} to clipboard";
             }
             catch (Exception ex)
             {
@@ -212,38 +210,31 @@ namespace ImageFolderManager.Views
                 // If the clipboard doesn't contain our text, show an error
                 if (!clipboardContainsTag)
                 {
-                    if (StatusText != null)
-                    {
-                        StatusText.Text = "Could not copy tag to clipboard";
-                    }
+                    StatusText.Text = "Could not copy tag to clipboard";
 
-                    // Use a less intrusive status message instead of a popup
-                    if (StatusText != null)
-                    {
-                        StatusText.Foreground = new SolidColorBrush(Colors.OrangeRed);
-                        StatusText.Text = "Could not copy to clipboard. Please try again.";
+                    // Use a more noticeable color for error messages
+                    StatusText.Foreground = new SolidColorBrush(Colors.OrangeRed);
 
-                        // Reset color after a delay
-                        var timer = new System.Windows.Threading.DispatcherTimer();
-                        timer.Interval = TimeSpan.FromSeconds(3);
-                        timer.Tick += (s, args) => {
-                            StatusText.Foreground = new SolidColorBrush(Colors.LightGray);
-                            timer.Stop();
-                        };
-                        timer.Start();
-                    }
+                    // Reset color after a delay
+                    var timer = new System.Windows.Threading.DispatcherTimer();
+                    timer.Interval = TimeSpan.FromSeconds(3);
+                    timer.Tick += (s, args) => {
+                        StatusText.Foreground = new SolidColorBrush(Colors.LightGray);
+                        timer.Stop();
+                    };
+                    timer.Start();
                 }
                 else
                 {
                     // The clipboard operation actually succeeded despite the exception
-                    if (StatusText != null)
-                    {
-                        StatusText.Text = $"Copied #{tag} to clipboard";
-                    }
+                    StatusText.Text = $"Copied #{tag} to clipboard";
                 }
             }
         }
 
+        /// <summary>
+        /// Shows the rename tag dialog
+        /// </summary>
         private async void ShowRenameTagDialog(string currentTag)
         {
             try
@@ -256,19 +247,13 @@ namespace ImageFolderManager.Views
                 if (dialogResult == true && !string.IsNullOrEmpty(dialog.NewTag))
                 {
                     // Update status
-                    if (StatusText != null)
-                    {
-                        StatusText.Text = $"Renaming tag '{currentTag}' to '{dialog.NewTag}'...";
-                    }
+                    StatusText.Text = $"Renaming tag '{currentTag}' to '{dialog.NewTag}'...";
 
                     // Execute the rename operation
                     await _mainViewModel.RenameTag(currentTag, dialog.NewTag);
 
                     // Update status
-                    if (StatusText != null)
-                    {
-                        StatusText.Text = $"Tag renamed from '{currentTag}' to '{dialog.NewTag}'";
-                    }
+                    StatusText.Text = $"Tag renamed from '{currentTag}' to '{dialog.NewTag}'";
 
                     // Trigger refresh
                     RefreshButton_Click(null, null);
@@ -281,18 +266,79 @@ namespace ImageFolderManager.Views
             }
         }
 
+        /// <summary>
+        /// Animates tag selection for visual feedback
+        /// </summary>
+        private void AnimateTagSelection(Button button)
+        {
+            string buttonTag = button.Tag as string;
+
+            // Try to get from cache first
+            if (!_animationCache.TryGetValue(buttonTag, out var storyboard))
+            {
+                // Create a storyboard for animation
+                storyboard = new Storyboard();
+
+                // Scale animation for button
+                ScaleTransform scaleTransform = new ScaleTransform(1, 1);
+                button.RenderTransform = scaleTransform;
+                button.RenderTransformOrigin = new Point(0.5, 0.5);
+
+                // Create the animation for ScaleX
+                DoubleAnimation scaleXAnimation = new DoubleAnimation
+                {
+                    From = 1.0,
+                    To = 1.3,
+                    Duration = TimeSpan.FromMilliseconds(150),
+                    AutoReverse = true
+                };
+                Storyboard.SetTarget(scaleXAnimation, button);
+                Storyboard.SetTargetProperty(scaleXAnimation, new PropertyPath("RenderTransform.ScaleX"));
+
+                // Create the animation for ScaleY
+                DoubleAnimation scaleYAnimation = new DoubleAnimation
+                {
+                    From = 1.0,
+                    To = 1.3,
+                    Duration = TimeSpan.FromMilliseconds(150),
+                    AutoReverse = true
+                };
+                Storyboard.SetTarget(scaleYAnimation, button);
+                Storyboard.SetTargetProperty(scaleYAnimation, new PropertyPath("RenderTransform.ScaleY"));
+
+                // Add animations to storyboard
+                storyboard.Children.Add(scaleXAnimation);
+                storyboard.Children.Add(scaleYAnimation);
+
+                // Cache for later reuse
+                _animationCache[buttonTag] = storyboard;
+            }
+
+            // Ensure target is set correctly (could have changed)
+            foreach (Timeline timeline in storyboard.Children)
+            {
+                if (timeline is DoubleAnimation animation)
+                {
+                    Storyboard.SetTarget(animation, button);
+                }
+            }
+
+            // Start the animation
+            storyboard.Begin();
+        }
+
+        /// <summary>
+        /// Handles the refresh button click event
+        /// </summary>
         private void RefreshButton_Click(object sender, RoutedEventArgs e)
         {
             try
             {
                 // Update status text
-                if (StatusText != null)
-                {
-                    StatusText.Text = "Refreshing tag cloud...";
-                }
+                StatusText.Text = "Refreshing tag cloud...";
 
                 // Get the TagCloudViewModel from DataContext
-                if (this.DataContext is TagCloudViewModel viewModel)
+                if (DataContext is TagCloudViewModel viewModel)
                 {
                     viewModel.InvalidateCache();
 
@@ -300,10 +346,7 @@ namespace ImageFolderManager.Views
                     _mainViewModel?.UpdateTagCloudAsync().ContinueWith(_ => {
                         // Update UI on the UI thread
                         this.Dispatcher.Invoke(() => {
-                            if (StatusText != null)
-                            {
-                                StatusText.Text = "Tag cloud refreshed";
-                            }
+                            StatusText.Text = "Tag cloud refreshed";
 
                             // Update title with new count
                             if (viewModel.TagItems != null)
@@ -320,6 +363,9 @@ namespace ImageFolderManager.Views
             }
         }
 
+        /// <summary>
+        /// Handles the close button click event
+        /// </summary>
         private void CloseButton_Click(object sender, RoutedEventArgs e)
         {
             try
