@@ -36,13 +36,8 @@ public class ImageInfo : INotifyPropertyChanged, IDisposable
         {
             if (_thumbnail != value)
             {
-                // Dispose the old thumbnail if it exists
-                if (_thumbnail != null && !_isDisposed)
-                {
-                    // We can't directly dispose BitmapImage, but we can help GC
-                    _thumbnail = null;
-                }
-
+                // Clean up old thumbnail
+                _thumbnail = null;
                 _thumbnail = value;
                 OnPropertyChanged();
             }
@@ -80,18 +75,20 @@ public class ImageInfo : INotifyPropertyChanged, IDisposable
 
     private bool _isDisposed;
     private CancellationTokenSource _loadingCts;
-    private static readonly SemaphoreSlim _loadingSemaphore = new SemaphoreSlim(8, 8); // Limit concurrent loads
 
-    // Async thumbnail loading with caching, progress reporting and cancellation
+    /// <summary>
+    /// Loads the thumbnail for this image
+    /// </summary>
     public async Task<bool> LoadThumbnailAsync(
         CancellationToken externalCancellationToken = default,
         IProgress<double> progress = null)
     {
+        // Validate path
         string normalizedPath = PathService.NormalizePath(FilePath);
         if (string.IsNullOrEmpty(normalizedPath) || !File.Exists(normalizedPath))
             return false;
 
-        // If we already loaded, short-circuit
+        // Short-circuit if already loaded
         if (_isLoaded && _thumbnail != null && !_thumbnail.IsFrozen)
             return true;
 
@@ -102,55 +99,32 @@ public class ImageInfo : INotifyPropertyChanged, IDisposable
         {
             IsLoading = true;
 
-            // Create a new CTS for this loading operation, linked to the external token
+            // Create new cancellation token source linked to external token
             _loadingCts = CancellationTokenSource.CreateLinkedTokenSource(externalCancellationToken);
             var token = _loadingCts.Token;
 
-            // Clear old thumbnail to allow GC to collect it
+            // Clear old thumbnail to help GC
             if (_thumbnail != null && _isLoaded)
             {
                 Thumbnail = null;
             }
 
-            // Create a wrapper for progress reporting
-            var progressWrapper = new Progress<double>(p =>
-            {
-                // Forward progress reporting
-                progress?.Report(p);
-            });
+            // Load thumbnail through ImageCache
+            var thumbnail = await ImageCache.LoadThumbnailAsync(FilePath, token, progress);
 
-            // Try to acquire semaphore with timeout
-            bool semaphoreAcquired = await _loadingSemaphore.WaitAsync(1000, token);
+            // Check if operation was cancelled or object was disposed
+            if (token.IsCancellationRequested || _isDisposed)
+                return false;
 
-            try
-            {
-                // Load thumbnail with progress reporting
-                var thumbnail = await ImageCache.LoadThumbnailAsync(FilePath, token, progressWrapper);
+            // Update thumbnail
+            Thumbnail = thumbnail;
+            IsLoaded = thumbnail != null;
 
-                // Check if operation was cancelled or object was disposed
-                if (token.IsCancellationRequested || _isDisposed)
-                {
-                    return false;
-                }
-
-                // Update the thumbnail property
-                Thumbnail = thumbnail;
-                IsLoaded = thumbnail != null;
-
-                return IsLoaded;
-            }
-            finally
-            {
-                // Release semaphore if we acquired it
-                if (semaphoreAcquired)
-                {
-                    _loadingSemaphore.Release();
-                }
-            }
+            return IsLoaded;
         }
         catch (OperationCanceledException)
         {
-            // Operation was cancelled, this is expected
+            // Operation was cancelled, which is expected
             return false;
         }
         catch (Exception ex)
@@ -166,17 +140,20 @@ public class ImageInfo : INotifyPropertyChanged, IDisposable
         }
     }
 
-    // Cancel the current loading operation
+    /// <summary>
+    /// Cancels the current loading operation
+    /// </summary>
     public void CancelLoading()
     {
         try
         {
+            // Cancel our local operation
             if (_isLoading && _loadingCts != null && !_loadingCts.IsCancellationRequested)
             {
                 _loadingCts.Cancel();
             }
 
-            // Also notify the ImageCache to cancel this path
+            // Also notify the ImageCache to cancel
             if (!string.IsNullOrEmpty(FilePath))
             {
                 ImageCache.CancelLoading(FilePath);
@@ -188,7 +165,9 @@ public class ImageInfo : INotifyPropertyChanged, IDisposable
         }
     }
 
-    // Handle cleanup of resources
+    /// <summary>
+    /// Handles cleanup of resources
+    /// </summary>
     public void Dispose()
     {
         if (!_isDisposed)

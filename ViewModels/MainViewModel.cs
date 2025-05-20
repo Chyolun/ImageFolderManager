@@ -819,6 +819,9 @@ namespace ImageFolderManager.ViewModels
         /// <summary>
         /// Modified image loading method with improved status reporting
         /// </summary>
+        /// <summary>
+        /// Loads images for the currently selected folder with optimized batch processing
+        /// </summary>
         public async Task LoadImagesForSelectedFolderAsync()
         {
             if (SelectedFolder == null)
@@ -826,9 +829,7 @@ namespace ImageFolderManager.ViewModels
 
             // Prevent concurrent or recursive calls
             if (_isLoadingImages)
-            {
                 return;
-            }
 
             // Cancel any existing loading operation
             if (_imageLoadingCts != null && !_imageLoadingCts.IsCancellationRequested)
@@ -838,7 +839,7 @@ namespace ImageFolderManager.ViewModels
             }
 
             // Create new cancellation token source
-            _imageLoadingCts = new System.Threading.CancellationTokenSource();
+            _imageLoadingCts = new CancellationTokenSource();
 
             try
             {
@@ -853,27 +854,14 @@ namespace ImageFolderManager.ViewModels
                 // Set initial status message
                 StatusMessage = $"Loading images from '{folderName}'...";
 
-                // Get the image files from the folder
+                // Get image files
                 var supportedExtensions = new[] { ".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp" };
-                var imageFiles = new List<string>();
-
-                if (PathService.DirectoryExists(path))
-                {
-                    try
-                    {
-                        // Get all files from directory in one call
-                        imageFiles = Directory.GetFiles(path)
-                            .Where(file => {
-                                string ext = Path.GetExtension(file).ToLowerInvariant();
-                                return Array.Exists(supportedExtensions, e => e == ext);
-                            })
-                            .ToList();
-                    }
-                    catch (Exception ex)
-                    {
-                        Debug.WriteLine($"Error getting image files: {ex.Message}");
-                    }
-                }
+                var imageFiles = Directory.Exists(path)
+                    ? Directory.GetFiles(path)
+                        .Where(file => Array.Exists(supportedExtensions, e =>
+                            e.Equals(Path.GetExtension(file).ToLowerInvariant())))
+                        .ToList()
+                    : new List<string>();
 
                 // If no images, just return
                 if (imageFiles.Count == 0)
@@ -887,7 +875,6 @@ namespace ImageFolderManager.ViewModels
                     "Loading Images",
                     $"Loading image previews from '{folderName}'...");
 
-                // Set progress dialog owner
                 progressDialog.Owner = Application.Current.MainWindow;
 
                 // Handle cancellation request
@@ -900,145 +887,128 @@ namespace ImageFolderManager.ViewModels
                     }
                 };
 
-                // Determine optimal chunk size and parallel loading degree
-                // based on hardware and settings
-                int processorCount = Environment.ProcessorCount;
-                int parallelDegree = Math.Min(processorCount * 2, AppSettings.Instance.ParallelThreadCount);
-                int chunkSize = Math.Min(20, (int)Math.Ceiling(imageFiles.Count / (double)processorCount));
-
+                // Process images with smart batching for better UI responsiveness
                 var loadingTask = Task.Run(async () =>
                 {
                     try
                     {
-                        var cancellationToken = _imageLoadingCts.Token;
-                        var loadedImages = new List<ImageInfo>();
+                        var token = _imageLoadingCts.Token;
                         int totalImages = imageFiles.Count;
-                        int processedImages = 0;
+                        int batchSize = 20; // Process in small batches
 
-                        // Process images in chunks to optimize memory usage and UI responsiveness
-                        for (int i = 0; i < imageFiles.Count; i += chunkSize)
+                        // Use an appropriate degree of parallelism based on system capabilities
+                        int parallelism = Math.Min(Environment.ProcessorCount, AppSettings.Instance.ParallelThreadCount);
+                        var options = new ParallelOptions
+                        {
+                            MaxDegreeOfParallelism = parallelism,
+                            CancellationToken = token
+                        };
+
+                        for (int i = 0; i < imageFiles.Count; i += batchSize)
                         {
                             // Check for cancellation
-                            if (cancellationToken.IsCancellationRequested)
+                            if (token.IsCancellationRequested)
                                 break;
 
-                            // Get current chunk
-                            int currentChunkSize = Math.Min(chunkSize, imageFiles.Count - i);
-                            var chunk = imageFiles.Skip(i).Take(currentChunkSize).ToList();
+                            // Get current batch
+                            int currentBatchSize = Math.Min(batchSize, imageFiles.Count - i);
+                            var batch = imageFiles.Skip(i).Take(currentBatchSize).ToList();
+                            var batchResults = new List<ImageInfo>(currentBatchSize);
 
-                            // Create a list to hold this chunk's loaded images
-                            var chunkImages = new List<ImageInfo>();
-
-                            // Load chunk of images in parallel
-                            await Task.WhenAll(chunk.Select(async (file, index) =>
+                            // Process each image in the batch
+                            await Task.Run(() =>
                             {
-                                try
-                                {
-                                    // Throttle for system stability
-                                    if (index % parallelDegree == 0 && index > 0)
+                                Parallel.ForEach(batch.Select((file, index) => new { File = file, Index = index }),
+                                    options,
+                                    item =>
                                     {
-                                        await Task.Delay(10, cancellationToken); // Small delay between batches
-                                    }
-
-                                    // Create progress reporter for this specific image
-                                    var progressReporter = new Progress<double>(value =>
-                                    {
-                                        // This runs on UI thread
-                                        double overallProgress = (i + index + value) / totalImages;
-                                        progressDialog.UpdateProgress(
-                                            overallProgress,
-                                            $"Loading image {i + index + 1} of {totalImages}...");
-                                    });
-
-                                    var imageInfo = new ImageInfo { FilePath = file };
-                                    bool success = await imageInfo.LoadThumbnailAsync(cancellationToken, progressReporter);
-
-                                    if (success && !cancellationToken.IsCancellationRequested)
-                                    {
-                                        lock (chunkImages)
+                                        try
                                         {
-                                            chunkImages.Add(imageInfo);
+                                            // Create a progress reporter for this specific image
+                                            var localProgress = new Progress<double>(value =>
+                                            {
+                                                double overallProgress = (i + item.Index + value) / totalImages;
+                                                progressDialog.UpdateProgress(
+                                            overallProgress,
+                                            $"Loading image {i + item.Index + 1} of {totalImages}...");
+                                            });
+
+                                            // Create and load image
+                                            var imageInfo = new ImageInfo { FilePath = item.File };
+                                            bool success = imageInfo.LoadThumbnailAsync(token, localProgress).GetAwaiter().GetResult();
+
+                                            if (success && !token.IsCancellationRequested)
+                                            {
+                                                lock (batchResults)
+                                                {
+                                                    batchResults.Add(imageInfo);
+                                                }
+                                            }
+                                            else if (!success)
+                                            {
+                                                imageInfo.Dispose();
+                                            }
                                         }
-                                    }
-                                    else if (!success)
+                                        catch (OperationCanceledException)
+                                        {
+                                            // Expected when cancelling
+                                        }
+                                        catch (Exception ex)
+                                        {
+                                            System.Diagnostics.Debug.WriteLine($"Error loading image: {ex.Message}");
+                                        }
+                                    });
+                            }, token);
+
+                            // Add batch to UI
+                            if (!token.IsCancellationRequested)
+                            {
+                                await Application.Current.Dispatcher.InvokeAsync(() =>
+                                {
+                                    foreach (var img in batchResults)
                                     {
-                                        imageInfo.Dispose();
+                                        Images.Add(img);
                                     }
-                                }
-                                catch (Exception ex)
-                                {
-                                    Debug.WriteLine($"Error loading image {file}: {ex.Message}");
-                                }
-                            }));
-
-                            // Check if cancelled
-                            if (cancellationToken.IsCancellationRequested)
-                                break;
-
-                            // Add to loaded images collection
-                            loadedImages.AddRange(chunkImages);
-                            processedImages += currentChunkSize;
-
-                            // Add chunk to UI immediately rather than waiting for all images
-                            await Application.Current.Dispatcher.InvokeAsync(() =>
-                            {
-                                foreach (var img in chunkImages)
-                                {
-                                    Images.Add(img);
-                                }
-
-                                // Update status while loading
-                                StatusMessage = $"Loaded {processedImages} of {totalImages} images...";
-                            });
+                                    StatusMessage = $"Loaded {Images.Count} of {totalImages} images...";
+                                });
+                            }
                         }
 
-                        // Final update
-                        if (!cancellationToken.IsCancellationRequested)
-                        {
-                            // Final update to progress dialog
-                            progressDialog.UpdateProgress(1.0, "Loading complete!");
-
-                            // Update status
-                            await Application.Current.Dispatcher.InvokeAsync(() =>
-                            {
-                                StatusMessage = $"Loaded {loadedImages.Count} images from '{SelectedFolder.Name}'";
-                            });
-                        }
-
-                        return loadedImages;
+                        // Update final progress
+                        progressDialog.UpdateProgress(1.0, "Loading complete!");
+                        return true;
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        return false;
                     }
                     catch (Exception ex)
                     {
-                        Debug.WriteLine($"Image loading error: {ex.Message}");
-                        return new List<ImageInfo>();
+                        System.Diagnostics.Debug.WriteLine($"Error loading images: {ex.Message}");
+                        return false;
                     }
                 }, _imageLoadingCts.Token);
 
-                // Show modal progress dialog
-                // Note: This will block the UI thread until the dialog is closed
+                // Show progress dialog
                 progressDialog.ShowDialog();
 
-                // When dialog closes (possibly due to cancel button), ensure loading operation is cancelled
+                // If dialog closes, ensure loading is cancelled
                 if (progressDialog.IsCancelled && !_imageLoadingCts.IsCancellationRequested)
                 {
                     _imageLoadingCts.Cancel();
                 }
 
                 // Wait for loading task to complete
-                var result = await loadingTask;
+                await loadingTask;
 
-                // If operation was cancelled, clean up resources
+                // Update final status
                 if (_imageLoadingCts.IsCancellationRequested)
                 {
-                    foreach (var img in result)
-                    {
-                        if (!Images.Contains(img)) // Don't dispose images we've already added to the UI
-                        {
-                            img.Dispose();
-                        }
-                    }
-
                     StatusMessage = "Image loading cancelled.";
+                }
+                else
+                {
+                    StatusMessage = $"Loaded {Images.Count} images from '{folderName}'";
                 }
             }
             catch (Exception ex)

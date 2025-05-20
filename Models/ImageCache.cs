@@ -16,16 +16,16 @@ using System.Windows;
 namespace ImageFolderManager.Models
 {
     /// <summary>
-    /// Provides an optimized caching mechanism for image thumbnails with LRU eviction policy and content-based caching
+    /// Provides caching for image thumbnails with memory and disk caching
     /// </summary>
     public static class ImageCache
     {
-        // Configuration
-        private static int MAX_CACHE_SIZE => AppSettings.Instance.MaxCacheSize; // Maximum number of items in memory cache
-        private static int TRIM_THRESHOLD => AppSettings.Instance.TrimThreshold; // When to start cache trimming
-        private static int TRIM_TARGET => AppSettings.Instance.TrimTarget;    // How many items to keep after trimming
+        // Configuration from AppSettings
+        private static int MAX_CACHE_SIZE => AppSettings.Instance.MaxCacheSize;
+        private static int TRIM_THRESHOLD => AppSettings.Instance.TrimThreshold;
+        private static int TRIM_TARGET => AppSettings.Instance.TrimTarget;
 
-        // Cache storage
+        // Cache storage using weak references
         private class CacheItem
         {
             public WeakReference<BitmapImage> Image { get; }
@@ -38,6 +38,7 @@ namespace ImageFolderManager.Models
             }
         }
 
+        // Memory cache
         private static readonly ConcurrentDictionary<string, CacheItem> _thumbnailCache = new();
 
         // Thread synchronization
@@ -47,17 +48,12 @@ namespace ImageFolderManager.Models
                                                 AppSettings.Instance.ParallelThreadCount);
         private static bool _isTrimming = false;
 
-        // Disk cache path AppData\Roaming\ImageFolderManager\Cache
+        // Disk cache path 
         private static readonly string _cacheFolder = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
             "ImageFolderManager", "Cache");
 
-
-        // Statistics
-        private static long _cacheHits = 0;
-        private static long _cacheMisses = 0;
-
-        // WebP quality setting (0-100)
+        // WebP quality setting
         private const int WEBP_QUALITY = 85;
 
         // Cancellation tracking
@@ -68,51 +64,34 @@ namespace ImageFolderManager.Models
         {
             try
             {
-                // Use PathService to check directory existence
+                // Ensure cache folder exists
                 if (!PathService.DirectoryExists(_cacheFolder))
                 {
                     Directory.CreateDirectory(_cacheFolder);
                 }
-                Task.Run(CleanupOrphanedCacheFilesAsync);
             }
             catch (Exception ex)
             {
                 Debug.WriteLine($"Error initializing cache folder: {ex.Message}");
-
-                try
-                {
-                    if (!Directory.Exists(_cacheFolder))
-                    {
-                        Directory.CreateDirectory(_cacheFolder);
-                    }
-                }
-                catch (Exception createEx)
-                {
-                    Debug.WriteLine($"Fatal error: Cannot create cache directory: {createEx.Message}");
-                }
             }
         }
 
         /// <summary>
         /// Loads a thumbnail for the specified image path, using cache when available
         /// </summary>
-        /// <param name="path">Path to the source image</param>
-        /// <param name="cancellationToken">Optional cancellation token</param>
-        /// <param name="progressCallback">Optional callback to report loading progress</param>
-        /// <returns>A BitmapImage thumbnail or null if loading failed or was cancelled</returns>
         public static async Task<BitmapImage> LoadThumbnailAsync(
             string path,
             CancellationToken cancellationToken = default,
             IProgress<double> progressCallback = null)
         {
-            // Normalize path to ensure consistency in cache keys
+            // Normalize path
             string normalizedPath = PathService.NormalizePath(path);
 
             // Check if path is valid
             if (string.IsNullOrEmpty(normalizedPath) || !File.Exists(normalizedPath))
                 return null;
 
-            // Register this loading operation for possible cancellation
+            // Register for cancellation
             var operationCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             _loadingOperations[normalizedPath] = operationCts;
 
@@ -121,31 +100,28 @@ namespace ImageFolderManager.Models
                 // Report initial progress
                 progressCallback?.Report(0.1);
 
-                // Check memory cache first (fastest)
+                // Check memory cache
                 if (TryGetFromMemoryCache(normalizedPath, out var cachedImage))
                 {
-                    Interlocked.Increment(ref _cacheHits);
-                    progressCallback?.Report(1.0); // Complete
+                    progressCallback?.Report(1.0);
                     return cachedImage;
                 }
 
-                // Check if the operation was cancelled
+                // Check cancellation
                 operationCts.Token.ThrowIfCancellationRequested();
-
-                Interlocked.Increment(ref _cacheMisses);
                 progressCallback?.Report(0.2);
 
-                // Calculate content-based cache key
+                // Get cache key based on file content
                 string contentHash = await CalculateFileContentHashAsync(normalizedPath, operationCts.Token);
 
-                // Check if operation was cancelled
+                // Check cancellation
                 operationCts.Token.ThrowIfCancellationRequested();
                 progressCallback?.Report(0.3);
 
-                // Get thumbnail cache path based on content hash
+                // Get disk cache path
                 string thumbPath = GetThumbnailCachePath(normalizedPath, contentHash);
 
-                // Check disk cache next
+                // Check disk cache
                 if (File.Exists(thumbPath))
                 {
                     try
@@ -158,7 +134,7 @@ namespace ImageFolderManager.Models
                             if (bitmap != null)
                             {
                                 StoreInMemoryCache(normalizedPath, bitmap);
-                                progressCallback?.Report(1.0); // Complete
+                                progressCallback?.Report(1.0);
                                 return bitmap;
                             }
                         }
@@ -178,87 +154,67 @@ namespace ImageFolderManager.Models
                     }
                 }
 
-                // Check if operation was cancelled
+                // Check cancellation
                 operationCts.Token.ThrowIfCancellationRequested();
                 progressCallback?.Report(0.6);
 
                 // Generate new thumbnail
-                try
+                return await Task.Run(async () =>
                 {
-                    return await Task.Run(async () =>
+                    try
                     {
-                        try
+                        int decodeWidth = AppSettings.Instance.PreviewWidth;
+                        int decodeHeight = AppSettings.Instance.PreviewHeight;
+
+                        operationCts.Token.ThrowIfCancellationRequested();
+                        progressCallback?.Report(0.7);
+
+                        // Generate the thumbnail
+                        BitmapImage bitmap = await GenerateThumbnailAsync(normalizedPath, decodeWidth, decodeHeight, operationCts.Token);
+
+                        if (bitmap != null)
                         {
-                            int decodeWidth = Services.AppSettings.Instance.PreviewWidth;
-                            int decodeHeight = Services.AppSettings.Instance.PreviewHeight;
+                            StoreInMemoryCache(normalizedPath, bitmap);
+                            progressCallback?.Report(0.9);
 
-                            // Check if operation was cancelled
-                            operationCts.Token.ThrowIfCancellationRequested();
-                            progressCallback?.Report(0.7);
+                            // Save to disk cache asynchronously
+                            _ = SaveThumbnailToDiskAsync(bitmap, thumbPath);
 
-                            // Use asynchronous decoding with optimized parameters
-                            BitmapImage bitmap = await DecodeImageOptimizedAsync(normalizedPath, decodeWidth, decodeHeight, operationCts.Token);
-
-                            if (bitmap != null)
-                            {
-                                StoreInMemoryCache(normalizedPath, bitmap);
-                                progressCallback?.Report(0.9);
-
-                                // Save to disk cache asynchronously without waiting for completion
-                                _ = SaveThumbnailToDiskAsync(bitmap, thumbPath, contentHash);
-
-                                progressCallback?.Report(1.0); // Complete
-                            }
-                            return bitmap;
+                            progressCallback?.Report(1.0);
                         }
-                        catch (OperationCanceledException)
-                        {
-                            throw;
-                        }
-                        catch (Exception ex)
-                        {
-                            Debug.WriteLine($"Error generating thumbnail for {normalizedPath}: {ex.Message}");
-                            return null;
-                        }
-                    }, operationCts.Token);
-                }
-                catch (OperationCanceledException)
-                {
-                    throw;
-                }
-                catch (Exception ex)
-                {
-                    Debug.WriteLine($"Error in thumbnail generation task: {ex.Message}");
-                    return null;
-                }
+                        return bitmap;
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"Error generating thumbnail: {ex.Message}");
+                        return null;
+                    }
+                }, operationCts.Token);
             }
             finally
             {
-                // Clean up the cancellation token source
+                // Clean up
                 _loadingOperations.TryRemove(normalizedPath, out _);
                 operationCts.Dispose();
             }
         }
 
         /// <summary>
-        /// Optimized image decoding with better performance parameters
+        /// Generates a thumbnail with specified dimensions
         /// </summary>
-        private static async Task<BitmapImage> DecodeImageOptimizedAsync(
-                string filePath,
-                int targetWidth,
-                int targetHeight,
-                CancellationToken cancellationToken)
+        private static async Task<BitmapImage> GenerateThumbnailAsync(
+            string filePath,
+            int targetWidth,
+            int targetHeight,
+            CancellationToken cancellationToken)
         {
             try
             {
-                // Read the file data on a background thread
+                // Load image data
                 byte[] imageData;
                 using (var fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, true))
                 {
-                    // Check for cancellation
                     cancellationToken.ThrowIfCancellationRequested();
-
-                    // Read the file into memory
                     var memoryStream = new MemoryStream();
                     await fileStream.CopyToAsync(memoryStream, 81920, cancellationToken);
                     imageData = memoryStream.ToArray();
@@ -266,7 +222,7 @@ namespace ImageFolderManager.Models
 
                 cancellationToken.ThrowIfCancellationRequested();
 
-                // Create and initialize BitmapImage on the UI thread
+                // Create bitmap on UI thread
                 return await Application.Current.Dispatcher.InvokeAsync(() => {
                     try
                     {
@@ -277,30 +233,21 @@ namespace ImageFolderManager.Models
                         bitmap.CacheOption = BitmapCacheOption.OnLoad;
                         bitmap.DecodePixelWidth = targetWidth;
 
-                        // Enable better downsampling to reduce aliasing
+                        // Use high quality scaling
                         RenderOptions.SetBitmapScalingMode(bitmap, BitmapScalingMode.HighQuality);
-
-                        // Use lower bit depth if possible to save memory
-                        if (IsJpegOrPng(filePath))
-                        {
-                            // For some formats, we can reduce memory usage with 8-bit format
-                            bitmap.DownloadCompleted += (s, e) => {
-                                // Additional optimization after load if needed
-                            };
-                        }
 
                         bitmap.EndInit();
 
                         if (bitmap.CanFreeze && !bitmap.IsFrozen)
                         {
-                            bitmap.Freeze(); // Important for cross-thread usage and performance
+                            bitmap.Freeze(); // Important for cross-thread usage
                         }
 
                         return bitmap;
                     }
                     catch (Exception ex)
                     {
-                        Debug.WriteLine($"Error creating bitmap on UI thread: {ex.Message}");
+                        Debug.WriteLine($"Error creating bitmap: {ex.Message}");
                         return null;
                     }
                 });
@@ -311,9 +258,9 @@ namespace ImageFolderManager.Models
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"Error in optimized decoding: {ex.Message}");
+                Debug.WriteLine($"Error in thumbnail generation: {ex.Message}");
 
-                // Fallback to simple decoding if optimization fails
+                // Fallback to simpler method if needed
                 try
                 {
                     return await Application.Current.Dispatcher.InvokeAsync(() => {
@@ -335,21 +282,11 @@ namespace ImageFolderManager.Models
                         }
                     });
                 }
-                catch (Exception innerEx)
+                catch
                 {
-                    Debug.WriteLine($"Error in fallback decoding: {innerEx.Message}");
                     return null;
                 }
             }
-        }
-
-        /// <summary>
-        /// Determines if a file is a JPEG or PNG based on extension
-        /// </summary>
-        private static bool IsJpegOrPng(string filePath)
-        {
-            string ext = Path.GetExtension(filePath).ToLowerInvariant();
-            return ext == ".jpg" || ext == ".jpeg" || ext == ".png";
         }
 
         /// <summary>
@@ -366,88 +303,56 @@ namespace ImageFolderManager.Models
                 }
                 catch (Exception ex)
                 {
-                    Debug.WriteLine($"Error cancelling loading operation: {ex.Message}");
+                    Debug.WriteLine($"Error cancelling loading: {ex.Message}");
                 }
             }
         }
 
         /// <summary>
-        /// Cancels all ongoing loading operations
-        /// </summary>
-        public static void CancelAllLoading()
-        {
-            foreach (var cts in _loadingOperations.Values)
-            {
-                try
-                {
-                    cts.Cancel();
-                }
-                catch (Exception ex)
-                {
-                    Debug.WriteLine($"Error cancelling loading operation: {ex.Message}");
-                }
-            }
-        }
-
-        /// <summary>
-        /// Calculates a stable hash based on the file's content properties
-        /// This allows the same image to be identified even if it's moved to a new location
+        /// Calculates a hash based on file content for cache key
         /// </summary>
         private static async Task<string> CalculateFileContentHashAsync(string filePath, CancellationToken cancellationToken)
         {
             try
             {
-                // Use the PathService method if available
+                // Try to get hash from PathService first
                 if (PathService.CreateFileContentHash(filePath) is string serviceHash && !string.IsNullOrEmpty(serviceHash))
                 {
                     return serviceHash;
                 }
 
-                // Get key file properties that should be stable even if the file is moved
+                // Fallback to our own hash calculation
                 var fileInfo = new FileInfo(filePath);
                 if (!fileInfo.Exists)
                     return string.Empty;
 
-                // Only calculate MD5 for the first few KB of large files for performance
-                int bytesToRead = (int)Math.Min(fileInfo.Length, 32 * 1024); // 32KB max
+                // Only read first 32KB for large files
+                int bytesToRead = (int)Math.Min(fileInfo.Length, 32 * 1024);
                 byte[] fileBytes = new byte[bytesToRead];
-
-                // Check cancellation before file read
-                cancellationToken.ThrowIfCancellationRequested();
 
                 using (var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, true))
                 {
                     await fs.ReadAsync(fileBytes, 0, bytesToRead, cancellationToken);
                 }
 
-                // Check cancellation after file read
-                cancellationToken.ThrowIfCancellationRequested();
-
-                // Combine file size, creation time, last write time, and the first few KB of content
+                // Create hash from file metadata and sample content
                 using (var md5 = MD5.Create())
                 {
                     var data = Encoding.UTF8.GetBytes(
                         $"{fileInfo.Length}|{fileInfo.CreationTimeUtc.Ticks}|{fileInfo.LastWriteTimeUtc.Ticks}");
 
-                    // First hash the metadata
                     md5.TransformBlock(data, 0, data.Length, data, 0);
-
-                    // Then include some of the actual file content
                     md5.TransformFinalBlock(fileBytes, 0, fileBytes.Length);
 
-                    // Return as base64 string (URL-safe version)
                     return Convert.ToBase64String(md5.Hash)
                         .Replace('+', '-').Replace('/', '_').Replace("=", "");
                 }
             }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
             catch (Exception ex)
             {
                 Debug.WriteLine($"Error calculating content hash: {ex.Message}");
-                // Fallback to a simpler hash in case of error
+
+                // Simple fallback hash
                 return Convert.ToBase64String(
                     Encoding.UTF8.GetBytes(filePath + DateTime.UtcNow.Ticks.ToString()))
                     .Replace('+', '-').Replace('/', '_').Replace("=", "");
@@ -455,23 +360,22 @@ namespace ImageFolderManager.Models
         }
 
         /// <summary>
-        /// Tries to retrieve an image from the memory cache
+        /// Tries to retrieve an image from memory cache
         /// </summary>
         private static bool TryGetFromMemoryCache(string path, out BitmapImage bitmap)
         {
             bitmap = null;
-            path = PathService.NormalizePath(path);
 
             if (_thumbnailCache.TryGetValue(path, out var cacheItem))
             {
                 if (cacheItem.Image.TryGetTarget(out bitmap))
                 {
-                    // Update last accessed time for LRU tracking
+                    // Update last accessed time
                     cacheItem.LastAccessed = DateTime.UtcNow;
                     return true;
                 }
 
-                // Reference was collected by GC, remove from cache
+                // Reference was collected, remove from cache
                 _thumbnailCache.TryRemove(path, out _);
             }
 
@@ -479,14 +383,13 @@ namespace ImageFolderManager.Models
         }
 
         /// <summary>
-        /// Stores an image in the memory cache and triggers trimming if needed
+        /// Stores an image in the memory cache
         /// </summary>
         private static void StoreInMemoryCache(string path, BitmapImage bitmap)
         {
-            path = PathService.NormalizePath(path);
             _thumbnailCache[path] = new CacheItem(bitmap);
 
-            // Trim cache if it grows too large
+            // Trim cache if needed
             if (_thumbnailCache.Count > TRIM_THRESHOLD && !_isTrimming)
             {
                 Task.Run(TrimCacheAsync);
@@ -494,11 +397,10 @@ namespace ImageFolderManager.Models
         }
 
         /// <summary>
-        /// Trims the cache using LRU policy to stay within memory limits
+        /// Trims the cache using LRU policy
         /// </summary>
         private static async Task TrimCacheAsync()
         {
-            // Use lock to ensure only one trim operation runs at a time
             if (!await _cacheLock.WaitAsync(0))
                 return;
 
@@ -509,9 +411,7 @@ namespace ImageFolderManager.Models
                 if (_thumbnailCache.Count <= MAX_CACHE_SIZE)
                     return;
 
-                Debug.WriteLine($"Trimming cache from {_thumbnailCache.Count} items to {TRIM_TARGET} items");
-
-                // First, remove items where WeakReference is no longer valid
+                // Remove items where WeakReference is no longer valid
                 foreach (var key in _thumbnailCache.Keys.ToList())
                 {
                     if (_thumbnailCache.TryGetValue(key, out var cacheItem) &&
@@ -536,10 +436,8 @@ namespace ImageFolderManager.Models
                     }
                 }
 
-                // Request garbage collection to free up memory
+                // Request garbage collection
                 GC.Collect(1, GCCollectionMode.Optimized, false);
-
-                Debug.WriteLine($"Cache trimmed to {_thumbnailCache.Count} items");
             }
             finally
             {
@@ -548,29 +446,22 @@ namespace ImageFolderManager.Models
             }
         }
 
+        /// <summary>
+        /// Updates thread count for parallel operations
+        /// </summary>
         public static void UpdateParallelThreadCount(int threadCount)
         {
+            var oldLock = _diskOperationLock;
+            oldLock.Wait();
+
             try
             {
-                var oldLock = _diskOperationLock;
-
-                oldLock.Wait();
-
-                try
-                {
-                    _diskOperationLock = new SemaphoreSlim(threadCount, threadCount);
-                }
-                finally
-                {
-                    oldLock.Release();
-                    oldLock.Dispose();
-                }
-
-                Debug.WriteLine($"Updated parallel thread count to {threadCount}");
+                _diskOperationLock = new SemaphoreSlim(threadCount, threadCount);
             }
-            catch (Exception ex)
+            finally
             {
-                Debug.WriteLine($"Error updating parallel thread count: {ex.Message}");
+                oldLock.Release();
+                oldLock.Dispose();
             }
         }
 
@@ -582,33 +473,25 @@ namespace ImageFolderManager.Models
             if (string.IsNullOrEmpty(originalPath))
                 return null;
 
-            // Normalize path
-            originalPath = PathService.NormalizePath(originalPath);
-
-            // Include thumbnail size in the filename to ensure different sizes get different cache files
-            int width = Services.AppSettings.Instance.PreviewWidth;
-            int height = Services.AppSettings.Instance.PreviewHeight;
-
-            // Create a filename using the content hash plus dimensions
-            // Use WebP extension for the cached file
+            // Include thumbnail dimensions in filename
+            int width = AppSettings.Instance.PreviewWidth;
+            int height = AppSettings.Instance.PreviewHeight;
             string filename = $"{contentHash}_{width}x{height}.webp";
 
             return Path.Combine(_cacheFolder, filename);
         }
 
         /// <summary>
-        /// Loads an image from a file asynchronously
+        /// Loads an image from a file
         /// </summary>
         private static async Task<BitmapImage> LoadImageFromFileAsync(string filePath, CancellationToken cancellationToken = default)
         {
-            filePath = PathService.NormalizePath(filePath);
-
             if (string.IsNullOrEmpty(filePath) || !File.Exists(filePath))
                 return null;
 
             try
             {
-                // For WebP files, use Magick.NET for decoding
+                // Special handling for WebP files
                 string extension = Path.GetExtension(filePath).ToLowerInvariant();
                 if (extension == ".webp")
                 {
@@ -616,21 +499,16 @@ namespace ImageFolderManager.Models
                     {
                         try
                         {
-                            // Check cancellation
                             cancellationToken.ThrowIfCancellationRequested();
 
-                            // Use Magick.NET to load WebP file
                             using (var image = new MagickImage(filePath))
                             {
-                                // Convert to memory stream in a format WPF can display
                                 using (var memoryStream = new MemoryStream())
                                 {
-                                    // Convert to PNG in memory for WPF compatibility
                                     image.Format = MagickFormat.Png;
                                     image.Write(memoryStream);
                                     memoryStream.Position = 0;
 
-                                    // Create BitmapImage from the stream
                                     var bitmap = new BitmapImage();
                                     bitmap.BeginInit();
                                     bitmap.StreamSource = memoryStream;
@@ -643,28 +521,22 @@ namespace ImageFolderManager.Models
                                 }
                             }
                         }
-                        catch (OperationCanceledException)
-                        {
-                            throw;
-                        }
                         catch (Exception ex)
                         {
-                            Debug.WriteLine($"Error loading WebP image: {ex.Message}");
+                            Debug.WriteLine($"Error loading WebP: {ex.Message}");
                             return null;
                         }
                     }, cancellationToken);
                 }
                 else
                 {
-                    // Standard loading for other image formats
+                    // Standard loading for other formats
                     return await Task.Run(() =>
                     {
                         try
                         {
-                            // Check cancellation
                             cancellationToken.ThrowIfCancellationRequested();
 
-                            // Use FileStream with async pattern for .NET Framework 4.8
                             using (var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read))
                             {
                                 var bitmap = new BitmapImage();
@@ -678,49 +550,34 @@ namespace ImageFolderManager.Models
                                 return bitmap;
                             }
                         }
-                        catch (OperationCanceledException)
-                        {
-                            throw;
-                        }
                         catch (Exception ex)
                         {
-                            Debug.WriteLine($"Error loading image from file {filePath}: {ex.Message}");
+                            Debug.WriteLine($"Error loading image: {ex.Message}");
                             return null;
                         }
                     }, cancellationToken);
                 }
             }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
             catch (Exception ex)
             {
-                Debug.WriteLine($"Error in image loading task: {ex.Message}");
+                Debug.WriteLine($"Error in image loading: {ex.Message}");
                 return null;
             }
         }
 
         /// <summary>
-        /// Saves a thumbnail to the disk cache in WebP format
+        /// Saves a thumbnail to disk cache
         /// </summary>
-        /// <summary>
-        /// Optimized WebP encoding for disk cache storage
-        /// </summary>
-        private static async Task SaveThumbnailToDiskAsync(BitmapImage image, string filePath, string contentHash)
+        private static async Task SaveThumbnailToDiskAsync(BitmapImage image, string filePath)
         {
             if (image == null || string.IsNullOrEmpty(filePath))
                 return;
 
             try
             {
-                // Try to acquire the disk lock but don't wait too long
+                // Don't wait long for disk lock
                 if (!await _diskOperationLock.WaitAsync(100))
-                {
-                    // If we can't quickly acquire the lock, skip this save operation
-                    // The thumbnail is already in memory cache, so it's not critical
                     return;
-                }
 
                 try
                 {
@@ -731,32 +588,20 @@ namespace ImageFolderManager.Models
                         Directory.CreateDirectory(dirPath);
                     }
 
-                    // Check if the file already exists (avoid redundant writes)
+                    // Skip if file already exists
                     if (File.Exists(filePath))
-                    {
-                        // Skip if the file already exists
                         return;
-                    }
 
-                    // Convert BitmapImage to WebP using Magick.NET
+                    // Convert to WebP using Magick.NET
                     using (var magickImage = ConvertBitmapImageToMagickImage(image))
                     {
                         if (magickImage != null)
                         {
-                            // Calculate optimal quality based on image content
-                            // Lower quality for larger images to save space
-                            int quality = CalculateOptimalQuality(image.PixelWidth, image.PixelHeight);
-
-                            // Configure WebP settings
+                            // Set WebP format and quality
                             magickImage.Format = MagickFormat.WebP;
-                            magickImage.Quality = (uint)quality;
+                            magickImage.Quality = WEBP_QUALITY;
 
-                            // Set WebP specific options
-                            magickImage.Settings.SetDefine(MagickFormat.WebP, "lossless", "false");
-                            magickImage.Settings.SetDefine(MagickFormat.WebP, "method", "4"); // Balance between speed and quality (0-6)
-                            magickImage.Settings.SetDefine(MagickFormat.WebP, "thread-level", "1"); // Multithreaded compression
-
-                            // Write the WebP file
+                            // Write the file
                             magickImage.Write(filePath);
                         }
                     }
@@ -768,37 +613,18 @@ namespace ImageFolderManager.Models
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"Error saving thumbnail to disk: {ex.Message}");
+                Debug.WriteLine($"Error saving thumbnail: {ex.Message}");
             }
         }
 
         /// <summary>
-        /// Calculates optimal WebP quality based on image dimensions
-        /// </summary>
-        private static int CalculateOptimalQuality(int width, int height)
-        {
-            int pixelCount = width * height;
-
-            // For very small thumbnails, use higher quality
-            if (pixelCount < 10000) // e.g. 100x100
-                return 92;
-
-            // For medium-sized thumbnails, use medium quality
-            if (pixelCount < 40000) // e.g. 200x200
-                return 85;
-
-            // For larger thumbnails, use lower quality
-            return 80;
-        }
-
-        /// <summary>
-        /// Converts a BitmapImage to MagickImage for WebP encoding
+        /// Converts BitmapImage to MagickImage for saving
         /// </summary>
         private static MagickImage ConvertBitmapImageToMagickImage(BitmapImage bitmapImage)
         {
             try
             {
-                // Convert BitmapImage to PNG in memory first
+                // Convert to PNG in memory
                 PngBitmapEncoder encoder = new PngBitmapEncoder();
                 encoder.Frames.Add(BitmapFrame.Create(bitmapImage));
 
@@ -807,28 +633,26 @@ namespace ImageFolderManager.Models
                     encoder.Save(memoryStream);
                     memoryStream.Position = 0;
 
-                    // Create MagickImage from the PNG stream
+                    // Create MagickImage from stream
                     return new MagickImage(memoryStream);
                 }
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"Error converting BitmapImage to MagickImage: {ex.Message}");
+                Debug.WriteLine($"Error converting to MagickImage: {ex.Message}");
                 return null;
             }
         }
 
         /// <summary>
-        /// Clears both memory and disk caches
+        /// Clears all caches
         /// </summary>
         public static void ClearCache()
         {
-            // Cancel all ongoing loading operations first
-            CancelAllLoading();
-
             // Clear memory cache
             _thumbnailCache.Clear();
 
+            // Clear disk cache
             try
             {
                 if (PathService.DirectoryExists(_cacheFolder))
@@ -848,68 +672,9 @@ namespace ImageFolderManager.Models
                 Debug.WriteLine($"Error clearing cache: {ex.Message}");
             }
 
-            // Force garbage collection to clean up
+            // Force garbage collection
             GC.Collect();
             GC.WaitForPendingFinalizers();
-        }
-
-        /// <summary>
-        /// Returns statistics about the cache performance
-        /// </summary>
-        public static (int MemoryCacheSize, long Hits, long Misses, double HitRatio) GetStatistics()
-        {
-            long totalRequests = _cacheHits + _cacheMisses;
-            double hitRatio = totalRequests > 0 ? (double)_cacheHits / totalRequests : 0;
-
-            return (_thumbnailCache.Count, _cacheHits, _cacheMisses, hitRatio);
-        }
-
-        /// <summary>
-        /// Cleans up orphaned cache files that don't match any current images
-        /// </summary>
-        private static async Task CleanupOrphanedCacheFilesAsync()
-        {
-            try
-            {
-                // Only run if cache folder exists
-                if (!PathService.DirectoryExists(_cacheFolder))
-                    return;
-
-                // Get cache files older than 7 days
-                var oldFiles = Directory.GetFiles(_cacheFolder)
-                    .Select(f => new FileInfo(f))
-                    .Where(f => f.LastAccessTime < DateTime.Now.AddDays(-7))
-                    .ToList();
-
-                if (oldFiles.Count == 0)
-                    return;
-
-                Debug.WriteLine($"Cleaning up {oldFiles.Count} orphaned cache files");
-
-                foreach (var file in oldFiles)
-                {
-                    try
-                    {
-                        await _diskOperationLock.WaitAsync();
-                        try
-                        {
-                            file.Delete();
-                        }
-                        finally
-                        {
-                            _diskOperationLock.Release();
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        Debug.WriteLine($"Error deleting orphaned cache file: {ex.Message}");
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"Error in orphaned cache cleanup: {ex.Message}");
-            }
         }
     }
 }
