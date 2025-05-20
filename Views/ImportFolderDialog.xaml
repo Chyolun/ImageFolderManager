@@ -1,0 +1,88 @@
+﻿<mah:MetroWindow x:Class="ImageFolderManager.Views.ImportFolderDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:mah="http://metro.mahapps.com/winfx/xaml/controls"
+        mc:Ignorable="d"
+        Title="Import Folders"
+        Height="350"
+        Width="600"
+        ResizeMode="NoResize"
+        WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource MahApps.Brushes.Control.Background}">
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto"/>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="Auto"/>
+        </Grid.ColumnDefinitions>
+
+        <TextBlock Grid.Row="0" Grid.ColumnSpan="3" 
+                   x:Name="HeaderText"
+                   Text="Import Folders"
+                   FontSize="16" 
+                   FontWeight="SemiBold" 
+                   Margin="0,0,0,15" 
+                   Foreground="White"/>
+
+        <!-- Source folder information -->
+        <TextBlock Grid.Row="1" Grid.Column="0" Text="Source Folder:" VerticalAlignment="Center" Margin="0,0,10,0" Foreground="White"/>
+        <TextBox Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" 
+                x:Name="SourceFolderText" 
+                Foreground="LightGreen" 
+                TextWrapping="Wrap" 
+                IsReadOnly="True"
+                BorderThickness="0"
+                Background="Transparent"/>
+
+        <!-- Author field (editable) -->
+        <TextBlock Grid.Row="2" Grid.Column="0" Text="Author:" VerticalAlignment="Center" Margin="0,10,10,0" Foreground="White"/>
+        <TextBox Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" 
+                x:Name="AuthorTextBox" 
+                Foreground="Yellow" 
+                Margin="0,10,0,0"
+                TextChanged="AuthorTextBox_TextChanged"/>
+
+        <Border Grid.Row="3" Grid.ColumnSpan="3" BorderBrush="#555555" BorderThickness="0,1,0,0" Margin="0,15,0,15"/>
+
+        <!-- Destination selection -->
+        <TextBlock Grid.Row="4" Grid.Column="0" Grid.ColumnSpan="3" 
+                   Text="Recommended destination path:" 
+                   Foreground="White" 
+                   Margin="0,0,0,5"/>
+
+        <TextBox Grid.Row="5" Grid.Column="1" 
+                 x:Name="DestinationPathTextBox" 
+                 Margin="0,0,10,0"/>
+
+        <Button Grid.Row="5" Grid.Column="2"
+                Content="Explore..." 
+                Click="ExploreButton_Click" 
+                Width="80"
+                Margin="0,0,0,0"/>
+
+        <!-- Status information -->
+        <TextBlock Grid.Row="6" Grid.ColumnSpan="3" 
+                  x:Name="StatusText"
+                  Margin="0,15,0,0"
+                  Foreground="#AAAAAA"
+                  TextWrapping="Wrap"/>
+
+        <!-- Buttons -->
+        <StackPanel Grid.Row="7" Grid.Column="0" Grid.ColumnSpan="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,10,0,0">
+            <Button Content="Cancel" Width="100" Margin="0,0,10,0" Click="Cancel_Click"/>
+            <Button Content="Import" Width="100" Click="Import_Click"/>
+        </StackPanel>
+    </Grid>
+</mah:MetroWindow>

@@ -1,0 +1,156 @@
+﻿<UserControl x:Class="ImageFolderManager.Views.ShellTreeView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:shell="clr-namespace:Microsoft.WindowsAPICodePack.Shell;assembly=Microsoft.WindowsAPICodePack.Shell"
+             xmlns:local="clr-namespace:ImageFolderManager.Views"
+             mc:Ignorable="d" 
+             d:DesignHeight="450" d:DesignWidth="300">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0" Text="Folder Tree" 
+                   FontSize="13" Foreground="LightGreen" 
+                   FontWeight="Bold" Margin="5,2,5,0"/>
+        
+
+        <TreeView x:Name="ShellTreeViewControl" 
+                  Grid.Row="1"
+                  Background="Transparent" 
+                  BorderThickness="0"
+                  SelectedItemChanged="ShellTreeView_SelectedItemChanged"
+                  ContextMenuOpening="ShellTreeViewControl_ContextMenuOpening"
+                  KeyDown="ShellTreeView_KeyDown"          
+                  AllowDrop="True"
+                  Drop="TreeView_Drop"
+                  DragOver="TreeView_DragOver"
+                  PreviewMouseLeftButtonDown="TreeView_PreviewMouseLeftButtonDown"
+                  PreviewMouseMove="TreeView_PreviewMouseMove"
+                  PreviewMouseLeftButtonUp="TreeView_PreviewMouseLeftButtonUp">
+            <TreeView.Resources>
+                <!-- Create custom style for TreeViewItems with direct event handling -->
+                <Style TargetType="TreeViewItem">
+                    <Setter Property="IsExpanded" Value="False" />
+                    <EventSetter Event="Expanded" Handler="TreeViewItem_Expanded"/>
+                    <Setter Property="Foreground" Value="White"/>
+                    <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+                    <!-- Add a custom template for the selection state -->
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="TreeViewItem">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition/>
+                                    </Grid.RowDefinitions>
+
+                                    <!-- Expander button -->
+                                    <ToggleButton x:Name="Expander" 
+                                                  Style="{DynamicResource ExpandCollapseToggleStyle}" 
+                                                  IsChecked="{Binding IsExpanded, RelativeSource={RelativeSource TemplatedParent}}" 
+                                                  ClickMode="Press"/>
+
+                                    <!-- Header content with background for selection-->
+                                    <Border x:Name="Bd" 
+                                            Grid.Column="1" 
+                                            Background="{TemplateBinding Background}"
+                                            BorderBrush="{TemplateBinding BorderBrush}" 
+                                            BorderThickness="{TemplateBinding BorderThickness}" 
+                                            Padding="{TemplateBinding Padding}">
+                                        <ContentPresenter x:Name="PART_Header" 
+                                                          ContentSource="Header" />
+                                    </Border>
+
+                                    <!-- Child items -->
+                                    <ItemsPresenter x:Name="ItemsHost" 
+                                                    Grid.Row="1" 
+                                                    Grid.Column="1" 
+                                                    Visibility="Collapsed"/>
+                                </Grid>
+                                <ControlTemplate.Triggers>
+                                    <!-- Handle expansion state -->
+                                    <Trigger Property="IsExpanded" Value="True">
+                                        <Setter TargetName="ItemsHost" Property="Visibility" Value="Visible"/>
+                                    </Trigger>
+                                    <!-- Hide expander when no children -->
+                                    <Trigger Property="HasItems" Value="False">
+                                        <Setter TargetName="Expander" Property="Visibility" Value="Hidden"/>
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
+                </Style>
+
+                <!-- Style for the expander toggle button -->
+                <Style x:Key="ExpandCollapseToggleStyle" TargetType="ToggleButton">
+                    <Setter Property="Foreground" Value="White"/>
+                    <Setter Property="Focusable" Value="False"/>
+                    <Setter Property="Width" Value="16"/>
+                    <Setter Property="Height" Value="16"/>
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="ToggleButton">
+                                <Border Background="Transparent" Width="16" Height="16">
+                                    <Path x:Name="ExpandPath" 
+                                          Stroke="White" 
+                                          Fill="Transparent" 
+                                          StrokeThickness="1" 
+                                          HorizontalAlignment="Center" 
+                                          VerticalAlignment="Center">
+                                        <Path.Data>
+                                            <PathGeometry>
+                                                <PathGeometry.Figures>
+                                                    <PathFigureCollection>
+                                                        <PathFigure StartPoint="0,0" IsClosed="True">
+                                                            <PathFigure.Segments>
+                                                                <PathSegmentCollection>
+                                                                    <LineSegment Point="0,6"/>
+                                                                    <LineSegment Point="6,3"/>
+                                                                </PathSegmentCollection>
+                                                            </PathFigure.Segments>
+                                                        </PathFigure>
+                                                    </PathFigureCollection>
+                                                </PathGeometry.Figures>
+                                            </PathGeometry>
+                                        </Path.Data>
+                                    </Path>
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsChecked" Value="True">
+                                        <Setter TargetName="ExpandPath" Property="Data">
+                                            <Setter.Value>
+                                                <PathGeometry>
+                                                    <PathGeometry.Figures>
+                                                        <PathFigureCollection>
+                                                            <PathFigure StartPoint="0,0" IsClosed="True">
+                                                                <PathFigure.Segments>
+                                                                    <PathSegmentCollection>
+                                                                        <LineSegment Point="6,0"/>
+                                                                        <LineSegment Point="3,6"/>
+                                                                    </PathSegmentCollection>
+                                                                </PathFigure.Segments>
+                                                            </PathFigure>
+                                                        </PathFigureCollection>
+                                                    </PathGeometry.Figures>
+                                                </PathGeometry>
+                                            </Setter.Value>
+                                        </Setter>
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
+                </Style>
+            </TreeView.Resources>
+        </TreeView>
+    </Grid>
+</UserControl>
