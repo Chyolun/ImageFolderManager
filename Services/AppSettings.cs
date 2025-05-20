@@ -1,21 +1,26 @@
 ﻿using System;
-using System.IO;
-using System.Windows;
-using Newtonsoft.Json;
-using System.Diagnostics;
-using System.ComponentModel;
-using System.Runtime.CompilerServices;
 using System.Collections.Generic;
+using System.ComponentModel;
+using System.Diagnostics;
+using System.IO;
+using System.Runtime.CompilerServices;
+using System.Windows;
 using ImageFolderManager.Models;
+using Newtonsoft.Json;
 
 namespace ImageFolderManager.Services
 {
+    /// <summary>
+    /// Application settings service
+    /// </summary>
     public class AppSettings : INotifyPropertyChanged
     {
         private static readonly string SettingsFilePath = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
             "ImageFolderManager",
             "settings.json");
+
+        #region Property Definitions
 
         // Default settings
         private string _defaultRootDirectory = string.Empty;
@@ -25,13 +30,11 @@ namespace ImageFolderManager.Services
         public int TrimTarget => (int)(MaxCacheSize * 0.7);
 
         private int _previewHeight = 500;
-
         private int _previewWidth = 500;
-
-        // In AppSettings constructor
-        private AppSettings()
-        {   
-        }
+        private bool _autoExpandFolders = false;
+        private int _maxRecentFolders = 10;
+        private List<string> _recentFolders = new List<string>();
+        private int _parallelThreadCount = 3;
 
         public string DefaultRootDirectory
         {
@@ -46,44 +49,37 @@ namespace ImageFolderManager.Services
                 }
             }
         }
-    
+
         public int PreviewWidth
         {
             get => _previewWidth;
             set
             {
-                int newValue = ValidatePreviewDimension(value, 100, 1000);
+                int newValue = ValidateRange(value, 100, 1000);
                 if (_previewWidth != newValue)
                 {
                     _previewWidth = newValue;
-                    OnPropertyChanged();          
+                    OnPropertyChanged();
                     Save();
                 }
             }
         }
-      
+
         public int PreviewHeight
         {
             get => _previewHeight;
             set
             {
-                int newValue = ValidatePreviewDimension(value, 100, 1000);
+                int newValue = ValidateRange(value, 100, 1000);
                 if (_previewHeight != newValue)
                 {
                     _previewHeight = newValue;
-                    OnPropertyChanged();                  
+                    OnPropertyChanged();
                     Save();
                 }
             }
         }
 
-        private int ValidatePreviewDimension(int value, int min, int max)
-        {
-            return Math.Max(min, Math.Min(max, value));
-        }
-
-        // Additional settings
-        private bool _autoExpandFolders = false;
         public bool AutoExpandFolders
         {
             get => _autoExpandFolders;
@@ -98,7 +94,6 @@ namespace ImageFolderManager.Services
             }
         }
 
-        private int _maxRecentFolders = 10;
         public int MaxRecentFolders
         {
             get => _maxRecentFolders;
@@ -106,14 +101,13 @@ namespace ImageFolderManager.Services
             {
                 if (_maxRecentFolders != value)
                 {
-                    _maxRecentFolders = Math.Max(1, Math.Min(20, value));
+                    _maxRecentFolders = ValidateRange(value, 1, 20);
                     OnPropertyChanged();
                     Save();
                 }
             }
         }
 
-        private List<string> _recentFolders = new List<string>();
         public List<string> RecentFolders
         {
             get => _recentFolders;
@@ -125,7 +119,40 @@ namespace ImageFolderManager.Services
             }
         }
 
-        // Singleton instance
+        public int MaxCacheSize
+        {
+            get => _maxCacheSize;
+            set
+            {
+                int newValue = ValidateRange(value, 100, 2000);
+                if (_maxCacheSize != newValue)
+                {
+                    _maxCacheSize = newValue;
+                    OnPropertyChanged();
+                    Save();
+                }
+            }
+        }
+
+        public int ParallelThreadCount
+        {
+            get => _parallelThreadCount;
+            set
+            {
+                int newValue = ValidateRange(value, 1, 16);
+                if (_parallelThreadCount != newValue)
+                {
+                    _parallelThreadCount = newValue;
+                    OnPropertyChanged();
+                    Save();
+                }
+            }
+        }
+
+        #endregion
+
+        #region Singleton Implementation
+
         private static AppSettings _instance;
         private static readonly object _instanceLock = new object();
 
@@ -143,8 +170,25 @@ namespace ImageFolderManager.Services
                 }
             }
         }
-    
-        // Load settings from file
+
+        // Private constructor - singleton pattern
+        private AppSettings() { }
+
+        #endregion
+
+        #region Helper Methods
+
+        /// <summary>
+        /// Validates value is within specified range
+        /// </summary>
+        private int ValidateRange(int value, int min, int max)
+        {
+            return Math.Max(min, Math.Min(max, value));
+        }
+
+        /// <summary>
+        /// Loads settings from file
+        /// </summary>
         private static AppSettings Load()
         {
             var settings = new AppSettings();
@@ -166,7 +210,7 @@ namespace ImageFolderManager.Services
 
                     if (loadedSettings != null)
                     {
-                        // Copy properties to ensure we use the property setters with validation
+                        // Copy properties to new instance to ensure validators are applied
                         settings.DefaultRootDirectory = loadedSettings.DefaultRootDirectory;
                         settings.PreviewWidth = loadedSettings.PreviewWidth;
                         settings.PreviewHeight = loadedSettings.PreviewHeight;
@@ -187,38 +231,9 @@ namespace ImageFolderManager.Services
             return settings;
         }
 
-        public int MaxCacheSize
-        {
-            get => _maxCacheSize;
-            set
-            {
-                int newValue = Math.Max(100, Math.Min(2000, value));
-                if (_maxCacheSize != newValue)
-                {
-                    _maxCacheSize = newValue;
-                    OnPropertyChanged();
-                    Save();
-                }
-            }
-        }
-
-        private int _parallelThreadCount = 3;
-        public int ParallelThreadCount
-        {
-            get => _parallelThreadCount;
-            set
-            {
-                int newValue = Math.Max(1, Math.Min(16, value));
-                if (_parallelThreadCount != newValue)
-                {
-                    _parallelThreadCount = newValue;
-                    OnPropertyChanged();
-                    Save();
-                }
-            }
-        }
-
-        // Save settings to file
+        /// <summary>
+        /// Saves settings to file
+        /// </summary>
         public void Save()
         {
             try
@@ -236,7 +251,7 @@ namespace ImageFolderManager.Services
             {
                 Debug.WriteLine($"Error saving settings: {ex.Message}");
 
-                // Only show message box if running in UI context
+                // Only show message box in UI context
                 if (Application.Current?.Dispatcher != null &&
                     Application.Current.Dispatcher.CheckAccess())
                 {
@@ -246,7 +261,9 @@ namespace ImageFolderManager.Services
             }
         }
 
-        // Add a folder to recent folders list
+        /// <summary>
+        /// Adds a folder to recent folders list
+        /// </summary>
         public void AddRecentFolder(string folderPath)
         {
             if (string.IsNullOrEmpty(folderPath) || !Directory.Exists(folderPath))
@@ -271,7 +288,9 @@ namespace ImageFolderManager.Services
             RecentFolders = updatedList;
         }
 
-        // Clear thumbnail cache
+        /// <summary>
+        /// Clears thumbnail cache
+        /// </summary>
         public void ClearThumbnailCache()
         {
             try
@@ -286,10 +305,17 @@ namespace ImageFolderManager.Services
             }
         }
 
+        #endregion
+
+        #region INotifyPropertyChanged Implementation
+
         public event PropertyChangedEventHandler PropertyChanged;
+
         protected void OnPropertyChanged([CallerMemberName] string propertyName = null)
         {
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
         }
+
+        #endregion
     }
 }

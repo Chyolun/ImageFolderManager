@@ -7,7 +7,7 @@ using System.Text.RegularExpressions;
 namespace ImageFolderManager.Services
 {
     /// <summary>
-    /// Comprehensive helper class for tag-related operations throughout the application
+    /// Helper class for tag-related operations
     /// </summary>
     public static class TagHelper
     {
@@ -17,11 +17,11 @@ namespace ImageFolderManager.Services
         #region Basic Tag Operations
 
         /// <summary>
-        /// Parses a string containing hash-separated tags into a collection of normalized tags
+        /// Parses a string containing tags
         /// </summary>
-        /// <param name="input">The input string containing tags (e.g., "#nature #animals #photography")</param>
-        /// <param name="removeDuplicates">Whether to remove duplicate tags (case-insensitive)</param>
-        /// <returns>A collection of parsed and normalized tags</returns>
+        /// <param name="input">Input string containing tags (e.g., "#nature #animals")</param>
+        /// <param name="removeDuplicates">Whether to remove duplicate tags</param>
+        /// <returns>Collection of normalized tags</returns>
         public static IEnumerable<string> ParseTags(string input, bool removeDuplicates = true)
         {
             if (string.IsNullOrWhiteSpace(input))
@@ -39,8 +39,6 @@ namespace ImageFolderManager.Services
         /// <summary>
         /// Formats a collection of tags into a hash-separated string
         /// </summary>
-        /// <param name="tags">The collection of tags</param>
-        /// <returns>A formatted string (e.g., "#nature #animals #photography")</returns>
         public static string FormatTags(IEnumerable<string> tags)
         {
             if (tags == null || !tags.Any())
@@ -52,8 +50,6 @@ namespace ImageFolderManager.Services
         /// <summary>
         /// Normalizes a tag by trimming whitespace and removing invalid characters
         /// </summary>
-        /// <param name="tag">The tag to normalize</param>
-        /// <returns>A normalized tag</returns>
         public static string NormalizeTag(string tag)
         {
             if (string.IsNullOrWhiteSpace(tag))
@@ -73,10 +69,8 @@ namespace ImageFolderManager.Services
         }
 
         /// <summary>
-        /// Checks if a tag is valid (not empty and contains only valid characters)
+        /// Checks if a tag is valid
         /// </summary>
-        /// <param name="tag">The tag to validate</param>
-        /// <returns>True if the tag is valid, false otherwise</returns>
         public static bool IsValidTag(string tag)
         {
             if (string.IsNullOrWhiteSpace(tag))
@@ -88,41 +82,38 @@ namespace ImageFolderManager.Services
 
         #endregion
 
-        #region Tag Collections Operations
+        #region Tag Collection Operations
 
         /// <summary>
-        /// Merges two sets of tags, removing duplicates (case-insensitive)
+        /// Modifies a tag collection (merge, remove, or replace)
         /// </summary>
-        /// <param name="tags1">First set of tags</param>
-        /// <param name="tags2">Second set of tags</param>
-        /// <returns>Merged collection of tags without duplicates</returns>
-        public static IEnumerable<string> MergeTags(IEnumerable<string> tags1, IEnumerable<string> tags2)
+        public static IEnumerable<string> ModifyTagCollection(
+            IEnumerable<string> sourceTags,
+            IEnumerable<string> modifierTags,
+            TagOperation operation)
         {
-            if (tags1 == null) tags1 = Enumerable.Empty<string>();
-            if (tags2 == null) tags2 = Enumerable.Empty<string>();
+            if (sourceTags == null) sourceTags = Enumerable.Empty<string>();
+            if (modifierTags == null || !modifierTags.Any())
+                return operation == TagOperation.Remove ? sourceTags : sourceTags;
 
-            return tags1.Union(tags2, StringComparer.OrdinalIgnoreCase);
+            switch (operation)
+            {
+                case TagOperation.Add:
+                    return sourceTags.Union(modifierTags, StringComparer.OrdinalIgnoreCase);
+                case TagOperation.Remove:
+                    return sourceTags.Except(modifierTags, StringComparer.OrdinalIgnoreCase);
+                case TagOperation.Replace:
+                    return modifierTags;
+                case TagOperation.Intersect:
+                    return sourceTags.Intersect(modifierTags, StringComparer.OrdinalIgnoreCase);
+                default:
+                    return sourceTags;
+            }
         }
 
         /// <summary>
-        /// Removes specified tags from a source collection (case-insensitive)
+        /// Finds common tags among multiple collections
         /// </summary>
-        /// <param name="sourceTags">Source collection of tags</param>
-        /// <param name="tagsToRemove">Tags to remove</param>
-        /// <returns>Collection with specified tags removed</returns>
-        public static IEnumerable<string> RemoveTags(IEnumerable<string> sourceTags, IEnumerable<string> tagsToRemove)
-        {
-            if (sourceTags == null) return Enumerable.Empty<string>();
-            if (tagsToRemove == null || !tagsToRemove.Any()) return sourceTags;
-
-            return sourceTags.Except(tagsToRemove, StringComparer.OrdinalIgnoreCase);
-        }
-
-        /// <summary>
-        /// Finds common tags among multiple collections (case-insensitive)
-        /// </summary>
-        /// <param name="tagCollections">Multiple collections of tags</param>
-        /// <returns>Collection of tags common to all input collections</returns>
         public static IEnumerable<string> FindCommonTags(IEnumerable<IEnumerable<string>> tagCollections)
         {
             if (tagCollections == null || !tagCollections.Any())
@@ -155,9 +146,6 @@ namespace ImageFolderManager.Services
         /// <summary>
         /// Updates an ObservableCollection of tags from a string input
         /// </summary>
-        /// <param name="targetCollection">The collection to update</param>
-        /// <param name="tagsInput">String containing tags separated by # symbols</param>
-        /// <returns>True if the collection was modified</returns>
         public static bool UpdateObservableCollection(ObservableCollection<string> targetCollection, string tagsInput)
         {
             if (targetCollection == null)
@@ -189,8 +177,6 @@ namespace ImageFolderManager.Services
         /// <summary>
         /// Parses search criteria for tags from a search string (terms starting with #)
         /// </summary>
-        /// <param name="searchText">The search text to parse</param>
-        /// <returns>Collection of tag search terms</returns>
         public static IEnumerable<string> ParseTagSearchTerms(string searchText)
         {
             if (string.IsNullOrWhiteSpace(searchText))
@@ -198,15 +184,13 @@ namespace ImageFolderManager.Services
 
             return searchText.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries)
                 .Where(term => term.StartsWith("#") && term.Length > 1)
-                .Select(term => term.Substring(1).ToLowerInvariant()) // Remove # prefix and convert to lowercase
+                .Select(term => term.Substring(1).ToLowerInvariant())
                 .Where(term => !string.IsNullOrWhiteSpace(term));
         }
 
         /// <summary>
         /// Creates a predicate function to test if a folder matches tag search criteria
         /// </summary>
-        /// <param name="tagSearchTerms">Collection of tag search terms</param>
-        /// <returns>A predicate function that tests if a folder's tags match the search criteria</returns>
         public static Func<IEnumerable<string>, bool> CreateTagSearchPredicate(IEnumerable<string> tagSearchTerms)
         {
             if (tagSearchTerms == null || !tagSearchTerms.Any())
@@ -229,8 +213,6 @@ namespace ImageFolderManager.Services
         /// <summary>
         /// Counts tag frequency across multiple collections
         /// </summary>
-        /// <param name="tagCollections">Multiple collections of tags</param>
-        /// <returns>Dictionary mapping tags to their frequency counts</returns>
         public static Dictionary<string, int> CountTagFrequency(IEnumerable<IEnumerable<string>> tagCollections)
         {
             var tagCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
@@ -264,38 +246,8 @@ namespace ImageFolderManager.Services
         #region UI Helpers
 
         /// <summary>
-        /// Suggests related tags based on current tags and a dictionary of tag frequencies
-        /// </summary>
-        /// <param name="currentTags">Current tags</param>
-        /// <param name="tagFrequencies">Dictionary mapping tags to their frequencies</param>
-        /// <param name="maxSuggestions">Maximum number of suggestions to return</param>
-        /// <returns>Collection of suggested tags</returns>
-        public static IEnumerable<string> SuggestRelatedTags(
-            IEnumerable<string> currentTags,
-            Dictionary<string, int> tagFrequencies,
-            int maxSuggestions = 5)
-        {
-            if (currentTags == null || !currentTags.Any() || tagFrequencies == null || !tagFrequencies.Any())
-                return Enumerable.Empty<string>();
-
-            // Create a set of current tags to exclude from suggestions
-            var currentTagSet = new HashSet<string>(currentTags, StringComparer.OrdinalIgnoreCase);
-
-            // Filter out current tags and sort by frequency
-            return tagFrequencies
-                .Where(kvp => !currentTagSet.Contains(kvp.Key))
-                .OrderByDescending(kvp => kvp.Value)
-                .Take(maxSuggestions)
-                .Select(kvp => kvp.Key);
-        }
-
-        /// <summary>
         /// Creates display text for a collection of tags
         /// </summary>
-        /// <param name="tags">Collection of tags</param>
-        /// <param name="prefix">Whether to include # prefix</param>
-        /// <param name="maxTags">Maximum number of tags to include (0 for all)</param>
-        /// <returns>Formatted string for display</returns>
         public static string CreateTagDisplayText(IEnumerable<string> tags, bool prefix = true, int maxTags = 0)
         {
             if (tags == null || !tags.Any())
@@ -320,5 +272,16 @@ namespace ImageFolderManager.Services
         }
 
         #endregion
+    }
+
+    /// <summary>
+    /// Tag operation enum
+    /// </summary>
+    public enum TagOperation
+    {
+        Add,
+        Remove,
+        Replace,
+        Intersect
     }
 }

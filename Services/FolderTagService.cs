@@ -8,20 +8,30 @@ using System.Threading.Tasks;
 
 namespace ImageFolderManager.Services
 {
+    /// <summary>
+    /// Service for managing folder tags and ratings
+    /// </summary>
     public class FolderTagService
     {
         private const string TagFileName = ".folderTags";
         public bool EnableCaching { get; set; } = true;
 
         // Thread-safe cache using ConcurrentDictionary
+        // Tuple stores: tag list, rating, file modification time
         private readonly ConcurrentDictionary<string, Tuple<List<string>, int, DateTime>> _tagCache
             = new ConcurrentDictionary<string, Tuple<List<string>, int, DateTime>>(StringComparer.OrdinalIgnoreCase);
 
+        /// <summary>
+        /// Clears the cache
+        /// </summary>
         public void ClearCache() => _tagCache.Clear();
 
+        /// <summary>
+        /// Gets tags for a folder
+        /// </summary>
         public Task<List<string>> GetTagsForFolderAsync(string folderPath)
         {
-            // Normalize path for consistent cache keys
+            // Normalize path to ensure consistent cache keys
             folderPath = PathService.NormalizePath(folderPath);
 
             if (string.IsNullOrEmpty(folderPath) || !PathService.DirectoryExists(folderPath))
@@ -47,6 +57,9 @@ namespace ImageFolderManager.Services
             });
         }
 
+        /// <summary>
+        /// Tries to get tags from cache
+        /// </summary>
         private bool TryGetCachedTags(string folderPath, out List<string> tags)
         {
             tags = new List<string>();
@@ -67,6 +80,9 @@ namespace ImageFolderManager.Services
             return true;
         }
 
+        /// <summary>
+        /// Loads tags and rating from file
+        /// </summary>
         private Tuple<List<string>, int> LoadTagsAndRatingFromFile(string folderPath)
         {
             folderPath = PathService.NormalizePath(folderPath);
@@ -114,9 +130,11 @@ namespace ImageFolderManager.Services
             }
         }
 
+        /// <summary>
+        /// Gets rating for a folder
+        /// </summary>
         public Task<int> GetRatingForFolderAsync(string folderPath)
         {
-            // Normalize path for consistent cache keys
             folderPath = PathService.NormalizePath(folderPath);
 
             if (string.IsNullOrEmpty(folderPath) || !PathService.DirectoryExists(folderPath))
@@ -126,7 +144,7 @@ namespace ImageFolderManager.Services
             {
                 try
                 {
-                    // Check cache first
+                    // Check cache
                     if (EnableCaching && _tagCache.TryGetValue(folderPath, out var cachedData))
                     {
                         string tagFilePath = Path.Combine(folderPath, TagFileName);
@@ -151,9 +169,11 @@ namespace ImageFolderManager.Services
             });
         }
 
+        /// <summary>
+        /// Sets tags and rating for a folder
+        /// </summary>
         public Task SetTagsAndRatingForFolderAsync(string folderPath, List<string> tags, int rating)
         {
-            // Normalize path for consistent cache keys
             folderPath = PathService.NormalizePath(folderPath);
 
             if (string.IsNullOrEmpty(folderPath) || !PathService.DirectoryExists(folderPath))
@@ -176,10 +196,11 @@ namespace ImageFolderManager.Services
                     string tagFilePath = Path.Combine(folderPath, TagFileName);
                     string content = string.Join("#", normalizedTags) + "|" + rating;
 
-                    // Ensure directory exists before writing
-                    if (!PathService.DirectoryExists(Path.GetDirectoryName(tagFilePath)))
+                    // Ensure directory exists
+                    string directoryPath = Path.GetDirectoryName(tagFilePath);
+                    if (!PathService.DirectoryExists(directoryPath))
                     {
-                        Directory.CreateDirectory(Path.GetDirectoryName(tagFilePath));
+                        Directory.CreateDirectory(directoryPath);
                     }
 
                     // Write to file
@@ -203,79 +224,7 @@ namespace ImageFolderManager.Services
         }
 
         /// <summary>
-        /// Moves tags from one folder to another, for use during folder rename/move operations
-        /// </summary>
-        public async Task MoveFolderTagsAsync(string sourceFolder, string destinationFolder)
-        {
-            // Normalize paths
-            sourceFolder = PathService.NormalizePath(sourceFolder);
-            destinationFolder = PathService.NormalizePath(destinationFolder);
-
-            // Validate paths
-            if (string.IsNullOrEmpty(sourceFolder) || string.IsNullOrEmpty(destinationFolder) ||
-                !PathService.DirectoryExists(sourceFolder))
-                return;
-
-            // Check if source folder has tags
-            string sourceTagFile = Path.Combine(sourceFolder, TagFileName);
-            if (!File.Exists(sourceTagFile))
-                return;
-
-            try
-            {
-                // Get the source tags and rating
-                var sourceTags = await GetTagsForFolderAsync(sourceFolder);
-                int sourceRating = await GetRatingForFolderAsync(sourceFolder);
-
-                // Set the same tags and rating on destination folder
-                await SetTagsAndRatingForFolderAsync(destinationFolder, sourceTags, sourceRating);
-
-                // Remove the tag cache entry for source folder
-                if (EnableCaching)
-                {
-                    _tagCache.TryRemove(sourceFolder, out _);
-                }
-
-                // Optionally, delete the source tag file if this is a move operation
-                // File.Delete(sourceTagFile);
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"Error moving folder tags: {ex.Message}");
-            }
-        }
-
-        /// <summary>
-        /// Copies tags from one folder to another, for use during folder copy operations
-        /// </summary>
-        public async Task CopyFolderTagsAsync(string sourceFolder, string destinationFolder)
-        {
-            // Normalize paths
-            sourceFolder = PathService.NormalizePath(sourceFolder);
-            destinationFolder = PathService.NormalizePath(destinationFolder);
-
-            // Validate paths
-            if (string.IsNullOrEmpty(sourceFolder) || string.IsNullOrEmpty(destinationFolder) ||
-                !PathService.DirectoryExists(sourceFolder))
-                return;
-
-            try
-            {
-                // Get the source tags and rating
-                var sourceTags = await GetTagsForFolderAsync(sourceFolder);
-                int sourceRating = await GetRatingForFolderAsync(sourceFolder);
-
-                // Set the same tags and rating on destination folder
-                await SetTagsAndRatingForFolderAsync(destinationFolder, sourceTags, sourceRating);
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"Error copying folder tags: {ex.Message}");
-            }
-        }
-
-        /// <summary>
-        /// Renames a tag across all tagged folders
+        /// Renames tags across all folders
         /// </summary>
         public async Task RenameTagAsync(string oldTag, string newTag, IEnumerable<string> folderPaths)
         {
@@ -287,7 +236,6 @@ namespace ImageFolderManager.Services
 
             foreach (var folderPath in folderPaths)
             {
-                // Normalize path
                 string normalizedPath = PathService.NormalizePath(folderPath);
 
                 // Skip if directory doesn't exist

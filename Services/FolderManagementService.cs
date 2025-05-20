@@ -9,11 +9,12 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using ImageFolderManager.Models;
+using ImageFolderManager.Services;
 
 namespace ImageFolderManager.Services
 {
     /// <summary>
-    /// Unified service for folder management and monitoring
+    /// Service for managing folders and file system events
     /// </summary>
     public class FolderManagementService : IDisposable
     {
@@ -23,26 +24,25 @@ namespace ImageFolderManager.Services
         private readonly FolderTagService _tagService = new FolderTagService();
 
         // Configuration parameters
-        private const int MAX_CONCURRENT_WATCHERS = 100;
+        private const int MAX_CONCURRENT_WATCHERS = 50;
         private const int EVENT_PROCESSING_DELAY_MS = 300;
         private const int MAX_EVENTS_PER_BATCH = 20;
-        private const int WATCHER_RESET_THRESHOLD = 5;
 
-        // Cache paths
-        private readonly string _thumbnailCachePath = Path.Combine(Path.GetTempPath(), "ImageFolderManager", "thumbnails");
+        // Event callback
+        private readonly Action<FolderInfo, FileSystemEventArgs, WatcherChangeTypes> _fileSystemEventCallback;
 
-        // Callback for file system events
-        private Action<FolderInfo, FileSystemEventArgs, WatcherChangeTypes> _fileSystemEventCallback;
+        // Track watched folders
+        private readonly Dictionary<string, FileSystemWatcher> _watchers =
+            new Dictionary<string, FileSystemWatcher>(StringComparer.OrdinalIgnoreCase);
 
-        // Track watched folders and their associated FileSystemWatcher instances
-        private readonly Dictionary<string, WatcherInfo> _watchers = new Dictionary<string, WatcherInfo>(StringComparer.OrdinalIgnoreCase);
-
-        // For handling event throttling and batching
-        private readonly ConcurrentQueue<FileSystemEventBatch> _pendingEvents = new ConcurrentQueue<FileSystemEventBatch>();
-        private readonly ConcurrentDictionary<string, FileSystemEventBatch> _activeBatches = new ConcurrentDictionary<string, FileSystemEventBatch>(StringComparer.OrdinalIgnoreCase);
+        // Event processing
+        private readonly ConcurrentQueue<FileSystemEventBatch> _pendingEvents =
+            new ConcurrentQueue<FileSystemEventBatch>();
+        private readonly ConcurrentDictionary<string, FileSystemEventBatch> _activeBatches =
+            new ConcurrentDictionary<string, FileSystemEventBatch>(StringComparer.OrdinalIgnoreCase);
         private readonly TimeSpan _eventProcessingDelay = TimeSpan.FromMilliseconds(EVENT_PROCESSING_DELAY_MS);
 
-        // Synchronization objects
+        // Synchronization
         private readonly SemaphoreSlim _processingLock = new SemaphoreSlim(1, 1);
         private readonly object _watcherLock = new object();
         private CancellationTokenSource _processingCancellation;
@@ -52,25 +52,6 @@ namespace ImageFolderManager.Services
         #endregion
 
         #region Nested Classes
-
-        /// <summary>
-        /// Represents information about a file system watcher, including error tracking
-        /// </summary>
-        private class WatcherInfo
-        {
-            public FileSystemWatcher Watcher { get; }
-            public FolderInfo FolderInfo { get; }
-            public int ErrorCount { get; set; }
-            public DateTime LastReset { get; set; }
-
-            public WatcherInfo(FileSystemWatcher watcher, FolderInfo folderInfo)
-            {
-                Watcher = watcher;
-                FolderInfo = folderInfo;
-                ErrorCount = 0;
-                LastReset = DateTime.Now;
-            }
-        }
 
         /// <summary>
         /// Represents a batch of file system events for a specific folder
@@ -86,7 +67,8 @@ namespace ImageFolderManager.Services
             {
                 FolderPath = folderPath;
                 FolderInfo = folderInfo;
-                Events = new ConcurrentDictionary<string, Tuple<FileSystemEventArgs, WatcherChangeTypes>>(StringComparer.OrdinalIgnoreCase);
+                Events = new ConcurrentDictionary<string, Tuple<FileSystemEventArgs, WatcherChangeTypes>>(
+                    StringComparer.OrdinalIgnoreCase);
                 CreationTime = DateTime.Now;
             }
         }
@@ -99,7 +81,8 @@ namespace ImageFolderManager.Services
         /// Initializes a new instance of the FolderManagementService
         /// </summary>
         /// <param name="fileSystemEventCallback">Callback for file system events</param>
-        public FolderManagementService(Action<FolderInfo, FileSystemEventArgs, WatcherChangeTypes> fileSystemEventCallback = null)
+        public FolderManagementService(
+            Action<FolderInfo, FileSystemEventArgs, WatcherChangeTypes> fileSystemEventCallback = null)
         {
             _fileSystemEventCallback = fileSystemEventCallback;
             _processingCancellation = new CancellationTokenSource();
@@ -116,13 +99,11 @@ namespace ImageFolderManager.Services
 
         #endregion
 
-        #region Folder Loading and Creation Methods
+        #region Folder Loading Methods
 
         /// <summary>
         /// Loads a root folder and its immediate subfolders
         /// </summary>
-        /// <param name="path">Path to the root folder</param>
-        /// <returns>A FolderInfo object representing the root folder</returns>
         public async Task<FolderInfo> LoadRootFolderAsync(string path)
         {
             var root = await CreateFolderInfoWithoutImagesAsync(path);
@@ -137,7 +118,6 @@ namespace ImageFolderManager.Services
         /// <summary>
         /// Loads the immediate subfolders of a parent folder
         /// </summary>
-        /// <param name="parent">Parent folder</param>
         public async Task LoadSubfoldersAsync(FolderInfo parent)
         {
             try
@@ -163,9 +143,6 @@ namespace ImageFolderManager.Services
         /// <summary>
         /// Creates a FolderInfo object without loading images
         /// </summary>
-        /// <param name="path">Folder path</param>
-        /// <param name="loadImages">Whether to load images in the background</param>
-        /// <returns>A FolderInfo object</returns>
         public async Task<FolderInfo> CreateFolderInfoWithoutImagesAsync(string path, bool loadImages = false)
         {
             var folder = new FolderInfo
@@ -186,9 +163,8 @@ namespace ImageFolderManager.Services
         }
 
         /// <summary>
-        /// Loads images for a folder in the background
+        /// Loads images for a folder
         /// </summary>
-        /// <param name="folder">The folder to load images for</param>
         public async Task LoadImagesAsync(FolderInfo folder)
         {
             var supportedExtensions = new[] { ".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp" };
@@ -229,9 +205,6 @@ namespace ImageFolderManager.Services
         /// <summary>
         /// Recursively loads all folders under a root path
         /// </summary>
-        /// <param name="rootPath">Root path to start loading from</param>
-        /// <param name="watchFolders">Whether to watch loaded folders for changes</param>
-        /// <returns>A list of all loaded folders</returns>
         public async Task<List<FolderInfo>> LoadFoldersRecursivelyAsync(string rootPath, bool watchFolders = false)
         {
             // Before starting a recursive scan, disable caching in the tag service
@@ -259,7 +232,11 @@ namespace ImageFolderManager.Services
         /// <summary>
         /// Recursively traverses a directory structure
         /// </summary>
-        private async Task TraverseDirectoriesAsync(string path, FolderInfo parent, List<FolderInfo> result, bool watchFolders)
+        private async Task TraverseDirectoriesAsync(
+            string path,
+            FolderInfo parent,
+            List<FolderInfo> result,
+            bool watchFolders)
         {
             if (!PathService.DirectoryExists(path))
             {
@@ -292,7 +269,7 @@ namespace ImageFolderManager.Services
                 string[] subDirectories;
                 try
                 {
-                    subDirectories = Directory.GetDirectories(path);            
+                    subDirectories = Directory.GetDirectories(path);
                 }
                 catch (UnauthorizedAccessException)
                 {
@@ -320,7 +297,6 @@ namespace ImageFolderManager.Services
         /// <summary>
         /// Starts watching a folder for file system changes
         /// </summary>
-        /// <param name="folder">The folder to watch</param>
         public void WatchFolder(FolderInfo folder)
         {
             if (_fileSystemEventCallback == null)
@@ -359,7 +335,7 @@ namespace ImageFolderManager.Services
                         EnableRaisingEvents = true
                     };
 
-                    // Setup event handlers with error handling
+                    // Setup event handlers
                     watcher.Created += (s, e) => SafelyHandleEvent(folder, e, WatcherChangeTypes.Created);
                     watcher.Deleted += (s, e) => SafelyHandleEvent(folder, e, WatcherChangeTypes.Deleted);
                     watcher.Renamed += (s, e) => SafelyHandleEvent(folder, e, WatcherChangeTypes.Renamed);
@@ -367,9 +343,7 @@ namespace ImageFolderManager.Services
                     watcher.Error += (s, e) => HandleWatcherError(normalizedPath, e);
 
                     // Store the watcher
-                    _watchers[normalizedPath] = new WatcherInfo(watcher, folder);
-
-                    Debug.WriteLine($"Started watching folder: {normalizedPath}");
+                    _watchers[normalizedPath] = watcher;
                 }
                 catch (Exception ex)
                 {
@@ -414,48 +388,28 @@ namespace ImageFolderManager.Services
             Exception ex = e.GetException();
             Debug.WriteLine($"FileSystemWatcher error for {folderPath}: {ex.Message}");
 
+            // Try to recreate the watcher if needed
             lock (_watcherLock)
             {
-                if (_watchers.TryGetValue(folderPath, out var watcherInfo))
+                if (_watchers.TryGetValue(folderPath, out var watcher))
                 {
-                    // Increment error count
-                    watcherInfo.ErrorCount++;
-
-                    // If we've hit threshold, try to reset watcher
-                    if (watcherInfo.ErrorCount >= WATCHER_RESET_THRESHOLD)
+                    try
                     {
-                        // Only reset if last reset was more than 30 seconds ago
-                        if ((DateTime.Now - watcherInfo.LastReset).TotalSeconds > 30)
+                        // Dispose the current watcher
+                        watcher.EnableRaisingEvents = false;
+                        watcher.Dispose();
+                        _watchers.Remove(folderPath);
+
+                        // Only recreate if folder still exists
+                        if (Directory.Exists(folderPath))
                         {
-                            Debug.WriteLine($"Resetting watcher for {folderPath} after {watcherInfo.ErrorCount} errors");
-
-                            try
-                            {
-                                // Dispose and recreate watcher
-                                var oldWatcher = watcherInfo.Watcher;
-                                oldWatcher.EnableRaisingEvents = false;
-                                oldWatcher.Dispose();
-
-                                // Only recreate if folder still exists
-                                if (Directory.Exists(folderPath))
-                                {
-                                    WatchFolder(watcherInfo.FolderInfo);
-                                }
-                                else
-                                {
-                                    _watchers.Remove(folderPath);
-                                }
-                            }
-                            catch (Exception resetEx)
-                            {
-                                Debug.WriteLine($"Error resetting watcher: {resetEx.Message}");
-                            }
-                            finally
-                            {
-                                watcherInfo.ErrorCount = 0;
-                                watcherInfo.LastReset = DateTime.Now;
-                            }
+                            var folderInfo = new FolderInfo { FolderPath = folderPath };
+                            WatchFolder(folderInfo);
                         }
+                    }
+                    catch (Exception resetEx)
+                    {
+                        Debug.WriteLine($"Error resetting watcher: {resetEx.Message}");
                     }
                 }
             }
@@ -526,8 +480,6 @@ namespace ImageFolderManager.Services
                     // Skip if folder doesn't exist anymore or has too many events
                     if (!Directory.Exists(folderPath) || batch.Events.Count > 100)
                     {
-                        Debug.WriteLine($"Skipping batch for {folderPath}: " +
-                            (!Directory.Exists(folderPath) ? "Folder no longer exists" : $"Too many events ({batch.Events.Count})"));
                         continue;
                     }
 
@@ -564,7 +516,6 @@ namespace ImageFolderManager.Services
         /// <summary>
         /// Stops watching a folder
         /// </summary>
-        /// <param name="folderPath">Path of the folder to stop watching</param>
         public void UnwatchFolder(string folderPath)
         {
             if (string.IsNullOrEmpty(folderPath))
@@ -576,35 +527,21 @@ namespace ImageFolderManager.Services
             {
                 if (_isDisposed) return;
 
-                if (_watchers.TryGetValue(normalizedPath, out var watcherInfo))
+                if (_watchers.TryGetValue(normalizedPath, out var watcher))
                 {
                     try
                     {
-                        watcherInfo.Watcher.EnableRaisingEvents = false;
-                        watcherInfo.Watcher.Dispose();
+                        watcher.EnableRaisingEvents = false;
+                        watcher.Dispose();
+                        _watchers.Remove(normalizedPath);
                     }
                     catch (Exception ex)
                     {
                         Debug.WriteLine($"Error disposing watcher: {ex.Message}");
                     }
-                    finally
-                    {
-                        _watchers.Remove(normalizedPath);
-                    }
-                }
-
-                // Also unwatch any subfolders
-                var subfoldersToUnwatch = _watchers.Keys
-                    .Where(path => PathService.IsPathWithin(normalizedPath, path))
-                    .ToList();
-
-                foreach (var subPath in subfoldersToUnwatch)
-                {
-                    UnwatchFolder(subPath);
                 }
             }
         }
-
 
         /// <summary>
         /// Stops watching all folders
@@ -615,12 +552,12 @@ namespace ImageFolderManager.Services
             {
                 if (_isDisposed) return;
 
-                foreach (var watcherInfo in _watchers.Values)
+                foreach (var watcher in _watchers.Values)
                 {
                     try
                     {
-                        watcherInfo.Watcher.EnableRaisingEvents = false;
-                        watcherInfo.Watcher.Dispose();
+                        watcher.EnableRaisingEvents = false;
+                        watcher.Dispose();
                     }
                     catch (Exception ex)
                     {
@@ -629,17 +566,6 @@ namespace ImageFolderManager.Services
                 }
 
                 _watchers.Clear();
-            }
-        }
-
-        /// <summary>
-        /// Returns a list of currently watched folders
-        /// </summary>
-        public List<string> GetWatchedFolders()
-        {
-            lock (_watcherLock)
-            {
-                return _watchers.Keys.ToList();
             }
         }
 
@@ -668,12 +594,12 @@ namespace ImageFolderManager.Services
                 catch { /* Ignore exceptions during shutdown */ }
 
                 // Dispose all watchers
-                foreach (var watcherInfo in _watchers.Values)
+                foreach (var watcher in _watchers.Values)
                 {
                     try
                     {
-                        watcherInfo.Watcher.EnableRaisingEvents = false;
-                        watcherInfo.Watcher.Dispose();
+                        watcher.EnableRaisingEvents = false;
+                        watcher.Dispose();
                     }
                     catch { /* Ignore exceptions during shutdown */ }
                 }
