@@ -124,7 +124,6 @@
       <DependentUpon>BatchTagsDialog.xaml</DependentUpon>
     </Compile>
     <Compile Include="Views\Converter.cs" />
-    <Compile Include="Views\FileExplorerView.cs" />
     <Compile Include="Views\ImportFolderDialog.xaml.cs">
       <DependentUpon>ImportFolderDialog.xaml</DependentUpon>
     </Compile>
@@ -136,6 +135,9 @@
     </Compile>
     <Compile Include="Views\RenameTagDialog.xaml.cs">
       <DependentUpon>RenameTagDialog.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="Views\ShellTreeView.xaml.cs">
+      <DependentUpon>ShellTreeView.xaml</DependentUpon>
     </Compile>
     <Compile Include="Views\TagCloudWindow.xaml.cs">
       <DependentUpon>TagCloudWindow.xaml</DependentUpon>
@@ -176,6 +178,10 @@
       <Generator>MSBuild:Compile</Generator>
     </Page>
     <Page Include="Views\RenameTagDialog.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="Views\ShellTreeView.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>

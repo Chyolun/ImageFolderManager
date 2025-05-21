@@ -54,7 +54,11 @@ namespace ImageFolderManager.ViewModels
                 }
             }
         }
-       
+        public void WatchFolder(FolderInfo folder)
+        {
+            _folderManager.WatchFolder(folder);
+        }
+
 
         private bool _isSearching;
         public bool IsSearching
@@ -211,31 +215,26 @@ namespace ImageFolderManager.ViewModels
         // Method to load a directory
         public async Task LoadDirectoryAsync(string path)
         {
-            // Validate path
-            if (string.IsNullOrEmpty(path) || !Directory.Exists(path))
+            // Stop watching previous folders
+
+            _folderManager.UnwatchAllFolders();
+            var folders = await _folderManager.LoadFoldersRecursivelyAsync(path);
+
+            _allLoadedFolders = folders;
+
+            RootFolders.Clear();
+            var root = folders.FirstOrDefault(f => f.FolderPath == path);
+            if (root != null)
             {
-                StatusMessage = "Invalid directory path.";
-                return;
+                root.LoadChildren(); // Initialize for expansion
+                RootFolders.Add(root);
+
+                // Start watching the root folder
+                _folderManager.WatchFolder(root);
             }
 
-            try
-            {
-                StatusMessage = $"Loading directory {path}...";
-
-                // Use FolderManagementService to load all folders recursively
-                var folders = await _folderManager.LoadFoldersRecursivelyAsync(path, true);
-                _allLoadedFolders = folders;
-
-                // Update tag cloud
-                await UpdateTagCloudAsync();
-
-                StatusMessage = $"Loaded directory: {path}";
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"Error loading directory: {ex.Message}");
-                StatusMessage = $"Error loading directory: {ex.Message}";
-            }
+            // Update tag cloud after loading folders;
+            await UpdateTagCloudAsync();
         }
 
         // Method to modify preview size
@@ -1342,89 +1341,142 @@ namespace ImageFolderManager.ViewModels
 
         public async Task DeleteFolderAsync(FolderInfo folder)
         {
-            if (folder == null || string.IsNullOrEmpty(folder.FolderPath))
-            {
-                MessageBox.Show("No folder selected to delete.",
-                    "Delete Failed", MessageBoxButton.OK, MessageBoxImage.Warning);
+            if (folder == null) return;
+
+            var result = MessageBox.Show(
+                $"Are you sure you want to delete the folder:\n\n{folder.FolderPath}?",
+                "Confirm Delete",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Warning);
+
+            if (result != MessageBoxResult.Yes)
                 return;
-            }
 
             try
             {
-                // Check if it's the root directory
-                if (!string.IsNullOrEmpty(AppSettings.Instance.DefaultRootDirectory) &&
-                    folder.FolderPath.Equals(AppSettings.Instance.DefaultRootDirectory, StringComparison.OrdinalIgnoreCase))
-                {
-                    MessageBox.Show("Cannot delete the root directory.",
-                        "Delete Failed", MessageBoxButton.OK, MessageBoxImage.Error);
-                    return;
-                }
-
-                // Confirm deletion
-                var result = MessageBox.Show(
-                    $"Are you sure you want to delete folder '{folder.Name}'?\nThis will move it to the Recycle Bin.",
-                    "Confirm Delete",
-                    MessageBoxButton.YesNo,
-                    MessageBoxImage.Warning);
-
-                if (result != MessageBoxResult.Yes)
-                    return;
-
-                // Remember parent path for selection after deletion
-                string parentPath = Path.GetDirectoryName(folder.FolderPath);
-                FolderInfo parentFolder = null;
-
-                if (!string.IsNullOrEmpty(parentPath))
-                {
-                    parentFolder = _allLoadedFolders.FirstOrDefault(f =>
-                        f.FolderPath.Equals(parentPath, StringComparison.OrdinalIgnoreCase));
-                }
+                // Store the parent before deletion for later use
+                var parentFolder = folder.Parent;
+                string folderPath = folder.FolderPath;
 
                 // Stop watching this folder before deletion
-                _folderManager.UnwatchFolder(folder.FolderPath);
+                _folderManager.UnwatchFolder(folderPath);
 
                 // Delete to recycle bin
                 Microsoft.VisualBasic.FileIO.FileSystem.DeleteDirectory(
-                    folder.FolderPath,
+                    folderPath,
                     Microsoft.VisualBasic.FileIO.UIOption.OnlyErrorDialogs,
                     Microsoft.VisualBasic.FileIO.RecycleOption.SendToRecycleBin);
 
+                // Invalidate path cache after deletion
+                PathService.InvalidatePathCache(folderPath, true);
+
                 // Remove from _allLoadedFolders
-                _allLoadedFolders.RemoveAll(f =>
-                    f.FolderPath.Equals(folder.FolderPath, StringComparison.OrdinalIgnoreCase) ||
-                    f.FolderPath.StartsWith(folder.FolderPath + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase));
+                RemoveFolderAndSubfoldersFromAllLoaded(folderPath);
 
                 // Remove from search results
-                var itemsToRemove = SearchResultFolders.Where(f =>
-                    f.FolderPath.Equals(folder.FolderPath, StringComparison.OrdinalIgnoreCase) ||
-                    f.FolderPath.StartsWith(folder.FolderPath + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
-                    .ToList();
+                RemoveFolderAndSubfoldersFromSearchResults(folderPath);
 
-                foreach (var item in itemsToRemove)
-                {
-                    SearchResultFolders.Remove(item);
-                }
+                // Remove from tree structure - using path for more reliable matching
+                RemoveFolderFromTree(folder);
 
                 // Select parent folder if available
                 if (parentFolder != null)
                 {
                     SelectedFolder = parentFolder;
-                    await SetSelectedFolderAsync(parentFolder);
+                    await LoadImagesForSelectedFolderAsync();
                 }
-
-                // Update tag cloud
-                await UpdateTagCloudAsync();
-
-                // Update status
-                StatusMessage = $"Deleted folder: {folder.Name}";
+                StatusMessage = $"Successfully deleted folder '{folder.Name}'";
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Error deleting folder: {ex.Message}",
-                    "Delete Failed", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show($"Failed to delete folder: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
+        // New improved method to remove from tree
+        public void RemoveFolderFromTree(FolderInfo folder)
+        {
+            if (folder == null) return;
+
+            // Case 1: Remove from root folders if it's a root folder
+            if (RootFolders.Contains(folder))
+            {
+                RootFolders.Remove(folder);
+                return;
+            }
+
+            // Case 2: Remove from parent's children if parent is available
+            if (folder.Parent != null && folder.Parent.Children != null)
+            {
+                if (folder.Parent.Children.Contains(folder))
+                {
+                    folder.Parent.Children.Remove(folder);
+                    return;
+                }
+            }
+
+            // Case 3: Fallback - recursively search through the entire tree
+            // by path comparison to handle cases where object references differ
+            RecursiveRemoveFolderByPath(RootFolders, folder.FolderPath);
+        }
+
+        private bool RemoveFolderRecursive(ObservableCollection<FolderInfo> folders, FolderInfo target)
+        {
+            if (folders == null) return false;
+
+            // First, check if the target is in this collection
+            if (folders.Contains(target))
+            {
+                folders.Remove(target);
+                return true;
+            }
+
+            // If not, search through all children
+            foreach (var folder in folders.ToList()) // Use ToList to avoid collection modification issues
+            {
+                if (folder?.Children != null)
+                {
+                    if (RemoveFolderRecursive(folder.Children, target))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        private bool RecursiveRemoveFolderByPath(ObservableCollection<FolderInfo> folders, string targetPath)
+        {
+            if (folders == null) return false;
+
+            // Normalize target path
+            string normalizedTarget = PathService.NormalizePath(targetPath);
+            bool removed = false;  // Track if we found any matches
+
+            // Use ToList() to avoid collection modification exceptions during enumeration
+            foreach (var folder in folders.ToList())
+            {
+                // Check if this is the folder we want to remove using PathService
+                if (folder != null && folder.FolderPath != null &&
+                    PathService.PathsEqual(folder.FolderPath, normalizedTarget))
+                {
+                    folders.Remove(folder);
+                    removed = true;
+                    // Continue searching instead of returning immediately
+                }
+
+                // Check children
+                if (folder?.Children != null)
+                {
+                    // Combine result with recursive call
+                    bool childRemoved = RecursiveRemoveFolderByPath(folder.Children, normalizedTarget);
+                    removed = removed || childRemoved;
+                }
+            }
+
+            return removed;
+        }
 
         /// <summary>
         /// Gets the source parent directory for the current clipboard content
@@ -1507,68 +1559,77 @@ namespace ImageFolderManager.ViewModels
             }
         }
 
-        public async Task CreateNewFolderAsync(FolderInfo parentFolder, string folderName)
+        public async Task CreateNewFolder(FolderInfo parentFolder)
         {
-            if (parentFolder == null || string.IsNullOrEmpty(parentFolder.FolderPath))
+            if (parentFolder == null) return;
+
+            // Show input dialog
+            string folderName = Microsoft.VisualBasic.Interaction.InputBox(
+                "Enter new folder name:",
+                "New Folder",
+                "New Folder");
+
+            // If user cancelled or name is empty, do nothing
+            if (string.IsNullOrWhiteSpace(folderName))
+                return;
+
+            // Check for invalid characters in folder name
+            if (folderName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
             {
-                MessageBox.Show("No parent folder selected.",
-                    "Create Folder Failed", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show("The folder name contains invalid characters.",
+                    "Invalid Name", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
-            if (string.IsNullOrWhiteSpace(folderName))
+            // Construct new path
+            string normalizedPath = PathService.NormalizePath(parentFolder.FolderPath);
+            string newPath = Path.Combine(normalizedPath, folderName);
+
+            // Check if destination already exists
+            if (PathService.DirectoryExists(newPath))
             {
-                MessageBox.Show("Folder name cannot be empty.",
-                    "Create Folder Failed", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show($"A folder named '{folderName}' already exists in this location.",
+                    "Cannot Create Folder", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
             try
             {
-                // Check if directory exists
-                if (!Directory.Exists(parentFolder.FolderPath))
-                {
-                    MessageBox.Show("The parent directory does not exist.",
-                        "Create Folder Failed", MessageBoxButton.OK, MessageBoxImage.Warning);
-                    return;
-                }
-
-                // Check for invalid characters
-                if (folderName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
-                {
-                    MessageBox.Show("The folder name contains invalid characters.",
-                        "Create Folder Failed", MessageBoxButton.OK, MessageBoxImage.Warning);
-                    return;
-                }
-
-                // Build new path
-                string newPath = Path.Combine(parentFolder.FolderPath, folderName);
-
-                // Check if already exists
-                if (Directory.Exists(newPath))
-                {
-                    MessageBox.Show($"A folder named '{folderName}' already exists in this location.",
-                        "Create Folder Failed", MessageBoxButton.OK, MessageBoxImage.Warning);
-                    return;
-                }
-
                 // Create the directory
                 Directory.CreateDirectory(newPath);
 
-                // Create FolderInfo for the new folder
-                var newFolder = new FolderInfo(newPath)
+                // IMPORTANT: Invalidate the path cache for both parent folder and new folder
+                PathService.InvalidatePathCache(normalizedPath, false);
+                PathService.InvalidatePathCache(newPath, false);
+
+                // Refresh the parent node to show the new folder
+                parentFolder.LoadChildren();
+
+                // Start watching the parent folder to detect changes
+                _folderManager.WatchFolder(parentFolder);
+
+                // Notify ShellTreeView to refresh
+                if (Application.Current.MainWindow is MainWindow mainWindow &&
+                    mainWindow.ShellTreeViewControl != null)
                 {
-                    Parent = parentFolder
-                };
+                    // Call RefreshTree to update the visual tree
+                    mainWindow.ShellTreeViewControl.RefreshTree();
+                }
 
-                // Add to _allLoadedFolders for search functionality
-                _allLoadedFolders.Add(newFolder);
+                // Find the newly created folder in the parent's children
+                FolderInfo newFolder = parentFolder.Children.FirstOrDefault(f => f.FolderPath == newPath);
 
-                // Refresh all folders to ensure consistent state
-                await RefreshAllFoldersDataAsync();
+                if (newFolder != null)
+                {
+                    // Add to allLoadedFolders for search functionality
+                    _allLoadedFolders.Add(newFolder);
 
-                // Update status
-                StatusMessage = $"Created new folder: {folderName}";
+                    // Watch the new folder
+                    _folderManager.WatchFolder(newFolder);
+                }
+
+                // Update tag cloud
+                await UpdateTagCloudAsync();
             }
             catch (Exception ex)
             {
@@ -1817,184 +1878,184 @@ namespace ImageFolderManager.ViewModels
         }
 
         public async Task DeleteMultipleFolders(List<FolderInfo> folders)
+{
+    if (folders == null || folders.Count == 0)
+        return;
+
+    // Add confirmation dialog before deleting
+    var result = MessageBox.Show(
+        $"Are you sure you want to delete {folders.Count} folders?",
+        "Confirm Deletion",
+        MessageBoxButton.YesNo,
+        MessageBoxImage.Warning);
+
+    if (result != MessageBoxResult.Yes)
+        return;
+
+    try
+    {
+        // Create progress dialog
+        var progressDialog = new Views.ProgressDialog(
+            "Deleting Folders",
+            $"Deleting {folders.Count} folders...");
+
+        // Set progress dialog owner
+        progressDialog.Owner = Application.Current.MainWindow;
+
+        // Track deleted folders for undo operation
+        var operation = new FolderMoveOperation
         {
-            if (folders == null || folders.Count == 0)
-                return;
+            SourcePaths = folders.Select(f => f.FolderPath).ToList(),
+            // Use "RecycleBin" as a special destination to indicate deletion
+            DestinationPath = "RecycleBin",
+            IsMultipleMove = true,
+            Timestamp = DateTime.Now,
+            SourceParentPaths = folders
+                .Select(f => Path.GetDirectoryName(f.FolderPath))
+                .Distinct()
+                .ToList()
+        };
 
-            // Add confirmation dialog before deleting
-            var result = MessageBox.Show(
-                $"Are you sure you want to delete {folders.Count} folders?",
-                "Confirm Deletion",
-                MessageBoxButton.YesNo,
-                MessageBoxImage.Warning);
-
-            if (result != MessageBoxResult.Yes)
-                return;
-
-            try
+        using (var cts = new CancellationTokenSource())
+        {
+            // Handle cancellation request
+            progressDialog.CancelRequested += (s, e) =>
             {
-                // Create progress dialog
-                var progressDialog = new Views.ProgressDialog(
-                    "Deleting Folders",
-                    $"Deleting {folders.Count} folders...");
+                cts.Cancel();
+                StatusMessage = "Delete operation cancelled.";
+            };
 
-                // Set progress dialog owner
-                progressDialog.Owner = Application.Current.MainWindow;
-
-                // Track deleted folders for undo operation
-                var operation = new FolderMoveOperation
+            // Create background task to delete folders
+            var deleteTask = Task.Run(async () =>
+            {
+                try
                 {
-                    SourcePaths = folders.Select(f => f.FolderPath).ToList(),
-                    // Use "RecycleBin" as a special destination to indicate deletion
-                    DestinationPath = "RecycleBin",
-                    IsMultipleMove = true,
-                    Timestamp = DateTime.Now,
-                    SourceParentPaths = folders
-                        .Select(f => Path.GetDirectoryName(f.FolderPath))
-                        .Distinct()
-                        .ToList()
-                };
+                    int total = folders.Count;
+                    int processed = 0;
+                    bool anyDeleted = false;
 
-                using (var cts = new CancellationTokenSource())
-                {
-                    // Handle cancellation request
-                    progressDialog.CancelRequested += (s, e) =>
+                    foreach (var folder in folders)
                     {
-                        cts.Cancel();
-                        StatusMessage = "Delete operation cancelled.";
-                    };
+                        // Check for cancellation
+                        if (cts.Token.IsCancellationRequested)
+                            break;
 
-                    // Create background task to delete folders
-                    var deleteTask = Task.Run(async () =>
-                    {
+                        // Skip the root directory
+                        if (!string.IsNullOrEmpty(AppSettings.Instance.DefaultRootDirectory) &&
+                            folder.FolderPath.Equals(AppSettings.Instance.DefaultRootDirectory, StringComparison.OrdinalIgnoreCase))
+                        {
+                            processed++;
+                            continue;
+                        }
+
                         try
                         {
-                            int total = folders.Count;
-                            int processed = 0;
-                            bool anyDeleted = false;
+                            // Update progress
+                            double progress = (double)processed / total;
+                            progressDialog.UpdateProgress(progress, $"Deleting {processed + 1} of {total}: {folder.Name}");
 
-                            foreach (var folder in folders)
+                            // Store the parent before deletion for later use
+                            var parentFolder = folder.Parent;
+                            string folderPath = folder.FolderPath;
+
+                            // Stop watching this folder before deletion
+                            _folderManager.UnwatchFolder(folderPath);
+
+                            // Delete to recycle bin
+                            Microsoft.VisualBasic.FileIO.FileSystem.DeleteDirectory(
+                                folderPath,
+                                Microsoft.VisualBasic.FileIO.UIOption.OnlyErrorDialogs,
+                                Microsoft.VisualBasic.FileIO.RecycleOption.SendToRecycleBin);
+
+                            anyDeleted = true;
+
+                            // Remove from _allLoadedFolders
+                            RemoveFolderAndSubfoldersFromAllLoaded(folderPath);
+
+                            // Remove from search results
+                            RemoveFolderAndSubfoldersFromSearchResults(folderPath);
+
+                            // Remove from tree structure
+                            await Application.Current.Dispatcher.InvokeAsync(() =>
                             {
-                                // Check for cancellation
-                                if (cts.Token.IsCancellationRequested)
-                                    break;
+                                RemoveFolderFromTree(folder);
+                            });
 
-                                // Skip the root directory
-                                if (!string.IsNullOrEmpty(AppSettings.Instance.DefaultRootDirectory) &&
-                                    folder.FolderPath.Equals(AppSettings.Instance.DefaultRootDirectory, StringComparison.OrdinalIgnoreCase))
-                                {
-                                    processed++;
-                                    continue;
-                                }
-
-                                try
-                                {
-                                    // Update progress
-                                    double progress = (double)processed / total;
-                                    progressDialog.UpdateProgress(progress, $"Deleting {processed + 1} of {total}: {folder.Name}");
-
-                                    // Store the parent before deletion for later use
-                                    var parentFolder = folder.Parent;
-                                    string folderPath = folder.FolderPath;
-
-                                    // Stop watching this folder before deletion
-                                    _folderManager.UnwatchFolder(folderPath);
-
-                                    // Delete to recycle bin
-                                    Microsoft.VisualBasic.FileIO.FileSystem.DeleteDirectory(
-                                        folderPath,
-                                        Microsoft.VisualBasic.FileIO.UIOption.OnlyErrorDialogs,
-                                        Microsoft.VisualBasic.FileIO.RecycleOption.SendToRecycleBin);
-
-                                    anyDeleted = true;
-
-                                    // Remove from _allLoadedFolders
-                                    RemoveFolderAndSubfoldersFromAllLoaded(folderPath);
-
-                                    // Remove from search results
-                                    RemoveFolderAndSubfoldersFromSearchResults(folderPath);
-
-                                    // Remove from tree structure
-                                    await Application.Current.Dispatcher.InvokeAsync(() =>
-                                    {
-                                        RemoveFolderFromTree(folder);
-                                    });
-
-                                    // Brief delay to prevent UI freezing
-                                    await Task.Delay(50, cts.Token);
-                                }
-                                catch (Exception ex)
-                                {
-                                    Debug.WriteLine($"Error deleting folder {folder.FolderPath}: {ex.Message}");
-                                }
-
-                                processed++;
-                            }
-
-                            // Update final progress
-                            progressDialog.UpdateProgress(1.0, "Delete completed");
-
-                            // Add to undo stack if any folders were deleted
-                            if (anyDeleted)
-                            {
-                                await Application.Current.Dispatcher.InvokeAsync(() =>
-                                {
-                                    _undoStack.Push(operation);
-                                    CommandManager.InvalidateRequerySuggested(); // Refresh command state
-                                });
-                            }
-
-                            return true;
-                        }
-                        catch (OperationCanceledException)
-                        {
-                            // Operation was canceled
-                            return false;
+                            // Brief delay to prevent UI freezing
+                            await Task.Delay(50, cts.Token);
                         }
                         catch (Exception ex)
                         {
-                            Debug.WriteLine($"Error in delete operation: {ex.Message}");
-                            await Application.Current.Dispatcher.InvokeAsync(() =>
-                            {
-                                MessageBox.Show($"Error deleting folders: {ex.Message}",
-                                    "Delete Error", MessageBoxButton.OK, MessageBoxImage.Error);
-                            });
-                            return false;
+                            Debug.WriteLine($"Error deleting folder {folder.FolderPath}: {ex.Message}");
                         }
-                    }, cts.Token);
 
-                    // Show modal progress dialog
-                    progressDialog.ShowDialog();
-
-                    // If dialog closes due to cancel button, ensure operation is cancelled
-                    if (progressDialog.IsCancelled && !cts.IsCancellationRequested)
-                    {
-                        cts.Cancel();
+                        processed++;
                     }
 
-                    // Wait for delete task to complete
-                    bool success = await deleteTask;
+                    // Update final progress
+                    progressDialog.UpdateProgress(1.0, "Delete completed");
 
-                    // Update status
-                    if (success && !cts.IsCancellationRequested)
+                    // Add to undo stack if any folders were deleted
+                    if (anyDeleted)
                     {
-                        StatusMessage = $"Successfully deleted {folders.Count} folders";
+                        await Application.Current.Dispatcher.InvokeAsync(() =>
+                        {
+                            _undoStack.Push(operation);
+                            CommandManager.InvalidateRequerySuggested(); // Refresh command state
+                        });
+                    }
 
-                        // Update tag cloud
-                        await UpdateTagCloudAsync();
-                    }
-                    else if (cts.IsCancellationRequested)
-                    {
-                        StatusMessage = "Delete operation cancelled";
-                    }
+                    return true;
                 }
-            }
-            catch (Exception ex)
+                catch (OperationCanceledException)
+                {
+                    // Operation was canceled
+                    return false;
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"Error in delete operation: {ex.Message}");
+                    await Application.Current.Dispatcher.InvokeAsync(() =>
+                    {
+                        MessageBox.Show($"Error deleting folders: {ex.Message}",
+                            "Delete Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                    });
+                    return false;
+                }
+            }, cts.Token);
+
+            // Show modal progress dialog
+            progressDialog.ShowDialog();
+
+            // If dialog closes due to cancel button, ensure operation is cancelled
+            if (progressDialog.IsCancelled && !cts.IsCancellationRequested)
             {
-                MessageBox.Show($"Error deleting folders: {ex.Message}",
-                    "Delete Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                cts.Cancel();
+            }
+
+            // Wait for delete task to complete
+            bool success = await deleteTask;
+
+            // Update status
+            if (success && !cts.IsCancellationRequested)
+            {
+                StatusMessage = $"Successfully deleted {folders.Count} folders";
+
+                // Update tag cloud
+                await UpdateTagCloudAsync();
+            }
+            else if (cts.IsCancellationRequested)
+            {
+                StatusMessage = "Delete operation cancelled";
             }
         }
+    }
+    catch (Exception ex)
+    {
+        MessageBox.Show($"Error deleting folders: {ex.Message}",
+            "Delete Error", MessageBoxButton.OK, MessageBoxImage.Error);
+    }
+}
 
         /// <summary>
         /// Synchronous wrapper for the async paste operation
@@ -2312,7 +2373,25 @@ namespace ImageFolderManager.ViewModels
             }
         }
 
-        
+        private FolderInfo FindFolderReferenceInTree(ObservableCollection<FolderInfo> folders, string targetPath)
+        {
+            if (folders == null) return null;
+
+            foreach (var folder in folders)
+            {
+                if (folder.FolderPath.Equals(targetPath, StringComparison.OrdinalIgnoreCase))
+                    return folder;
+
+                if (folder.Children != null && folder.Children.Count > 0)
+                {
+                    var found = FindFolderReferenceInTree(folder.Children, targetPath);
+                    if (found != null)
+                        return found;
+                }
+            }
+
+            return null;
+        }
 
         private async Task<bool> ProcessFolderOperation(
         FolderInfo sourceFolder,
@@ -2527,95 +2606,102 @@ namespace ImageFolderManager.ViewModels
             PathService.InvalidatePathCache(destinationDir, false);
         }
 
-        public async Task RenameFolderAsync(FolderInfo folder, string newName)
+
+        public async Task RenameFolder(FolderInfo folder)
         {
-            if (folder == null || string.IsNullOrEmpty(folder.FolderPath))
+            if (folder == null) return;
+
+            // Get the old path
+            string oldPath = PathService.NormalizePath(folder.FolderPath);
+            string oldName = Path.GetFileName(oldPath);
+            string parentPath = Path.GetDirectoryName(oldPath);
+
+            // Show input dialog
+            string newName = Microsoft.VisualBasic.Interaction.InputBox(
+                "Enter new folder name:",
+                "Rename Folder",
+                oldName);
+
+            // If user cancelled or name is empty or the same as before, do nothing
+            if (string.IsNullOrWhiteSpace(newName) || newName == oldName)
+                return;
+
+            // Check for invalid characters in folder name
+            if (newName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
             {
-                MessageBox.Show("No folder selected to rename.",
-                    "Rename Failed", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show("The folder name contains invalid characters.",
+                    "Invalid Name", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
-            if (string.IsNullOrWhiteSpace(newName))
+            // Construct new path
+            string newPath = Path.Combine(parentPath, newName);
+
+            // Check if destination already exists
+            if (PathService.DirectoryExists(newPath))
             {
-                MessageBox.Show("New folder name cannot be empty.",
-                    "Rename Failed", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show($"A folder named '{newName}' already exists in this location.",
+                    "Cannot Rename", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
             try
             {
-                // Get the original path info
-                string oldPath = folder.FolderPath;
-                string oldName = Path.GetFileName(oldPath);
-                string parentPath = Path.GetDirectoryName(oldPath);
-
-                // Skip if name didn't change
-                if (oldName.Equals(newName, StringComparison.OrdinalIgnoreCase))
-                    return;
-
-                // Check for invalid characters
-                if (newName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
-                {
-                    MessageBox.Show("The folder name contains invalid characters.",
-                        "Rename Failed", MessageBoxButton.OK, MessageBoxImage.Warning);
-                    return;
-                }
-
-                // Build new path
-                string newPath = Path.Combine(parentPath, newName);
-
-                // Check if already exists
-                if (Directory.Exists(newPath))
-                {
-                    MessageBox.Show($"A folder named '{newName}' already exists in this location.",
-                        "Rename Failed", MessageBoxButton.OK, MessageBoxImage.Warning);
-                    return;
-                }
-
                 // Stop watching the folder before renaming
                 _folderManager.UnwatchFolder(oldPath);
 
                 // Rename the directory
                 Directory.Move(oldPath, newPath);
 
-                // Update the folder path
+                // Update the folder path in the data model
                 folder.FolderPath = newPath;
 
-                // Update all relevant paths in _allLoadedFolders
-                foreach (var f in _allLoadedFolders.ToList())
+                // Update in all loaded folders to maintain references
+                foreach (var f in _allLoadedFolders)
                 {
-                    if (f.FolderPath.Equals(oldPath, StringComparison.OrdinalIgnoreCase))
+                    if (f.FolderPath == oldPath)
                     {
                         f.FolderPath = newPath;
                     }
-                    else if (f.FolderPath.StartsWith(oldPath + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                    else if (PathService.IsPathWithin(oldPath, f.FolderPath))
                     {
-                        // Update child paths
                         f.FolderPath = newPath + f.FolderPath.Substring(oldPath.Length);
                     }
                 }
 
+                // Refresh the parent node in the tree view
+                if (folder.Parent != null)
+                {
+                    folder.Parent.LoadChildren();
+                }
+                else
+                {
+                    // If it's a root folder, refresh the whole tree
+                    await LoadDirectoryAsync(newPath);
+                }
+
+                // Force refresh by triggering the property changed event for FolderPath
+                // This will indirectly update the Name property
+                string currentPath = folder.FolderPath;
+                folder.FolderPath = currentPath;
+
                 // Start watching the renamed folder
                 _folderManager.WatchFolder(folder);
 
-                // If this is the selected folder, update selection
-                if (SelectedFolder != null && SelectedFolder.FolderPath.Equals(oldPath, StringComparison.OrdinalIgnoreCase))
-                {
-                    SelectedFolder = folder;
-                }
+                // Update tag cloud
+                await UpdateTagCloudAsync();
 
                 // Update search results if needed
                 if (!string.IsNullOrEmpty(SearchText))
                 {
                     await PerformSearch();
                 }
-
-                // Refresh folder data
-                await RefreshAllFoldersDataAsync();
-
-                // Update status
-                StatusMessage = $"Renamed folder from '{oldName}' to '{newName}'";
+                if (Application.Current.MainWindow is MainWindow mainWindow &&
+                    mainWindow.ShellTreeViewControl != null)
+                {
+                    mainWindow.ShellTreeViewControl.UpdatePathMapping(oldPath, newPath);
+                }
+                StatusMessage = $"'{oldName}' is renamed to '{newName}'.";
             }
             catch (Exception ex)
             {
@@ -2623,7 +2709,6 @@ namespace ImageFolderManager.ViewModels
                     "Rename Failed", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
-
 
         private bool CanUndoFolderMovement()
         {
