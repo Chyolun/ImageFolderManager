@@ -116,6 +116,9 @@
       <Generator>MSBuild:Compile</Generator>
       <SubType>Designer</SubType>
     </ApplicationDefinition>
+    <Compile Include="Controls\NativeDirectoryTreeControl.cs">
+      <SubType>UserControl</SubType>
+    </Compile>
     <Compile Include="Services\AppSettings.cs" />
     <Compile Include="Services\FolderManagementService.cs" />
     <Compile Include="Services\PathService.cs" />
@@ -126,6 +129,9 @@
     <Compile Include="Views\Converter.cs" />
     <Compile Include="Views\ImportFolderDialog.xaml.cs">
       <DependentUpon>ImportFolderDialog.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="Views\NativeDirectoryTreeView.xaml.cs">
+      <DependentUpon>NativeDirectoryTreeView.xaml</DependentUpon>
     </Compile>
     <Compile Include="Views\PreviewSizeDialog.xaml.cs">
       <DependentUpon>PreviewSizeDialog.xaml</DependentUpon>
@@ -169,6 +175,10 @@
       <DependentUpon>MainWindow.xaml</DependentUpon>
       <SubType>Code</SubType>
     </Compile>
+    <Page Include="Views\NativeDirectoryTreeView.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
     <Page Include="Views\PreviewSizeDialog.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
