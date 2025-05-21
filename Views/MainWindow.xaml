@@ -115,9 +115,9 @@
                 </Grid.RowDefinitions>
 
                 <!-- ShellTreeView -->
-                <views:ShellTreeView Grid.Row="0" x:Name="ShellTreeViewControl" 
-                        FolderSelected="OnFolderSelected"
-                        DataContext="{Binding}" />
+                <views:FileExplorerView Grid.Row="0" x:Name="FileExplorerView" 
+                  FolderSelected="OnFolderSelected"
+                  DataContext="{Binding}" />
 
                 <!-- Vertical Splitter - user can adjust relative heights -->
                 <GridSplitter Grid.Row="1"

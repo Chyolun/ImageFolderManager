@@ -31,14 +31,6 @@ namespace ImageFolderManager
 
             Debug.WriteLine("MainWindow initialized");
 
-            // Monitor DataContext changes
-            ShellTreeViewControl.DataContextChanged += (s, e) =>
-            {
-                Debug.WriteLine("ShellTreeViewControl DataContext changed");
-                Debug.WriteLine($"Old value: {(e.OldValue != null ? e.OldValue.GetType().FullName : "null")}");
-                Debug.WriteLine($"New value: {(e.NewValue != null ? e.NewValue.GetType().FullName : "null")}");
-            };
-
             // Load default root directory if set
             LoadDefaultRootDirectoryAsync();
         }
@@ -49,10 +41,11 @@ namespace ImageFolderManager
             {
                 await ViewModel.LoadDirectoryAsync(AppSettings.Instance.DefaultRootDirectory);
 
-                // Select the path in the shell tree view
-                if (ShellTreeViewControl != null)
+                // Set the root directory in the FileExplorerView
+                if (FileExplorerView != null)
                 {
-                    ShellTreeViewControl.SelectPath(AppSettings.Instance.DefaultRootDirectory);
+                    FileExplorerView.SetRootDirectory(AppSettings.Instance.DefaultRootDirectory);
+                    FileExplorerView.SelectPath(AppSettings.Instance.DefaultRootDirectory);
                 }
             }
         }
@@ -80,11 +73,11 @@ namespace ImageFolderManager
             {
                 Debug.WriteLine($"SearchResults_SelectionChanged with folder: {folder.FolderPath}");
 
-                //// Select the item in the tree view
-                //if (ShellTreeViewControl != null)
-                //{
-                //    ShellTreeViewControl.SelectPath(folder.FolderPath);
-                //}
+                // Update selection in FileExplorerView
+                if (FileExplorerView != null)
+                {
+                    FileExplorerView.SelectPath(folder.FolderPath);
+                }
 
                 // Just update selection without loading images
                 ViewModel.SetSelectedFolderWithoutLoading(folder);
@@ -97,8 +90,12 @@ namespace ImageFolderManager
             if (listBox == null) return;
             var folderInfo = listBox.SelectedItem as FolderInfo;
             if (folderInfo == null) return;
+
             _ = ViewModel.SetSelectedFolderAsync(folderInfo);
-            ShellTreeViewControl?.SelectPath(folderInfo.FolderPath);
+
+            // Update selection in FileExplorerView
+            FileExplorerView?.SelectPath(folderInfo.FolderPath);
+
             e.Handled = true;
         }
 
@@ -129,7 +126,6 @@ namespace ImageFolderManager
             Application.Current.Shutdown();
         }
 
-
         // Menu event handlers
         private async void RootDirectory_Click(object sender, RoutedEventArgs e)
         {
@@ -151,17 +147,17 @@ namespace ImageFolderManager
                     {
                         Debug.WriteLine($"Changing root directory to: {newRootDir}");
 
-                        // Change root directory in ShellTreeView
-                        if (ShellTreeViewControl != null)
+                        // Update FileExplorerView with new root directory
+                        if (FileExplorerView != null)
                         {
                             // Ensure UI updates happen on UI thread
                             Application.Current.Dispatcher.Invoke(() => {
-                                ShellTreeViewControl.ChangeRootDirectory(newRootDir);
+                                FileExplorerView.SetRootDirectory(newRootDir);
                             });
                         }
                         else
                         {
-                            Debug.WriteLine("ShellTreeViewControl is null");
+                            Debug.WriteLine("FileExplorerView is null");
                         }
                     }
                 }
@@ -221,6 +217,7 @@ namespace ImageFolderManager
                 }
             }
         }
+
         private static T FindVisualParent<T>(DependencyObject child) where T : DependencyObject
         {
             DependencyObject parentObject = VisualTreeHelper.GetParent(child);
@@ -238,17 +235,10 @@ namespace ImageFolderManager
             // Refresh all data from the file system
             await ViewModel.RefreshAllFoldersDataAsync();
 
-            // Also refresh the shell tree view
-            if (ShellTreeViewControl != null)
+            // Reselect the previously selected folder if it still exists
+            if (!string.IsNullOrEmpty(currentPath) && Directory.Exists(currentPath))
             {
-                // Refresh and restore selection if possible
-                ShellTreeViewControl.RefreshTree();
-
-                // Reselect the previously selected folder if it still exists
-                if (!string.IsNullOrEmpty(currentPath) && Directory.Exists(currentPath))
-                {
-                    ShellTreeViewControl.SelectPath(currentPath);
-                }
+                FileExplorerView?.SelectPath(currentPath);
             }
 
             MessageBox.Show("All folder data has been refreshed.",
@@ -268,7 +258,8 @@ namespace ImageFolderManager
                     // First call the ViewModel method (for status updates)
                     ViewModel.CollapseParentDirectoryCommand.Execute(null);
 
-                    // Then perform the actual collapsing in the tree view
+                    // With the FileExplorerView, we don't need the tree collapse functionality
+                    // but we can navigate to the parent folder
                     if (ViewModel?.SelectedFolder != null)
                     {
                         string selectedPath = ViewModel.SelectedFolder.FolderPath;
@@ -276,14 +267,14 @@ namespace ImageFolderManager
 
                         if (!string.IsNullOrEmpty(parentPath))
                         {
-                            ShellTreeViewControl.CollapseDirectory(parentPath);
+                            FileExplorerView?.SelectPath(parentPath);
                         }
                     }
                 }
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Error collapsing parent directory: {ex.Message}",
+                MessageBox.Show($"Error navigating to parent directory: {ex.Message}",
                     "Error", MessageBoxButton.OK, MessageBoxImage.Error);
 
                 Debug.WriteLine($"Error in CollapseParentDirectory_Click: {ex.Message}");
@@ -303,9 +294,7 @@ namespace ImageFolderManager
                     e.Handled = true;
                 }
             }
-
         }
-
 
         private void SearchResultListBox_ContextMenuOpening(object sender, ContextMenuEventArgs e)
         {
@@ -326,20 +315,19 @@ namespace ImageFolderManager
             var loadImagesItem = new MenuItem { Header = "Load Images" };
             loadImagesItem.Click += (s, args) =>
             {
-
                 ViewModel.SetSelectedFolderAsync(folderInfo);
             };
             contextMenu.Items.Add(loadImagesItem);
 
             contextMenu.Items.Add(new Separator());
 
-            var selectItem = new MenuItem { Header = "Select in Tree" };
+            var selectItem = new MenuItem { Header = "Select in Explorer" };
             selectItem.Click += (s, args) =>
             {
-                // Select this folder in the shell tree
-                if (ShellTreeViewControl != null)
+                // Select this folder in the file explorer
+                if (FileExplorerView != null)
                 {
-                    ShellTreeViewControl.SelectPath(folderInfo.FolderPath);
+                    FileExplorerView.SelectPath(folderInfo.FolderPath);
                 }
             };
             contextMenu.Items.Add(selectItem);
@@ -354,12 +342,7 @@ namespace ImageFolderManager
             var deleteItem = new MenuItem { Header = "Delete" };
             deleteItem.Click += async (s, args) =>
             {
-                await ViewModel.DeleteFolderCommand.ExecuteAsync(folderInfo);
-                // Refresh the tree view after deletion
-                if (ShellTreeViewControl != null)
-                {
-                    ShellTreeViewControl.RefreshTree();
-                }
+                await ViewModel.DeleteFolderAsync(folderInfo);
             };
             contextMenu.Items.Add(deleteItem);
 
