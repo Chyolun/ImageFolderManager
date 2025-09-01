@@ -1,0 +1,599 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image Folder Manager - Help Documentation</title>
+    <style>
+        /* MahApps.Metro Dark Blue Theme Colors */
+        :root {
+            --accent-color: #007ACC;
+            --accent-color-hover: #005A9B;
+            --background-dark: #1E1E1E;
+            --background-control: #2D2D30;
+            --background-light: #3E3E42;
+            --text-primary: #FFFFFF;
+            --text-secondary: #CCCCCC;
+            --text-muted: #999999;
+            --border-color: #404040;
+            --success-color: #28A745;
+            --warning-color: #FFC107;
+            --info-color: #17A2B8;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--background-dark);
+            color: var(--text-primary);
+            line-height: 1.6;
+            margin: 0;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            color: var(--accent-color);
+            border-bottom: 2px solid var(--accent-color);
+            padding-bottom: 10px;
+            margin-bottom: 30px;
+            font-size: 28px;
+            font-weight: 600;
+        }
+
+        h2 {
+            color: var(--text-primary);
+            margin-top: 35px;
+            margin-bottom: 15px;
+            font-size: 20px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        h3 {
+            color: var(--text-secondary);
+            margin-top: 25px;
+            margin-bottom: 10px;
+            font-size: 16px;
+            font-weight: 600;
+        }
+
+        .step-box {
+            background: var(--background-control);
+            border-left: 4px solid var(--accent-color);
+            padding: 15px 20px;
+            margin: 15px 0;
+            border-radius: 0 8px 8px 0;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+        }
+
+        .tip-box {
+            background: var(--background-light);
+            border-left: 4px solid var(--warning-color);
+            padding: 15px 20px;
+            margin: 15px 0;
+            border-radius: 0 8px 8px 0;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+        }
+
+        .info-box {
+            background: var(--background-light);
+            border-left: 4px solid var(--info-color);
+            padding: 15px 20px;
+            margin: 15px 0;
+            border-radius: 0 8px 8px 0;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+        }
+
+        .success-box {
+            background: var(--background-light);
+            border-left: 4px solid var(--success-color);
+            padding: 15px 20px;
+            margin: 20px 0;
+            border-radius: 0 8px 8px 0;
+            text-align: center;
+            font-weight: 600;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+        }
+
+        code {
+            background: var(--background-dark);
+            color: var(--accent-color);
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 14px;
+            border: 1px solid var(--border-color);
+        }
+
+        .code-block {
+            background: var(--background-dark);
+            color: var(--text-secondary);
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            margin: 10px 0;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 14px;
+            overflow-x: auto;
+        }
+
+        .quick-start-step {
+            background: var(--background-control);
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 8px;
+            border-left: 4px solid var(--accent-color);
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+        }
+
+        .step-number {
+            background: var(--accent-color);
+            color: white;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            flex-shrink: 0;
+        }
+
+        .search-syntax-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+            background: var(--background-control);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+            .search-syntax-table th,
+            .search-syntax-table td {
+                padding: 12px 15px;
+                text-align: left;
+                border-bottom: 1px solid var(--border-color);
+            }
+
+            .search-syntax-table th {
+                background: var(--background-light);
+                color: var(--text-primary);
+                font-weight: 600;
+            }
+
+            .search-syntax-table td {
+                color: var(--text-secondary);
+            }
+
+                .search-syntax-table td:first-child {
+                    color: var(--accent-color);
+                    font-family: 'Consolas', 'Monaco', monospace;
+                    font-weight: 600;
+                }
+
+        .emoji {
+            font-size: 1.2em;
+            margin-right: 8px;
+        }
+
+        ul, ol {
+            color: var(--text-secondary);
+        }
+
+        li {
+            margin: 8px 0;
+        }
+
+        strong {
+            color: var(--text-primary);
+        }
+
+        .tab-container {
+            background: var(--background-control);
+            border-radius: 8px;
+            overflow: hidden;
+            margin: 20px 0;
+        }
+
+        .tab-buttons {
+            display: flex;
+            background: var(--background-light);
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .tab-button {
+            padding: 15px 25px;
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+
+            .tab-button.active {
+                color: var(--accent-color);
+                border-bottom: 2px solid var(--accent-color);
+                background: var(--background-control);
+            }
+
+            .tab-button:hover {
+                color: var(--text-primary);
+                background: var(--background-control);
+            }
+
+        .tab-content {
+            display: none;
+            padding: 20px;
+        }
+
+            .tab-content.active {
+                display: block;
+            }
+
+        .keyboard-shortcut {
+            background: var(--background-dark);
+            color: var(--accent-color);
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 12px;
+            border: 1px solid var(--border-color);
+            margin-left: 10px;
+        }
+
+        @media print {
+            body {
+                background-color: white;
+                color: black;
+            }
+
+            .tab-buttons {
+                display: none;
+            }
+
+            .tab-content {
+                display: block !important;
+                page-break-after: always;
+            }
+
+                .tab-content:last-child {
+                    page-break-after: auto;
+                }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="tab-container" role="tablist">
+            <div class="tab-buttons">
+                <button class="tab-button active" onclick="showTab('quick-start', event)"
+                        role="tab" aria-selected="true" aria-controls="quick-start">
+                    <span class="emoji" aria-hidden="true">🚀</span>Quick Start
+                </button>
+                <button class="tab-button" onclick="showTab('user-guide', event)"
+                        role="tab" aria-selected="false" aria-controls="user-guide">
+                    <span class="emoji" aria-hidden="true">📖</span>User Guide
+                </button>
+                <button class="tab-button" onclick="showTab('search-guide', event)"
+                        role="tab" aria-selected="false" aria-controls="search-guide">
+                    <span class="emoji" aria-hidden="true">🔍</span>Search Guide
+                </button>
+            </div>
+
+            <!-- Quick Start Tab -->
+            <div id="quick-start" class="tab-content active" role="tabpanel" aria-labelledby="quick-start-tab">
+                <h1><span class="emoji" aria-hidden="true">🚀</span>Quick Start Guide</h1>
+
+                <div class="quick-start-step">
+                    <div class="step-number">1</div>
+                    <div>
+                        <strong>Set Root Directory:</strong> Go to Settings → Root Directory to configure your main image folder location.
+                    </div>
+                </div>
+
+                <div class="quick-start-step">
+                    <div class="step-number">2</div>
+                    <div>
+                        <strong>Import Folders:</strong> Use File → Import Folder to add individual folders to your collection.
+                    </div>
+                </div>
+
+                <div class="quick-start-step">
+                    <div class="step-number">3</div>
+                    <div>
+                        <strong>Add Tags:</strong> Select a folder, then type tags in the bottom panel using the # symbol (e.g., #landscape #vacation).
+                    </div>
+                </div>
+
+                <div class="quick-start-step">
+                    <div class="step-number">4</div>
+                    <div>
+                        <strong>Rate Folders:</strong> Click the stars to rate folders from 1-5 stars for easy organization.
+                    </div>
+                </div>
+
+                <div class="quick-start-step">
+                    <div class="step-number">5</div>
+                    <div>
+                        <strong>Search Content:</strong> Use the search box with special syntax: #tags, @folder-names, or *ratings.
+                    </div>
+                </div>
+
+                <div class="quick-start-step">
+                    <div class="step-number">6</div>
+                    <div>
+                        <strong>View Tag Cloud:</strong> Access Tools → Tags Cloud <span class="keyboard-shortcut">Ctrl+T</span> for visual tag overview.
+                    </div>
+                </div>
+
+                <div class="success-box">
+                    <span class="emoji" aria-hidden="true">✅</span><strong>You're all set!</strong> Start organizing your image folders with tags and ratings.
+                </div>
+            </div>
+
+            <!-- User Guide Tab -->
+            <div id="user-guide" class="tab-content" role="tabpanel" aria-labelledby="user-guide-tab">
+                <h1><span class="emoji" aria-hidden="true">📖</span>Image Folder Manager - User Guide</h1>
+
+                <h2><span class="emoji" aria-hidden="true">📥</span>1. Importing and Managing Folders</h2>
+                <div class="step-box">
+                    <strong>Setting Root Directory:</strong><br>
+                    Go to Settings → Root Directory to set your main folder location. The application will automatically monitor this directory for changes and new folders.
+                </div>
+                <div class="step-box">
+                    <strong>Importing Individual Folders:</strong><br>
+                    Click File → Import Folder to add specific folders to your collection. This is useful for folders outside your root directory.
+                </div>
+                <div class="tip-box">
+                    <strong>💡 Tip:</strong> The application features real-time folder monitoring, so new folders added to your root directory will appear automatically.
+                </div>
+
+                <h2><span class="emoji" aria-hidden="true">🏷️</span>2. Tag Management System</h2>
+                <div class="step-box">
+                    <strong>Adding Tags:</strong><br>
+                    • Select a folder and use the tag input area at the bottom<br>
+                    • Type tags using the # symbol: <code>#landscape #vacation</code><br>
+                    • Use categories for organization: <code>#location:paris #mood:peaceful</code>
+                </div>
+                <div class="step-box">
+                    <strong>Tag Categories:</strong><br>
+                    Create structured tags using the format <code>#category:tag</code>. For example:<br>
+                    • <code>#location:beach</code><br>
+                    • <code>#season:summer</code><br>
+                    • <code>#mood:relaxing</code>
+                </div>
+                <div class="step-box">
+                    <strong>Batch Tag Operations:</strong><br>
+                    Select multiple folders to apply tags to all of them at once. This is perfect for organizing large collections efficiently.
+                </div>
+
+                <h2><span class="emoji" aria-hidden="true">⭐</span>3. Rating System</h2>
+                <div class="step-box">
+                    <strong>Rating Folders:</strong><br>
+                    Click on the stars (1-5) to rate folders. Ratings are saved immediately and can be used for searching and filtering your best content.
+                </div>
+                <div class="info-box">
+                    <strong>Rating Tips:</strong><br>
+                    • 5 stars: Your absolute best folders<br>
+                    • 4 stars: Excellent quality<br>
+                    • 3 stars: Good, worth keeping<br>
+                    • 2 stars: Average quality<br>
+                    • 1 star: Poor quality or candidates for deletion
+                </div>
+
+                <h2><span class="emoji" aria-hidden="true">☁️</span>4. Tag Cloud Visualization</h2>
+                <div class="step-box">
+                    <strong>Accessing Tag Cloud:</strong><br>
+                    Tools → Tags Cloud or press <span class="keyboard-shortcut">Ctrl+T</span>
+                </div>
+                <div class="step-box">
+                    <strong>Tag Cloud Features:</strong><br>
+                    • Visual overview of all your tags<br>
+                    • Tag size reflects usage frequency<br>
+                    • Category-based organization<br>
+                    • Left-click to search, right-click for management options
+                </div>
+
+                <h2><span class="emoji" aria-hidden="true">🔧</span>5. Advanced Features</h2>
+                <div class="step-box">
+                    <strong>Real-time Monitoring:</strong><br>
+                    The application automatically detects changes in your file system and updates the folder tree in real-time.
+                </div>
+                <div class="step-box">
+                    <strong>Image Preview:</strong><br>
+                    • Supports multiple formats: JPG, PNG, BMP, GIF, WebP<br>
+                    • Smart caching for improved performance<br>
+                    • Configurable preview sizes in settings
+                </div>
+                <div class="step-box">
+                    <strong>Keyboard Shortcuts:</strong><br>
+                    • <span class="keyboard-shortcut">Ctrl+T</span> - Open Tag Cloud<br>
+                    • <span class="keyboard-shortcut">F1</span> - Open User Guide<br>
+                    • <span class="keyboard-shortcut">Ctrl+Z</span> - Undo folder operations<br>
+                    • <span class="keyboard-shortcut">Alt+Left</span> - Collapse parent directory
+                </div>
+            </div>
+
+            <!-- Search Guide Tab -->
+            <div id="search-guide" class="tab-content" role="tabpanel" aria-labelledby="search-guide-tab">
+                <h1><span class="emoji" aria-hidden="true">🔍</span>Advanced Search Guide</h1>
+
+                <p>The Image Folder Manager features a powerful search system with special syntax for precise filtering using OR groups and AND logic.</p>
+
+                <h2><span class="emoji" aria-hidden="true">🎯</span>Search Syntax Overview</h2>
+                <table class="search-syntax-table">
+                    <thead>
+                        <tr>
+                            <th>Syntax</th>
+                            <th>Description</th>
+                            <th>Example</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>#tag</td>
+                            <td>Search by tags</td>
+                            <td>#landscape, #vacation</td>
+                        </tr>
+                        <tr>
+                            <td>@foldername</td>
+                            <td>Search folder names</td>
+                            <td>@beach, @2023</td>
+                        </tr>
+                        <tr>
+                            <td>*rating</td>
+                            <td>Search by rating</td>
+                            <td>*>=4, *=5, *<3</td>
+                        </tr>
+                        <tr>
+                            <td>text</td>
+                            <td>General search (names & paths)</td>
+                            <td>vacation, photos</td>
+                        </tr>
+                        <tr>
+                            <td>(term1 term2)</td>
+                            <td>OR group - any term matches</td>
+                            <td>(#nature #landscape)</td>
+                        </tr>
+                        <tr>
+                            <td>group1 group2</td>
+                            <td>AND logic between groups</td>
+                            <td>(#nature) *>3</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h2><span class="emoji" aria-hidden="true">🔗</span>Search Logic</h2>
+                <div class="info-box">
+                    <strong>OR Groups:</strong><br>
+                    • Use parentheses <code>()</code> to group terms with OR logic<br>
+                    • Example: <code>(#nature #landscape)</code> finds folders with nature OR landscape tags<br>
+                    • Each term in parentheses acts as an alternative match
+                </div>
+                <div class="info-box">
+                    <strong>AND Logic:</strong><br>
+                    • Terms or groups separated by spaces use AND logic<br>
+                    • Example: <code>#vacation *>=4</code> finds vacation-tagged folders AND 4+ star rating<br>
+                    • All conditions must be satisfied for a match
+                </div>
+
+                <h2><span class="emoji" aria-hidden="true">📝</span>Search Examples</h2>
+
+                <div class="step-box">
+                    <strong>Example A: Mixed Content Search</strong><br>
+                    <code>(@man @people) #photon *>3</code><br>
+                    <strong>Logic:</strong> (Folder name contains "man" OR "people") AND tagged with "photon" AND rating > 3 stars<br>
+                    <strong>Matches:</strong><br>
+                    • "old_man_photos" folder with #photon tag and 4-star rating ✓<br>
+                    • "people_gathering" folder with #photon tag and 5-star rating ✓<br>
+                    • "family_portraits" folder with #photon tag and 2-star rating ✗ (rating too low)
+                </div>
+
+                <div class="step-box">
+                    <strong>Example B: Location and Theme Search</strong><br>
+                    <code>(@sea @river) (#photon #landscape)</code><br>
+                    <strong>Logic:</strong> (Folder name contains "sea" OR "river") AND (tagged with "photon" OR "landscape")<br>
+                    <strong>Matches:</strong><br>
+                    • "sea_sunset" folder with #landscape tag ✓<br>
+                    • "river_walk" folder with #photon tag ✓<br>
+                    • "mountain_lake" folder with #landscape tag ✗ (no sea/river in name)
+                </div>
+
+                <h2><span class="emoji" aria-hidden="true">🏷️</span>Tag Search Details</h2>
+                <div class="step-box">
+                    <strong>Single Tag:</strong><br>
+                    <code>#landscape</code> - Find all folders tagged with "landscape"
+                </div>
+                <div class="step-box">
+                    <strong>Multiple Tags (OR):</strong><br>
+                    <code>(#vacation #beach)</code> - Find folders with vacation OR beach tags
+                </div>
+                <div class="step-box">
+                    <strong>Category Tags:</strong><br>
+                    <code>#location:paris</code> - Find folders with the specific category:tag combination
+                </div>
+
+                <h2><span class="emoji" aria-hidden="true">📁</span>Folder Name Search</h2>
+                <div class="step-box">
+                    <strong>Using @ Symbol:</strong><br>
+                    <code>@hawaii</code> - Find folders with "hawaii" in the name<br>
+                    <code>(@2023 @2024)</code> - Find folders with "2023" OR "2024" in the name
+                </div>
+
+                <h2><span class="emoji" aria-hidden="true">⭐</span>Rating Search</h2>
+                <div class="step-box">
+                    <strong>Rating Operators:</strong><br>
+                    • <code>*=5</code> - Exactly 5 stars<br>
+                    • <code>*>=4</code> - 4 or more stars<br>
+                    • <code>*<=2</code> - 2 or fewer stars<br>
+                    • <code>*>3</code> - More than 3 stars<br>
+                    • <code>*<4</code> - Less than 4 stars
+                </div>
+
+                <h2><span class="emoji" aria-hidden="true">🔄</span>More Complex Examples</h2>
+                <div class="code-block">
+                    (#nature #landscape) *>=4
+                    Find nature OR landscape folders with 4+ star rating
+
+                    (@beach @ocean @lake) #summer
+                    Find folders with beach/ocean/lake in name AND summer tag
+
+                    (#location:paris #location:london) (@vacation @trip) *=5
+                    Find Paris OR London locations AND vacation/trip folders with 5 stars
+
+                    #family (@2023 @2024) *>2
+                    Find family-tagged folders from 2023 OR 2024 with 3+ stars
+                </div>
+
+                <div class="info-box">
+                    <strong>Search Behavior:</strong><br>
+                    • Searches are case-insensitive<br>
+                    • Parentheses create OR groups, spaces create AND logic<br>
+                    • Partial matches are supported<br>
+                    • Results update in real-time as you type<br>
+                    • Empty parentheses are ignored
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function showTab(tabId, event) {
+            // Hide all tab contents
+            const contents = document.querySelectorAll('.tab-content');
+            contents.forEach(content => {
+                content.classList.remove('active');
+                content.setAttribute('aria-hidden', 'true');
+            });
+
+            // Remove active class from all buttons
+            const buttons = document.querySelectorAll('.tab-button');
+            buttons.forEach(button => {
+                button.classList.remove('active');
+                button.setAttribute('aria-selected', 'false');
+            });
+
+            // Show selected tab content
+            const activeTab = document.getElementById(tabId);
+            activeTab.classList.add('active');
+            activeTab.setAttribute('aria-hidden', 'false');
+
+            // Add active class to clicked button
+            const activeButton = event.currentTarget;
+            activeButton.classList.add('active');
+            activeButton.setAttribute('aria-selected', 'true');
+        }
+    </script>
+</body>
+</html>
