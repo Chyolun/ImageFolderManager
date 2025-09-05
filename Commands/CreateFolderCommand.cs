@@ -68,9 +68,9 @@ namespace ImageFolderManager.Commands
             {
                 return CommandResult.CreateFailure($"Access denied creating folder: {ex.Message}", ex);
             }
-            catch (DirectoryServiceException ex)
+            catch (DirectoryNotFoundException ex)
             {
-                return CommandResult.CreateFailure($"Directory service error: {ex.Message}", ex);
+                return CommandResult.CreateFailure($"Directory not found: {ex.Message}", ex);
             }
             catch (IOException ex)
             {

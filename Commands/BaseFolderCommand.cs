@@ -23,7 +23,7 @@ namespace ImageFolderManager.Commands
         }
 
         public string CommandId { get; }
-        public FolderCommandType CommandType { get; }
+        public FolderCommandType CommandType { get; protected set; }
         public virtual bool CanUndo => true;
         public bool IsExecuted { get; private set; }
         public DateTime CreatedAt { get; }

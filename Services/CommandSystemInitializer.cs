@@ -98,7 +98,7 @@ namespace ImageFolderManager.Services
                 Debug.WriteLine($"Command failed: {e.Command.CommandId} - {e.Result?.Message}");
 
                 // Log the failure
-                _exceptionService?.LogCommandFailure(e.Command, e.Result?.Exception);
+                _exceptionService?.LogCommandFailure(e.Command.CommandId, e.Command.CommandType.ToString(), e.Result?.Exception);
 
                 // Could implement retry logic here if needed
                 // Could notify user of persistent failures

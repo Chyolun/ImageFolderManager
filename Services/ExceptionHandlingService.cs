@@ -117,6 +117,29 @@ namespace ImageFolderManager.Services
         }
 
         /// <summary>
+        /// Log command failure with detailed information
+        /// </summary>
+        public void LogCommandFailure(string commandId, string commandType, Exception exception, string additionalInfo = null)
+        {
+            var context = $"CommandFailure_{commandType}";
+            var message = $"Command {commandId} failed: {exception?.Message ?? "Unknown error"}";
+
+            var entry = new LogEntry
+            {
+                Timestamp = DateTime.Now,
+                Level = LogLevel.Error,
+                Context = context,
+                Message = message,
+                Exception = exception,
+                AdditionalInfo = additionalInfo,
+                ThreadId = Thread.CurrentThread.ManagedThreadId
+            };
+
+            EnqueueLogEntry(entry);
+            Debug.WriteLine($"[ERROR] [{entry.Timestamp:HH:mm:ss.fff}] {context}: {message}");
+        }
+
+        /// <summary>
         /// Handle and log exceptions from folder operations
         /// </summary>
         public CommandResult HandleFolderOperationException(string operation, Exception exception, string folderPath = null)

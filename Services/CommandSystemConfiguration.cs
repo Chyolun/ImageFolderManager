@@ -56,7 +56,7 @@ namespace ImageFolderManager.Services
             }
         }
 
-        private static CommandSystemConfiguration LoadConfiguration()
+        public static CommandSystemConfiguration LoadConfiguration()
         {
             try
             {
