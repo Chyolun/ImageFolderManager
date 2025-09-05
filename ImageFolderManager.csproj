@@ -141,7 +141,6 @@
     <Compile Include="Services\ExceptionHandlingService.cs" />
     <Compile Include="Services\PathLockManager.cs" />
     <Compile Include="Services\PathService.cs" />
-    <Compile Include="Services\ServiceIntegrationHelper.cs" />
     <Compile Include="Services\TagCategoryService.cs.cs" />
     <Compile Include="Services\TagHelper.cs" />
     <Compile Include="Services\UnifiedFolderService.cs" />

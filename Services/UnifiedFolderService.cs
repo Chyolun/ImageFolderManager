@@ -10,15 +10,13 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Threading;
 using ImageFolderManager.Models;
-using ImageFolderManager.Commands;
-using ImageFolderManager.StateMachine;
-using ImageFolderManager.Services;
 using Timer = System.Threading.Timer;
 
 namespace ImageFolderManager.Services
 {
     /// <summary>
-    /// Unified service that combines folder management and real-time indexing with Command pattern integration
+    /// Unified service that combines folder management and real-time indexing
+    /// Replaces both FolderManagementService and FileSystemIndexingService
     /// </summary>
     public class UnifiedFolderService : IDisposable
     {
@@ -32,23 +30,12 @@ namespace ImageFolderManager.Services
         // Legacy callback for existing MainViewModel integration
         public event Action<FolderInfo, FileSystemEventArgs, WatcherChangeTypes> FileSystemEvent;
 
-        // Command system events
-        public event EventHandler<CommandExecutionEventArgs> CommandExecuted;
-        public event EventHandler<FolderStateChangedEventArgs> FolderStateChanged;
-
         #endregion
 
         #region Fields and Properties
 
         // Services
         private readonly FolderTagService _tagService = new FolderTagService();
-
-        // Command System Integration
-        private readonly CommandSystemInitializer _commandSystem;
-        private CommandExecutor _commandExecutor;
-        private FolderStateMachine _stateMachine;
-        private PathLockManager _pathLockManager;
-        private ExceptionHandlingService _exceptionService;
 
         // Single file system watcher for the entire tree
         private FileSystemWatcher _rootWatcher;
@@ -77,10 +64,34 @@ namespace ImageFolderManager.Services
         public bool IsIndexing => _isIndexing;
         public int IndexedFolderCount => _folderIndex.Count;
 
-        // Command System Properties
-        public CommandExecutor CommandExecutor => _commandExecutor;
-        public FolderStateMachine StateMachine => _stateMachine;
-        public bool IsCommandSystemEnabled => _commandSystem != null && _commandExecutor != null;
+        #endregion
+
+        #region Nested Classes
+
+        private class FolderIndexEntry
+        {
+            public string FullPath { get; set; }
+            public string Name { get; set; }
+            public string ParentPath { get; set; }
+            public DateTime LastModified { get; set; }
+            public bool Exists { get; set; } = true;
+
+            public FolderIndexEntry(string fullPath)
+            {
+                FullPath = PathService.NormalizePath(fullPath);
+                Name = Path.GetFileName(FullPath);
+                ParentPath = Path.GetDirectoryName(FullPath);
+                LastModified = Directory.Exists(FullPath) ? Directory.GetLastWriteTime(FullPath) : DateTime.MinValue;
+            }
+        }
+
+        private class FileSystemEventData
+        {
+            public WatcherChangeTypes ChangeType { get; set; }
+            public string FullPath { get; set; }
+            public string OldPath { get; set; } // For rename events
+            public DateTime Timestamp { get; set; } = DateTime.Now;
+        }
 
         #endregion
 
@@ -90,113 +101,53 @@ namespace ImageFolderManager.Services
         {
             _dispatcher = Application.Current?.Dispatcher ?? Dispatcher.CurrentDispatcher;
 
-            // Initialize command system
-            _commandSystem = new CommandSystemInitializer();
-            try
+            // Initialize event processing timer (processes events every 100ms)
+            _eventProcessingTimer = new Timer(ProcessEventQueue, null,
+                TimeSpan.FromMilliseconds(100), TimeSpan.FromMilliseconds(100));
+
+            // Setup application exit handler
+            if (Application.Current != null)
             {
-                _commandSystem.Initialize();
-                _commandExecutor = _commandSystem.CommandExecutor;
-                _stateMachine = _commandSystem.StateMachine;
-                _pathLockManager = _commandSystem.PathLockManager;
-                _exceptionService = _commandSystem.ExceptionService;
-
-                // Subscribe to command system events
-                if (_commandExecutor != null)
-                {
-                    _commandExecutor.CommandStarted += OnCommandStarted;
-                    _commandExecutor.CommandCompleted += OnCommandCompleted;
-                    _commandExecutor.CommandFailed += OnCommandFailed;
-                }
-
-                if (_stateMachine != null)
-                {
-                    _stateMachine.StateChanged += OnFolderStateChanged;
-                }
-
-                Debug.WriteLine("Command system integration initialized successfully");
+                Application.Current.Exit += (s, e) => Dispose();
             }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"Failed to initialize command system: {ex.Message}");
-                // Continue without command system if initialization fails
-                _commandSystem?.Dispose();
-                _commandSystem = null;
-            }
-
-            // Initialize timer for delayed event processing
-            _eventProcessingTimer = new Timer(ProcessQueuedEvents, null, _debounceInterval, _debounceInterval);
         }
 
         #endregion
 
-        #region Command System Event Handlers
-
-        private void OnCommandStarted(object sender, CommandExecutionEventArgs e)
-        {
-            Debug.WriteLine($"Command started: {e.Command.CommandId} ({e.Command.CommandType})");
-            CommandExecuted?.Invoke(this, e);
-        }
-
-        private void OnCommandCompleted(object sender, CommandExecutionEventArgs e)
-        {
-            Debug.WriteLine($"Command completed: {e.Command.CommandId} - {e.Result?.Message}");
-            CommandExecuted?.Invoke(this, e);
-        }
-
-        private void OnCommandFailed(object sender, CommandExecutionEventArgs e)
-        {
-            Debug.WriteLine($"Command failed: {e.Command.CommandId} - {e.Result?.Message}");
-            _exceptionService?.LogException("CommandExecution", e.Result?.Exception,
-                $"Command {e.Command.CommandId} failed");
-            CommandExecuted?.Invoke(this, e);
-        }
-
-        private void OnFolderStateChanged(object sender, FolderStateChangedEventArgs e)
-        {
-            Debug.WriteLine($"Folder state changed: {e.Path} {e.OldState} → {e.NewState}");
-            FolderStateChanged?.Invoke(this, e);
-        }
-
-        #endregion
-
-        #region Monitoring and Indexing
+        #region Public Methods
 
         /// <summary>
-        /// Starts monitoring and builds initial index with state machine integration
+        /// Starts monitoring a root directory and builds initial index
         /// </summary>
-        public async Task StartMonitoringAsync(string rootPath)
+        public async Task StartMonitoringAsync(string rootDirectory, bool buildInitialIndex = true)
         {
-            if (_isDisposed || string.IsNullOrEmpty(rootPath))
-                return;
+            if (_isDisposed)
+                throw new ObjectDisposedException(nameof(UnifiedFolderService));
 
-            if (!Directory.Exists(rootPath))
-                throw new DirectoryNotFoundException($"Root directory not found: {rootPath}");
+            if (string.IsNullOrEmpty(rootDirectory) || !Directory.Exists(rootDirectory))
+                throw new ArgumentException("Invalid root directory", nameof(rootDirectory));
+
+            // Stop existing monitoring
+            await StopMonitoringAsync();
+
+            _rootDirectory = PathService.NormalizePath(rootDirectory);
+            Debug.WriteLine($"Starting unified folder monitoring for: {_rootDirectory}");
 
             try
             {
-                // Stop any existing monitoring
-                await StopMonitoringAsync();
-
-                _rootDirectory = PathService.NormalizePath(rootPath);
-                Debug.WriteLine($"Starting unified folder monitoring for: {_rootDirectory}");
-
-                // Initialize state machine for root directory if available
-                if (_stateMachine != null)
+                // Build initial index if requested
+                if (buildInitialIndex)
                 {
-                    await _stateMachine.TransitionStateAsync(_rootDirectory, FolderState.Monitoring);
+                    await BuildInitialIndexAsync();
                 }
 
-                // Build initial index
-                await BuildInitialIndexAsync();
-
-                // Set up file system watcher
+                // Setup single file system watcher for entire tree
                 SetupFileSystemWatcher();
 
                 Debug.WriteLine($"Unified folder monitoring started. Indexed {_folderIndex.Count} folders.");
             }
             catch (Exception ex)
             {
-                _exceptionService?.LogException("MonitoringStartup", ex, $"Failed to start monitoring for {rootPath}");
                 Debug.WriteLine($"Error starting unified folder monitoring: {ex.Message}");
                 throw;
             }
@@ -226,338 +177,30 @@ namespace ImageFolderManager.Services
             _lastEventTime.Clear();
             while (_eventQueue.TryDequeue(out _)) { }
 
-            // Clear state machine states if available
-            if (_stateMachine != null)
-            {
-                await _stateMachine.ClearAllStatesAsync();
-            }
-
             _rootDirectory = null;
             Debug.WriteLine("Unified folder monitoring stopped.");
         }
 
-        private async Task BuildInitialIndexAsync()
+        /// <summary>
+        /// Rebuilds the entire folder index
+        /// </summary>
+        public async Task RebuildIndexAsync()
         {
-            if (string.IsNullOrEmpty(_rootDirectory))
+            if (_isIndexing || string.IsNullOrEmpty(_rootDirectory))
                 return;
 
-            _isIndexing = true;
-            try
-            {
-                var directories = new List<string>();
-                await Task.Run(() => ScanDirectoryRecursive(_rootDirectory, directories));
-
-                foreach (var directory in directories)
-                {
-                    var entry = new FolderIndexEntry(directory);
-                    _folderIndex.TryAdd(entry.FullPath, entry);
-
-                    // Set initial state in state machine
-                    if (_stateMachine != null)
-                    {
-                        await _stateMachine.TransitionStateAsync(directory, FolderState.Available);
-                    }
-                }
-
-                IndexRebuilt?.Invoke(directories);
-            }
-            finally
-            {
-                _isIndexing = false;
-            }
+            Debug.WriteLine("Forcing index rebuild...");
+            _folderIndex.Clear();
+            await BuildInitialIndexAsync();
         }
 
         #endregion
 
-        #region Enhanced Folder Operations with Command Pattern
+        #region Folder Management Methods (from FolderManagementService)
 
         /// <summary>
-        /// Create a folder using the command pattern
+        /// Creates a FolderInfo without loading images
         /// </summary>
-        public async Task<CommandResult> CreateFolderAsync(string parentPath, string folderName, CancellationToken cancellationToken = default)
-        {
-            if (!IsCommandSystemEnabled)
-            {
-                // Fallback to legacy creation
-                return await CreateFolderLegacyAsync(parentPath, folderName);
-            }
-
-            try
-            {
-                var command = new CreateFolderCommand(parentPath, folderName);
-                return await _commandExecutor.ExecuteCommandAsync(command, cancellationToken);
-            }
-            catch (Exception ex)
-            {
-                _exceptionService?.LogException("CreateFolder", ex, $"Failed to create folder {folderName} in {parentPath}");
-                return CommandResult.CreateFailure($"Failed to create folder: {ex.Message}", ex);
-            }
-        }
-
-        /// <summary>
-        /// Delete a folder using the command pattern
-        /// </summary>
-        public async Task<CommandResult> DeleteFolderAsync(string folderPath, bool useRecycleBin = true, CancellationToken cancellationToken = default)
-        {
-            if (!IsCommandSystemEnabled)
-            {
-                // Fallback to legacy deletion
-                return await DeleteFolderLegacyAsync(folderPath, useRecycleBin);
-            }
-
-            try
-            {
-                var command = new DeleteFolderCommand(folderPath, useRecycleBin);
-                return await _commandExecutor.ExecuteCommandAsync(command, cancellationToken);
-            }
-            catch (Exception ex)
-            {
-                _exceptionService?.LogException("DeleteFolder", ex, $"Failed to delete folder {folderPath}");
-                return CommandResult.CreateFailure($"Failed to delete folder: {ex.Message}", ex);
-            }
-        }
-
-        /// <summary>
-        /// Rename a folder using the command pattern
-        /// </summary>
-        public async Task<CommandResult> RenameFolderAsync(string folderPath, string newName, CancellationToken cancellationToken = default)
-        {
-            if (!IsCommandSystemEnabled)
-            {
-                // Fallback to legacy rename
-                return await RenameFolderLegacyAsync(folderPath, newName);
-            }
-
-            try
-            {
-                var command = new RenameFolderCommand(folderPath, newName);
-                return await _commandExecutor.ExecuteCommandAsync(command, cancellationToken);
-            }
-            catch (Exception ex)
-            {
-                _exceptionService?.LogException("RenameFolder", ex, $"Failed to rename folder {folderPath} to {newName}");
-                return CommandResult.CreateFailure($"Failed to rename folder: {ex.Message}", ex);
-            }
-        }
-
-        /// <summary>
-        /// Move a folder using the command pattern
-        /// </summary>
-        public async Task<CommandResult> MoveFolderAsync(string sourcePath, string destinationPath, CancellationToken cancellationToken = default)
-        {
-            if (!IsCommandSystemEnabled)
-            {
-                // Fallback to legacy move
-                return await MoveFolderLegacyAsync(sourcePath, destinationPath);
-            }
-
-            try
-            {
-                var command = new MoveFolderCommand(sourcePath, destinationPath);
-                return await _commandExecutor.ExecuteCommandAsync(command, cancellationToken);
-            }
-            catch (Exception ex)
-            {
-                _exceptionService?.LogException("MoveFolder", ex, $"Failed to move folder from {sourcePath} to {destinationPath}");
-                return CommandResult.CreateFailure($"Failed to move folder: {ex.Message}", ex);
-            }
-        }
-
-        /// <summary>
-        /// Copy a folder using the command pattern
-        /// </summary>
-        public async Task<CommandResult> CopyFolderAsync(string sourcePath, string destinationPath, CancellationToken cancellationToken = default)
-        {
-            if (!IsCommandSystemEnabled)
-            {
-                // Fallback to legacy copy
-                return await CopyFolderLegacyAsync(sourcePath, destinationPath);
-            }
-
-            try
-            {
-                var command = new CopyFolderCommand(sourcePath, destinationPath);
-                return await _commandExecutor.ExecuteCommandAsync(command, cancellationToken);
-            }
-            catch (Exception ex)
-            {
-                _exceptionService?.LogException("CopyFolder", ex, $"Failed to copy folder from {sourcePath} to {destinationPath}");
-                return CommandResult.CreateFailure($"Failed to copy folder: {ex.Message}", ex);
-            }
-        }
-
-        /// <summary>
-        /// Undo the last operation
-        /// </summary>
-        public async Task<CommandResult> UndoLastOperationAsync(CancellationToken cancellationToken = default)
-        {
-            if (!IsCommandSystemEnabled)
-            {
-                return CommandResult.CreateFailure("Command system not available for undo operations");
-            }
-
-            try
-            {
-                return await _commandExecutor.UndoLastCommandAsync(cancellationToken);
-            }
-            catch (Exception ex)
-            {
-                _exceptionService?.LogException("UndoOperation", ex, "Failed to undo last operation");
-                return CommandResult.CreateFailure($"Failed to undo: {ex.Message}", ex);
-            }
-        }
-
-        /// <summary>
-        /// Get folder state information
-        /// </summary>
-        public FolderState GetFolderState(string folderPath)
-        {
-            if (!IsCommandSystemEnabled || string.IsNullOrEmpty(folderPath))
-                return FolderState.Available;
-
-            return _stateMachine.GetFolderState(folderPath);
-        }
-
-        /// <summary>
-        /// Check if folder operations are available for the given path
-        /// </summary>
-        public bool CanOperateOnFolder(string folderPath)
-        {
-            if (!IsCommandSystemEnabled)
-                return true; // Legacy mode allows all operations
-
-            var state = GetFolderState(folderPath);
-            return state == FolderState.Available || state == FolderState.Monitoring;
-        }
-
-        #endregion
-
-        #region Legacy Folder Operations (Fallback)
-
-        private async Task<CommandResult> CreateFolderLegacyAsync(string parentPath, string folderName)
-        {
-            try
-            {
-                var fullPath = Path.Combine(parentPath, folderName);
-                if (Directory.Exists(fullPath))
-                {
-                    return CommandResult.CreateFailure("Folder already exists");
-                }
-
-                Directory.CreateDirectory(fullPath);
-                return CommandResult.CreateSuccess($"Folder '{folderName}' created successfully");
-            }
-            catch (Exception ex)
-            {
-                return CommandResult.CreateFailure($"Failed to create folder: {ex.Message}", ex);
-            }
-        }
-
-        private async Task<CommandResult> DeleteFolderLegacyAsync(string folderPath, bool useRecycleBin)
-        {
-            try
-            {
-                if (!Directory.Exists(folderPath))
-                {
-                    return CommandResult.CreateFailure("Folder does not exist");
-                }
-
-                if (useRecycleBin)
-                {
-                    Microsoft.VisualBasic.FileIO.FileSystem.DeleteDirectory(
-                        folderPath,
-                        Microsoft.VisualBasic.FileIO.UIOption.OnlyErrorDialogs,
-                        Microsoft.VisualBasic.FileIO.RecycleOption.SendToRecycleBin);
-                }
-                else
-                {
-                    Directory.Delete(folderPath, true);
-                }
-
-                return CommandResult.CreateSuccess("Folder deleted successfully");
-            }
-            catch (Exception ex)
-            {
-                return CommandResult.CreateFailure($"Failed to delete folder: {ex.Message}", ex);
-            }
-        }
-
-        private async Task<CommandResult> RenameFolderLegacyAsync(string folderPath, string newName)
-        {
-            try
-            {
-                if (!Directory.Exists(folderPath))
-                {
-                    return CommandResult.CreateFailure("Folder does not exist");
-                }
-
-                var parentPath = Path.GetDirectoryName(folderPath);
-                var newPath = Path.Combine(parentPath, newName);
-
-                if (Directory.Exists(newPath))
-                {
-                    return CommandResult.CreateFailure("A folder with that name already exists");
-                }
-
-                Directory.Move(folderPath, newPath);
-                return CommandResult.CreateSuccess($"Folder renamed to '{newName}' successfully");
-            }
-            catch (Exception ex)
-            {
-                return CommandResult.CreateFailure($"Failed to rename folder: {ex.Message}", ex);
-            }
-        }
-
-        private async Task<CommandResult> MoveFolderLegacyAsync(string sourcePath, string destinationPath)
-        {
-            try
-            {
-                if (!Directory.Exists(sourcePath))
-                {
-                    return CommandResult.CreateFailure("Source folder does not exist");
-                }
-
-                if (Directory.Exists(destinationPath))
-                {
-                    return CommandResult.CreateFailure("Destination folder already exists");
-                }
-
-                Directory.Move(sourcePath, destinationPath);
-                return CommandResult.CreateSuccess("Folder moved successfully");
-            }
-            catch (Exception ex)
-            {
-                return CommandResult.CreateFailure($"Failed to move folder: {ex.Message}", ex);
-            }
-        }
-
-        private async Task<CommandResult> CopyFolderLegacyAsync(string sourcePath, string destinationPath)
-        {
-            try
-            {
-                if (!Directory.Exists(sourcePath))
-                {
-                    return CommandResult.CreateFailure("Source folder does not exist");
-                }
-
-                if (Directory.Exists(destinationPath))
-                {
-                    return CommandResult.CreateFailure("Destination folder already exists");
-                }
-
-                await Task.Run(() => DirectoryCopy(sourcePath, destinationPath, true));
-                return CommandResult.CreateSuccess("Folder copied successfully");
-            }
-            catch (Exception ex)
-            {
-                return CommandResult.CreateFailure($"Failed to copy folder: {ex.Message}", ex);
-            }
-        }
-
-        #endregion
-
-        #region Existing Methods (preserved for compatibility)
-
         public async Task<FolderInfo> CreateFolderInfoWithoutImagesAsync(string path, bool loadImages = false)
         {
             var folder = new FolderInfo
@@ -577,6 +220,9 @@ namespace ImageFolderManager.Services
             return folder;
         }
 
+        /// <summary>
+        /// Loads images for a folder
+        /// </summary>
         public async Task LoadImagesAsync(FolderInfo folder)
         {
             var supportedExtensions = new[] { ".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp" };
@@ -592,20 +238,19 @@ namespace ImageFolderManager.Services
                     string ext = Path.GetExtension(file).ToLowerInvariant();
                     if (Array.Exists(supportedExtensions, e => e == ext))
                     {
-                        images.Add(new ImageInfo
-                        {
-                            FilePath = file,
-                            FileName = Path.GetFileName(file)
-                        });
+                        var imageInfo = new ImageInfo { FilePath = file };
+                        await imageInfo.LoadThumbnailAsync();
+                        images.Add(imageInfo);
                     }
                 }
 
-                _dispatcher.BeginInvoke(() =>
+                // Update UI on the main thread
+                Application.Current.Dispatcher.Invoke(() =>
                 {
                     folder.Images.Clear();
-                    foreach (var image in images)
+                    foreach (var img in images)
                     {
-                        folder.Images.Add(image);
+                        folder.Images.Add(img);
                     }
                 });
             }
@@ -615,116 +260,373 @@ namespace ImageFolderManager.Services
             }
         }
 
-        #endregion
-
-        #region Helper Methods
-
-        private void SetupFileSystemWatcher()
+        /// <summary>
+        /// Loads all folders recursively from a root path
+        /// </summary>
+        public async Task<List<FolderInfo>> LoadFoldersRecursivelyAsync(string rootPath, bool watchFolders = false)
         {
-            if (string.IsNullOrEmpty(_rootDirectory) || !Directory.Exists(_rootDirectory))
-                return;
+            // Disable caching during bulk operations
+            bool originalCachingSetting = _tagService.EnableCaching;
+            _tagService.EnableCaching = false;
 
-            _rootWatcher = new FileSystemWatcher(_rootDirectory)
+            var result = new List<FolderInfo>();
+
+            try
             {
-                IncludeSubdirectories = true,
-                NotifyFilter = NotifyFilters.DirectoryName | NotifyFilters.CreationTime | NotifyFilters.LastWrite,
-                EnableRaisingEvents = true
-            };
+                _tagService.ClearCache();
+                await TraverseDirectoriesAsync(rootPath, null, result);
+            }
+            finally
+            {
+                _tagService.EnableCaching = originalCachingSetting;
+            }
 
-            _rootWatcher.Created += OnFileSystemChanged;
-            _rootWatcher.Deleted += OnFileSystemChanged;
-            _rootWatcher.Renamed += OnFileSystemRenamed;
-
-            Debug.WriteLine($"File system watcher configured for: {_rootDirectory}");
+            return result;
         }
 
-        private void OnFileSystemChanged(object sender, FileSystemEventArgs e)
+        private async Task TraverseDirectoriesAsync(string path, FolderInfo parent, List<FolderInfo> result)
         {
-            if (_isDisposed || !Directory.Exists(e.FullPath) && e.ChangeType != WatcherChangeTypes.Deleted)
+            if (!PathService.DirectoryExists(path))
                 return;
 
-            var eventData = new FileSystemEventData
+            try
             {
-                ChangeType = e.ChangeType,
-                FullPath = PathService.NormalizePath(e.FullPath)
-            };
+                var folder = new FolderInfo
+                {
+                    FolderPath = PathService.NormalizePath(path),
+                    Parent = parent,
+                    Children = new ObservableCollection<FolderInfo>(),
+                    Images = new ObservableCollection<ImageInfo>(),
+                    Tags = new ObservableCollection<string>(await _tagService.GetTagsForFolderAsync(path)),
+                    Rating = await _tagService.GetRatingForFolderAsync(path)
+                };
 
-            _eventQueue.Enqueue(eventData);
+                result.Add(folder);
+
+                // Process subdirectories
+                try
+                {
+                    var subDirectories = Directory.GetDirectories(path);
+                    foreach (var subDir in subDirectories)
+                    {
+                        await TraverseDirectoriesAsync(subDir, folder, result);
+                    }
+                }
+                catch (UnauthorizedAccessException)
+                {
+                    // Skip directories we can't access
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error processing directory {path}: {ex.Message}");
+            }
+        }
+
+        #endregion
+
+        #region Search and Query Methods (from FileSystemIndexingService)
+
+        /// <summary>
+        /// Searches for folders matching a pattern
+        /// </summary>
+        public List<string> SearchFolders(string searchPattern)
+        {
+            if (string.IsNullOrWhiteSpace(searchPattern))
+                return _folderIndex.Keys.ToList();
+
+            var pattern = searchPattern.ToLowerInvariant();
+
+            return _folderIndex.Values
+                .Where(entry => entry.Name.ToLowerInvariant().Contains(pattern) ||
+                               entry.FullPath.ToLowerInvariant().Contains(pattern))
+                .Select(entry => entry.FullPath)
+                .ToList();
+        }
+
+        /// <summary>
+        /// Gets child folders of a parent path
+        /// </summary>
+        public List<string> GetChildFolders(string parentPath)
+        {
+            var normalizedParent = PathService.NormalizePath(parentPath);
+
+            return _folderIndex.Values
+                .Where(entry => string.Equals(entry.ParentPath, normalizedParent, StringComparison.OrdinalIgnoreCase))
+                .Select(entry => entry.FullPath)
+                .ToList();
+        }
+
+        /// <summary>
+        /// Checks if a folder is indexed
+        /// </summary>
+        public bool IsFolderIndexed(string folderPath)
+        {
+            var normalizedPath = PathService.NormalizePath(folderPath);
+            return _folderIndex.ContainsKey(normalizedPath);
+        }
+
+        #endregion
+
+        #region Private Methods
+
+        /// <summary>
+        /// Builds the initial folder index
+        /// </summary>
+        private async Task BuildInitialIndexAsync()
+        {
+            if (_isIndexing)
+                return;
+
+            _isIndexing = true;
+
+            try
+            {
+                Debug.WriteLine("Building initial folder index...");
+
+                var allFolders = new List<string>();
+
+                await Task.Run(() =>
+                {
+                    try
+                    {
+                        ScanDirectoryRecursive(_rootDirectory, allFolders);
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"Error during initial index build: {ex.Message}");
+                    }
+                });
+
+                // Add all folders to index
+                foreach (var folderPath in allFolders)
+                {
+                    var entry = new FolderIndexEntry(folderPath);
+                    _folderIndex.TryAdd(entry.FullPath, entry);
+                }
+
+                Debug.WriteLine($"Initial index built. {allFolders.Count} folders indexed.");
+
+                // Notify listeners
+                _dispatcher.BeginInvoke(() =>
+                {
+                    IndexRebuilt?.Invoke(allFolders);
+                });
+            }
+            finally
+            {
+                _isIndexing = false;
+            }
+        }
+
+        /// <summary>
+        /// Recursively scans directories
+        /// </summary>
+        private void ScanDirectoryRecursive(string directoryPath, List<string> allFolders)
+        {
+            try
+            {
+                allFolders.Add(directoryPath);
+
+                var subdirectories = Directory.GetDirectories(directoryPath);
+                foreach (var subdirectory in subdirectories)
+                {
+                    try
+                    {
+                        ScanDirectoryRecursive(subdirectory, allFolders);
+                    }
+                    catch (UnauthorizedAccessException)
+                    {
+                        Debug.WriteLine($"Skipping inaccessible directory: {subdirectory}");
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"Error scanning directory {subdirectory}: {ex.Message}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error scanning directory {directoryPath}: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Sets up the unified file system watcher
+        /// </summary>
+        private void SetupFileSystemWatcher()
+        {
+            try
+            {
+                _rootWatcher = new FileSystemWatcher
+                {
+                    Path = _rootDirectory,
+                    IncludeSubdirectories = true, // Monitor entire tree with single watcher
+                    NotifyFilter = NotifyFilters.DirectoryName | NotifyFilters.FileName |
+                                  NotifyFilters.LastWrite | NotifyFilters.CreationTime,
+                    Filter = "*.*",
+                    EnableRaisingEvents = false
+                };
+
+                // Subscribe to events
+                _rootWatcher.Created += OnFileSystemEvent;
+                _rootWatcher.Deleted += OnFileSystemEvent;
+                _rootWatcher.Renamed += OnFileSystemRenamed;
+                _rootWatcher.Changed += OnFileSystemEvent;
+                _rootWatcher.Error += OnWatcherError;
+
+                // Start monitoring
+                _rootWatcher.EnableRaisingEvents = true;
+
+                Debug.WriteLine("Unified file system watcher setup completed");
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error setting up unified file system watcher: {ex.Message}");
+                throw;
+            }
+        }
+
+        #endregion
+
+        #region Event Handlers
+
+        private void OnFileSystemEvent(object sender, FileSystemEventArgs e)
+        {
+            if (IsDirectory(e.FullPath) || WasDirectory(e.FullPath))
+            {
+                QueueEvent(new FileSystemEventData
+                {
+                    ChangeType = e.ChangeType,
+                    FullPath = e.FullPath
+                });
+            }
         }
 
         private void OnFileSystemRenamed(object sender, RenamedEventArgs e)
         {
-            if (_isDisposed)
-                return;
-
-            var eventData = new FileSystemEventData
+            if (IsDirectory(e.FullPath) || WasDirectory(e.OldFullPath))
             {
-                ChangeType = WatcherChangeTypes.Renamed,
-                FullPath = PathService.NormalizePath(e.FullPath),
-                OldPath = PathService.NormalizePath(e.OldFullPath)
-            };
-
-            _eventQueue.Enqueue(eventData);
-        }
-
-        private void ProcessQueuedEvents(object state)
-        {
-            if (_isDisposed || _eventQueue.IsEmpty)
-                return;
-
-            lock (_processingLock)
-            {
-                var processedEvents = new List<FileSystemEventData>();
-
-                while (_eventQueue.TryDequeue(out var eventData))
+                QueueEvent(new FileSystemEventData
                 {
-                    var normalizedPath = eventData.FullPath;
-
-                    // Debounce logic
-                    if (_lastEventTime.TryGetValue(normalizedPath, out var lastTime))
-                    {
-                        if (DateTime.Now - lastTime < _debounceInterval)
-                            continue;
-                    }
-
-                    _lastEventTime[normalizedPath] = DateTime.Now;
-                    processedEvents.Add(eventData);
-                }
-
-                // Process events on UI thread
-                if (processedEvents.Count > 0)
-                {
-                    _dispatcher.BeginInvoke(() =>
-                    {
-                        foreach (var eventData in processedEvents)
-                        {
-                            ProcessFileSystemEvent(eventData);
-                        }
-                    });
-                }
+                    ChangeType = WatcherChangeTypes.Renamed,
+                    FullPath = e.FullPath,
+                    OldPath = e.OldFullPath
+                });
             }
         }
 
-        private void ProcessFileSystemEvent(FileSystemEventData eventData)
+        private void OnWatcherError(object sender, ErrorEventArgs e)
         {
+            Exception ex = e.GetException();
+            Debug.WriteLine($"Unified file system watcher error: {ex.Message}");
+
+            // Try to restart the watcher
+            Task.Run(async () =>
+            {
+                try
+                {
+                    await Task.Delay(1000);
+
+                    if (!_isDisposed && !string.IsNullOrEmpty(_rootDirectory))
+                    {
+                        SetupFileSystemWatcher();
+                        Debug.WriteLine("Unified file system watcher restarted after error");
+                    }
+                }
+                catch (Exception restartEx)
+                {
+                    Debug.WriteLine($"Error restarting unified file system watcher: {restartEx.Message}");
+                }
+            });
+        }
+
+        private void QueueEvent(FileSystemEventData eventData)
+        {
+            // Debounce rapid events for the same path
+            if (ShouldDebounceEvent(eventData.FullPath))
+                return;
+
+            _lastEventTime[eventData.FullPath] = DateTime.Now;
+            _eventQueue.Enqueue(eventData);
+        }
+
+        private bool ShouldDebounceEvent(string path)
+        {
+            if (_lastEventTime.TryGetValue(path, out var lastTime))
+            {
+                var timeSince = DateTime.Now - lastTime;
+                if (timeSince < _debounceInterval)
+                {
+                    Debug.WriteLine($"Debouncing event for {path}, time since last event: {timeSince.TotalMilliseconds}ms");
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        private void ProcessEventQueue(object state)
+        {
+            if (_isDisposed || !Monitor.TryEnter(_processingLock))
+                return;
+
+            try
+            {
+                var eventsProcessed = 0;
+                const int maxEventsPerBatch = 50;
+
+                while (_eventQueue.TryDequeue(out var eventData) && eventsProcessed < maxEventsPerBatch)
+                {
+                    try
+                    {
+                        ProcessSingleEvent(eventData);
+                        eventsProcessed++;
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"Error processing unified file system event: {ex.Message}");
+                    }
+                }
+            }
+            finally
+            {
+                Monitor.Exit(_processingLock);
+            }
+        }
+
+        private void ProcessSingleEvent(FileSystemEventData eventData)
+        {
+            var normalizedPath = PathService.NormalizePath(eventData.FullPath);
+
             try
             {
                 switch (eventData.ChangeType)
                 {
                     case WatcherChangeTypes.Created:
-                        HandleFolderCreated(eventData.FullPath, eventData);
+                        HandleFolderCreated(normalizedPath, eventData);
                         break;
+
                     case WatcherChangeTypes.Deleted:
-                        HandleFolderDeleted(eventData.FullPath, eventData);
+                        HandleFolderDeleted(normalizedPath, eventData);
                         break;
+
                     case WatcherChangeTypes.Renamed:
-                        HandleFolderRenamed(eventData.OldPath, eventData.FullPath, eventData);
+                        if (!string.IsNullOrEmpty(eventData.OldPath))
+                        {
+                            var normalizedOldPath = PathService.NormalizePath(eventData.OldPath);
+                            HandleFolderRenamed(normalizedOldPath, normalizedPath, eventData);
+                        }
+                        break;
+
+                    case WatcherChangeTypes.Changed:
+                        // For legacy compatibility, fire the FileSystemEvent
+                        FireLegacyFileSystemEvent(normalizedPath, eventData);
                         break;
                 }
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"Error processing file system event: {ex.Message}");
+                Debug.WriteLine($"Error processing event {eventData.ChangeType} for {normalizedPath}: {ex.Message}");
             }
         }
 
@@ -733,69 +635,127 @@ namespace ImageFolderManager.Services
             if (!Directory.Exists(folderPath))
                 return;
 
+            // Add to index
             var entry = new FolderIndexEntry(folderPath);
             if (_folderIndex.TryAdd(entry.FullPath, entry))
             {
                 Debug.WriteLine($"Folder added to unified index: {folderPath}");
 
-                // Update state machine
-                if (_stateMachine != null)
+                // Fire events on UI thread
+                _dispatcher.BeginInvoke(() =>
                 {
-                    Task.Run(async () => await _stateMachine.TransitionStateAsync(folderPath, FolderState.Available));
-                }
+                    FolderCreated?.Invoke(folderPath);
+                    FireLegacyFileSystemEvent(folderPath, eventData);
+                });
 
-                FolderCreated?.Invoke(folderPath);
-                FireLegacyFileSystemEvent(folderPath, eventData);
+                // Scan for subdirectories that might have been created
+                Task.Run(() =>
+                {
+                    try
+                    {
+                        var subdirectories = new List<string>();
+                        ScanDirectoryRecursive(folderPath, subdirectories);
+
+                        foreach (var subdir in subdirectories.Skip(1)) // Skip the folder itself
+                        {
+                            var subdirEntry = new FolderIndexEntry(subdir);
+                            if (_folderIndex.TryAdd(subdirEntry.FullPath, subdirEntry))
+                            {
+                                _dispatcher.BeginInvoke(() =>
+                                {
+                                    FolderCreated?.Invoke(subdir);
+                                });
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"Error scanning subdirectories: {ex.Message}");
+                    }
+                });
             }
         }
 
         private void HandleFolderDeleted(string folderPath, FileSystemEventData eventData)
         {
+            // Remove from index
             if (_folderIndex.TryRemove(folderPath, out var removedEntry))
             {
                 Debug.WriteLine($"Folder removed from unified index: {folderPath}");
 
-                // Update state machine
-                if (_stateMachine != null)
+                _dispatcher.BeginInvoke(() =>
                 {
-                    Task.Run(async () => await _stateMachine.RemoveFolderAsync(folderPath));
-                }
+                    FolderDeleted?.Invoke(folderPath);
+                    FireLegacyFileSystemEvent(folderPath, eventData);
+                });
+            }
 
-                FolderDeleted?.Invoke(folderPath);
-                FireLegacyFileSystemEvent(folderPath, eventData);
+            // Remove subdirectories
+            var subfolders = _folderIndex.Keys
+                .Where(path => PathService.IsPathWithin(folderPath, path))
+                .ToList();
+
+            foreach (var subfolder in subfolders)
+            {
+                if (_folderIndex.TryRemove(subfolder, out _))
+                {
+                    Debug.WriteLine($"Subfolder removed from unified index: {subfolder}");
+
+                    _dispatcher.BeginInvoke(() =>
+                    {
+                        FolderDeleted?.Invoke(subfolder);
+                    });
+                }
             }
         }
 
         private void HandleFolderRenamed(string oldPath, string newPath, FileSystemEventData eventData)
         {
+            // Update index
             if (_folderIndex.TryRemove(oldPath, out var oldEntry))
             {
                 var newEntry = new FolderIndexEntry(newPath);
                 _folderIndex.TryAdd(newEntry.FullPath, newEntry);
 
-                Debug.WriteLine($"Folder renamed in unified index: {oldPath} → {newPath}");
+                Debug.WriteLine($"Folder renamed in unified index: {oldPath} -> {newPath}");
 
-                // Update state machine
-                if (_stateMachine != null)
+                _dispatcher.BeginInvoke(() =>
                 {
-                    Task.Run(async () =>
-                    {
-                        await _stateMachine.RemoveFolderAsync(oldPath);
-                        await _stateMachine.TransitionStateAsync(newPath, FolderState.Available);
-                    });
-                }
+                    FolderRenamed?.Invoke(oldPath, newPath);
+                    FireLegacyFileSystemEvent(newPath, eventData);
+                });
 
-                FolderRenamed?.Invoke(oldPath, newPath);
-                FireLegacyFileSystemEvent(newPath, eventData);
+                // Update subdirectories
+                var subfolders = _folderIndex.Keys
+                    .Where(path => PathService.IsPathWithin(oldPath, path))
+                    .ToList();
+
+                foreach (var subfolderOldPath in subfolders)
+                {
+                    if (_folderIndex.TryRemove(subfolderOldPath, out var subfolderEntry))
+                    {
+                        var subfolderNewPath = newPath + subfolderOldPath.Substring(oldPath.Length);
+                        var newSubfolderEntry = new FolderIndexEntry(subfolderNewPath);
+                        _folderIndex.TryAdd(newSubfolderEntry.FullPath, newSubfolderEntry);
+
+                        _dispatcher.BeginInvoke(() =>
+                        {
+                            FolderRenamed?.Invoke(subfolderOldPath, subfolderNewPath);
+                        });
+                    }
+                }
             }
         }
 
-        private void FireLegacyFileSystemEvent(string path, FileSystemEventData eventData)
+        private void FireLegacyFileSystemEvent(string folderPath, FileSystemEventData eventData)
         {
             try
             {
-                var folderInfo = CreateFolderInfoWithoutImagesAsync(path).Result;
-                var args = new FileSystemEventArgs(eventData.ChangeType, Path.GetDirectoryName(path), Path.GetFileName(path));
+                // Create a fake FolderInfo for legacy compatibility
+                var folderInfo = new FolderInfo { FolderPath = folderPath };
+                var args = new FileSystemEventArgs(eventData.ChangeType,
+                    Path.GetDirectoryName(folderPath), Path.GetFileName(folderPath));
+
                 FileSystemEvent?.Invoke(folderInfo, args, eventData.ChangeType);
             }
             catch (Exception ex)
@@ -804,84 +764,31 @@ namespace ImageFolderManager.Services
             }
         }
 
-        private void ScanDirectoryRecursive(string path, List<string> directories)
+        #endregion
+
+        #region Helper Methods
+
+        private bool IsDirectory(string path)
         {
             try
             {
-                directories.Add(path);
-
-                foreach (var subdirectory in Directory.GetDirectories(path))
-                {
-                    ScanDirectoryRecursive(subdirectory, directories);
-                }
+                return Directory.Exists(path);
             }
-            catch (Exception ex)
+            catch
             {
-                Debug.WriteLine($"Error scanning directory {path}: {ex.Message}");
+                return false;
             }
         }
 
-        private static void DirectoryCopy(string sourceDirName, string destDirName, bool copySubDirs)
+        private bool WasDirectory(string path)
         {
-            var dir = new DirectoryInfo(sourceDirName);
-
-            if (!dir.Exists)
-            {
-                throw new DirectoryNotFoundException($"Source directory does not exist or could not be found: {sourceDirName}");
-            }
-
-            DirectoryInfo[] dirs = dir.GetDirectories();
-            Directory.CreateDirectory(destDirName);
-
-            FileInfo[] files = dir.GetFiles();
-            foreach (FileInfo file in files)
-            {
-                string tempPath = Path.Combine(destDirName, file.Name);
-                file.CopyTo(tempPath, false);
-            }
-
-            if (copySubDirs)
-            {
-                foreach (DirectoryInfo subdir in dirs)
-                {
-                    string tempPath = Path.Combine(destDirName, subdir.Name);
-                    DirectoryCopy(subdir.FullName, tempPath, copySubDirs);
-                }
-            }
+            // Check if path was in our index (indicating it was a directory)
+            return _folderIndex.ContainsKey(PathService.NormalizePath(path));
         }
 
         #endregion
 
-        #region Nested Classes (preserved)
-
-        private class FolderIndexEntry
-        {
-            public string FullPath { get; set; }
-            public string Name { get; set; }
-            public string ParentPath { get; set; }
-            public DateTime LastModified { get; set; }
-            public bool Exists { get; set; } = true;
-
-            public FolderIndexEntry(string fullPath)
-            {
-                FullPath = PathService.NormalizePath(fullPath);
-                Name = Path.GetFileName(FullPath);
-                ParentPath = Path.GetDirectoryName(FullPath);
-                LastModified = Directory.Exists(FullPath) ? Directory.GetLastWriteTime(FullPath) : DateTime.MinValue;
-            }
-        }
-
-        private class FileSystemEventData
-        {
-            public WatcherChangeTypes ChangeType { get; set; }
-            public string FullPath { get; set; }
-            public string OldPath { get; set; }
-            public DateTime Timestamp { get; set; } = DateTime.Now;
-        }
-
-        #endregion
-
-        #region Disposal
+        #region IDisposable Implementation
 
         public void Dispose()
         {
@@ -893,31 +800,16 @@ namespace ImageFolderManager.Services
             try
             {
                 // Stop monitoring
-                StopMonitoringAsync().Wait(5000);
+                StopMonitoringAsync().Wait(1000);
 
                 // Dispose timer
                 _eventProcessingTimer?.Dispose();
-
-                // Dispose command system
-                if (_commandExecutor != null)
-                {
-                    _commandExecutor.CommandStarted -= OnCommandStarted;
-                    _commandExecutor.CommandCompleted -= OnCommandCompleted;
-                    _commandExecutor.CommandFailed -= OnCommandFailed;
-                }
-
-                if (_stateMachine != null)
-                {
-                    _stateMachine.StateChanged -= OnFolderStateChanged;
-                }
-
-                _commandSystem?.Dispose();
 
                 Debug.WriteLine("UnifiedFolderService disposed");
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"Error during UnifiedFolderService disposal: {ex.Message}");
+                Debug.WriteLine($"Error disposing UnifiedFolderService: {ex.Message}");
             }
         }
 
