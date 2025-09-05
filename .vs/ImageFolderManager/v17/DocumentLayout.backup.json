@@ -3,19 +3,19 @@
   "WorkspaceRootPath": "D:\\ImageFolderManager\\",
   "Documents": [
     {
-      "AbsoluteMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|D:\\ImageFolderManager\\services\\commandsysteminitializer.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "AbsoluteMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|d:\\imagefoldermanager\\services\\serviceintegrationhelper.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|solutionrelative:services\\serviceintegrationhelper.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|d:\\imagefoldermanager\\services\\commandsysteminitializer.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
       "RelativeMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|solutionrelative:services\\commandsysteminitializer.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     },
     {
-      "AbsoluteMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|d:\\imagefoldermanager\\services\\exceptionhandlingservice.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "AbsoluteMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|D:\\ImageFolderManager\\services\\exceptionhandlingservice.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
       "RelativeMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|solutionrelative:services\\exceptionhandlingservice.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     },
     {
-      "AbsoluteMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|d:\\imagefoldermanager\\commands\\createfoldercommand.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
-      "RelativeMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|solutionrelative:commands\\createfoldercommand.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|d:\\imagefoldermanager\\services\\unifiedfolderservice.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "AbsoluteMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|D:\\ImageFolderManager\\services\\unifiedfolderservice.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
       "RelativeMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|solutionrelative:services\\unifiedfolderservice.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     },
     {
@@ -23,8 +23,20 @@
       "RelativeMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|solutionrelative:viewmodels\\mainviewmodel.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     },
     {
+      "AbsoluteMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|D:\\ImageFolderManager\\commands\\createfoldercommand.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|solutionrelative:commands\\createfoldercommand.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
       "AbsoluteMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|D:\\ImageFolderManager\\viewmodels\\folderoperationsviewmodel.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
       "RelativeMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|solutionrelative:viewmodels\\folderoperationsviewmodel.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|d:\\imagefoldermanager\\viewmodels\\viewmodelhelper.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|solutionrelative:viewmodels\\viewmodelhelper.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|d:\\imagefoldermanager\\app.xaml.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|solutionrelative:app.xaml.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     }
   ],
   "DocumentGroupContainers": [
@@ -34,11 +46,63 @@
       "DocumentGroups": [
         {
           "DockedHeight": 988,
-          "SelectedChildIndex": 7,
+          "SelectedChildIndex": 3,
           "Children": [
             {
               "$type": "Bookmark",
               "Name": "ST:0:0:{34e76e81-ee4a-11d0-ae2e-00a0c90fffc3}"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 7,
+              "Title": "ViewModelHelper.cs",
+              "DocumentMoniker": "D:\\ImageFolderManager\\ViewModels\\ViewModelHelper.cs",
+              "RelativeDocumentMoniker": "ViewModels\\ViewModelHelper.cs",
+              "ToolTip": "D:\\ImageFolderManager\\ViewModels\\ViewModelHelper.cs",
+              "RelativeToolTip": "ViewModels\\ViewModelHelper.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAGQAAAApAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2025-09-05T06:23:24.738Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 8,
+              "Title": "App.xaml.cs",
+              "DocumentMoniker": "D:\\ImageFolderManager\\App.xaml.cs",
+              "RelativeDocumentMoniker": "App.xaml.cs",
+              "ToolTip": "D:\\ImageFolderManager\\App.xaml.cs*",
+              "RelativeToolTip": "App.xaml.cs*",
+              "ViewState": "AgIAAE4AAAAAAAAAAADwv2AAAAAyAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2025-09-05T03:15:42.115Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 0,
+              "Title": "ServiceIntegrationHelper.cs",
+              "DocumentMoniker": "D:\\ImageFolderManager\\Services\\ServiceIntegrationHelper.cs",
+              "RelativeDocumentMoniker": "Services\\ServiceIntegrationHelper.cs",
+              "ToolTip": "D:\\ImageFolderManager\\Services\\ServiceIntegrationHelper.cs*",
+              "RelativeToolTip": "Services\\ServiceIntegrationHelper.cs*",
+              "ViewState": "AgIAAOYAAAAAAAAAAAAawPwAAAAWAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2025-09-05T03:15:05.67Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 1,
+              "Title": "CommandSystemInitializer.cs",
+              "DocumentMoniker": "D:\\ImageFolderManager\\Services\\CommandSystemInitializer.cs",
+              "RelativeDocumentMoniker": "Services\\CommandSystemInitializer.cs",
+              "ToolTip": "D:\\ImageFolderManager\\Services\\CommandSystemInitializer.cs",
+              "RelativeToolTip": "Services\\CommandSystemInitializer.cs",
+              "ViewState": "AgIAAFcAAAAAAAAAAAAmwGEAAABWAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2025-09-04T09:00:05.097Z",
+              "EditorCaption": ""
             },
             {
               "$type": "Bookmark",
@@ -46,20 +110,20 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 1,
+              "DocumentIndex": 2,
               "Title": "ExceptionHandlingService.cs",
               "DocumentMoniker": "D:\\ImageFolderManager\\Services\\ExceptionHandlingService.cs",
               "RelativeDocumentMoniker": "Services\\ExceptionHandlingService.cs",
               "ToolTip": "D:\\ImageFolderManager\\Services\\ExceptionHandlingService.cs",
               "RelativeToolTip": "Services\\ExceptionHandlingService.cs",
-              "ViewState": "AgIAAHMAAAAAAAAAAAAiwHkAAAAbAAAAAAAAAA==",
+              "ViewState": "AgIAAFcAAAAAAAAAAADwv3kAAAAbAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
               "WhenOpened": "2025-09-05T02:04:09.015Z",
               "EditorCaption": ""
             },
             {
               "$type": "Document",
-              "DocumentIndex": 2,
+              "DocumentIndex": 5,
               "Title": "CreateFolderCommand.cs",
               "DocumentMoniker": "D:\\ImageFolderManager\\Commands\\CreateFolderCommand.cs",
               "RelativeDocumentMoniker": "Commands\\CreateFolderCommand.cs",
@@ -76,9 +140,9 @@
               "Title": "UnifiedFolderService.cs",
               "DocumentMoniker": "D:\\ImageFolderManager\\Services\\UnifiedFolderService.cs",
               "RelativeDocumentMoniker": "Services\\UnifiedFolderService.cs",
-              "ToolTip": "D:\\ImageFolderManager\\Services\\UnifiedFolderService.cs",
-              "RelativeToolTip": "Services\\UnifiedFolderService.cs",
-              "ViewState": "AgIAAMYAAAAAAAAAAAAAADEDAAABAAAAAAAAAA==",
+              "ToolTip": "D:\\ImageFolderManager\\Services\\UnifiedFolderService.cs*",
+              "RelativeToolTip": "Services\\UnifiedFolderService.cs*",
+              "ViewState": "AgIAAEQCAAAAAAAAAAAAwDoBAAAvAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
               "WhenOpened": "2025-09-04T09:20:02.317Z",
               "EditorCaption": ""
@@ -89,36 +153,24 @@
               "Title": "MainViewModel.cs",
               "DocumentMoniker": "D:\\ImageFolderManager\\ViewModels\\MainViewModel.cs",
               "RelativeDocumentMoniker": "ViewModels\\MainViewModel.cs",
-              "ToolTip": "D:\\ImageFolderManager\\ViewModels\\MainViewModel.cs",
-              "RelativeToolTip": "ViewModels\\MainViewModel.cs",
-              "ViewState": "AgIAAKsAAAAAAAAAAAAowA4IAAABAAAAAAAAAA==",
+              "ToolTip": "D:\\ImageFolderManager\\ViewModels\\MainViewModel.cs*",
+              "RelativeToolTip": "ViewModels\\MainViewModel.cs*",
+              "ViewState": "AgIAAA8BAAAAAAAAAAAAAB8BAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
               "WhenOpened": "2025-09-04T09:21:14.078Z",
               "EditorCaption": ""
             },
             {
               "$type": "Document",
-              "DocumentIndex": 5,
+              "DocumentIndex": 6,
               "Title": "FolderOperationsViewModel.cs",
               "DocumentMoniker": "D:\\ImageFolderManager\\ViewModels\\FolderOperationsViewModel.cs",
               "RelativeDocumentMoniker": "ViewModels\\FolderOperationsViewModel.cs",
-              "ToolTip": "D:\\ImageFolderManager\\ViewModels\\FolderOperationsViewModel.cs",
-              "RelativeToolTip": "ViewModels\\FolderOperationsViewModel.cs",
-              "ViewState": "AgIAAO8DAAAAAAAAAAAowAoEAAABAAAAAAAAAA==",
+              "ToolTip": "D:\\ImageFolderManager\\ViewModels\\FolderOperationsViewModel.cs*",
+              "RelativeToolTip": "ViewModels\\FolderOperationsViewModel.cs*",
+              "ViewState": "AgIAAM4CAAAAAAAAAAAqwNwCAAAJAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2025-09-04T09:20:50.006Z"
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 0,
-              "Title": "CommandSystemInitializer.cs",
-              "DocumentMoniker": "D:\\ImageFolderManager\\Services\\CommandSystemInitializer.cs",
-              "RelativeDocumentMoniker": "Services\\CommandSystemInitializer.cs",
-              "ToolTip": "D:\\ImageFolderManager\\Services\\CommandSystemInitializer.cs",
-              "RelativeToolTip": "Services\\CommandSystemInitializer.cs",
-              "ViewState": "AgIAAFcAAAAAAAAAAAAmwGQAAACBAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2025-09-04T09:00:05.097Z",
+              "WhenOpened": "2025-09-04T09:20:50.006Z",
               "EditorCaption": ""
             }
           ]
