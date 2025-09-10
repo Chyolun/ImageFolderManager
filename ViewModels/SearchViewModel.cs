@@ -252,11 +252,32 @@ namespace ImageFolderManager.ViewModels
 
         #endregion
 
+
         #region Helper Methods
 
         private void UpdateStatus(string message)
         {
             StatusMessageChanged?.Invoke(this, message);
+        }
+
+        #endregion
+
+        #region IDisposable Implementation
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                // Cancel any ongoing search operations
+                _searchCancellationTokenSource?.Cancel();
+                _searchCancellationTokenSource?.Dispose();
+                _searchCancellationTokenSource = null;
+
+                // Clear collections
+                SearchResultFolders?.Clear();
+            }
+
+            base.Dispose(disposing);
         }
 
         #endregion
@@ -429,6 +450,7 @@ namespace ImageFolderManager.ViewModels
                 _ => null
             };
         }
+
 
         /// <summary>
         /// Tests if a folder matches all AND groups (each group must have at least one OR match)

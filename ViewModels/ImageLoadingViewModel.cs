@@ -280,5 +280,37 @@ namespace ImageFolderManager.ViewModels
         }
 
         #endregion
+
+        #region IDisposable Implementation
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                // Cancel current loading operations
+                CancelCurrentLoading();
+
+                // Dispose the cancellation token source
+                _imageLoadingCts?.Dispose();
+                _imageLoadingCts = null;
+
+                // Dispose all ImageInfo objects which implement IDisposable
+                if (Images != null)
+                {
+                    foreach (var image in Images)
+                    {
+                        image?.Dispose();
+                    }
+                    Images.Clear();
+                }
+
+                // Clear current folder reference
+                CurrentFolder = null;
+            }
+
+            base.Dispose(disposing);
+        }
+
+        #endregion
     }
 }
