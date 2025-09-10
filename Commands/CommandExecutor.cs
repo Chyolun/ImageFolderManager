@@ -80,6 +80,19 @@ namespace ImageFolderManager.Commands
             }
         }
 
+        /// <summary>
+        /// Gets whether there are commands that can be undone
+        /// </summary>
+        public bool HasUndoableCommands
+        {
+            get
+            {
+                lock (_historyLock)
+                {
+                    return _commandHistory.Count > 0 && _commandHistory.Peek().CanUndo;
+                }
+            }
+        }
         private async Task<CommandResult> ExecuteCommandInternalAsync(IFolderCommand command, CancellationToken cancellationToken)
         {
             var affectedPaths = command.GetAffectedPaths();
@@ -223,6 +236,43 @@ namespace ImageFolderManager.Commands
         }
 
         /// <summary>
+        /// Cancel all currently running operations
+        /// </summary>
+        public async Task CancelAllOperationsAsync()
+        {
+            if (_disposed)
+                throw new ObjectDisposedException(nameof(CommandExecutor));
+
+            var runningCommands = _runningCommands.Keys.ToList();
+
+            if (runningCommands.Count == 0)
+                return;
+
+            Debug.WriteLine($"Cancelling {runningCommands.Count} running operations");
+
+            // Note: This is a simplified implementation
+            // In a real implementation, you'd need to pass cancellation tokens to commands
+            // and implement proper cancellation support in each command
+
+            foreach (var commandId in runningCommands)
+            {
+                if (_runningCommands.TryGetValue(commandId, out var tcs))
+                {
+                    tcs.TrySetCanceled();
+                }
+            }
+
+            // Wait a short time for operations to cancel gracefully
+            await Task.Delay(1000);
+
+            // Force remove any remaining running commands
+            foreach (var commandId in runningCommands)
+            {
+                _runningCommands.TryRemove(commandId, out _);
+            }
+        }
+
+        /// <summary>
         /// Undo the last executed command
         /// </summary>
         public async Task<CommandResult> UndoLastCommandAsync(CancellationToken cancellationToken = default)
@@ -329,6 +379,7 @@ namespace ImageFolderManager.Commands
             }
         }
     }
+
 
     /// <summary>
     /// Event args for command execution events

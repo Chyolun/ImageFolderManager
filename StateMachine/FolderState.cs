@@ -55,4 +55,6 @@ namespace ImageFolderManager.StateMachine
             TransitionCount = 0;
         }
     }
+
+
 }

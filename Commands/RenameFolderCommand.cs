@@ -12,22 +12,24 @@ namespace ImageFolderManager.Commands
     public class RenameFolderCommand : BaseFolderCommand
     {
         private readonly string _folderPath;
-        private readonly string _oldName;
         private readonly string _newName;
+        private readonly string _oldName;
         private string _newPath;
-        private readonly string _parentPath;
+        private bool _wasRenamed;
 
         public RenameFolderCommand(string folderPath, string newName) : base(FolderCommandType.Rename)
         {
             _folderPath = PathService.NormalizePath(folderPath);
-            _oldName = Path.GetFileName(_folderPath);
             _newName = newName;
-            _parentPath = Path.GetDirectoryName(_folderPath);
+            _oldName = Path.GetFileName(_folderPath);
+            _newPath = Path.Combine(Path.GetDirectoryName(_folderPath), _newName);
+            _wasRenamed = false;
         }
 
         public string FolderPath => _folderPath;
-        public string OldName => _oldName;
         public string NewName => _newName;
+        public string OldName => _oldName;
+        public string OldPath => _folderPath;
         public string NewPath => _newPath;
 
         protected override async Task<CommandResult> ValidateAsync(CancellationToken cancellationToken)
@@ -43,16 +45,16 @@ namespace ImageFolderManager.Commands
             if (!Directory.Exists(_folderPath))
                 return CommandResult.CreateFailure($"Folder does not exist: {_folderPath}");
 
-            // Check for invalid characters
-            if (_newName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
-                return CommandResult.CreateFailure("New name contains invalid characters");
-
-            // Same name check
             if (string.Equals(_oldName, _newName, StringComparison.OrdinalIgnoreCase))
                 return CommandResult.CreateFailure("New name is the same as current name");
 
-            // Generate new path and check for conflicts
-            _newPath = PathService.GetUniqueDirectoryPath(_parentPath, _newName);
+            // Check for invalid characters
+            var invalidChars = Path.GetInvalidFileNameChars();
+            if (_newName.IndexOfAny(invalidChars) >= 0)
+                return CommandResult.CreateFailure("New name contains invalid characters");
+
+            if (Directory.Exists(_newPath))
+                return CommandResult.CreateFailure($"A folder with the name '{_newName}' already exists");
 
             return CommandResult.CreateSuccess("Validation passed");
         }
@@ -64,45 +66,34 @@ namespace ImageFolderManager.Commands
                 await Task.Run(() =>
                 {
                     Directory.Move(_folderPath, _newPath);
+                    _wasRenamed = true;
                 }, cancellationToken);
 
-                LogCommand($"Renamed folder from {_oldName} to {Path.GetFileName(_newPath)}");
-                return CommandResult.CreateSuccess(
-                    $"Folder renamed: {_oldName} → {Path.GetFileName(_newPath)}",
-                    _newPath);
+                return CommandResult.CreateSuccess($"Renamed folder from '{_oldName}' to '{_newName}'");
             }
-            catch (UnauthorizedAccessException ex)
+            catch (Exception ex)
             {
-                return CommandResult.CreateFailure($"Access denied renaming folder: {ex.Message}", ex);
-            }
-            catch (DirectoryNotFoundException ex)
-            {
-                return CommandResult.CreateFailure($"Folder not found: {ex.Message}", ex);
-            }
-            catch (IOException ex)
-            {
-                return CommandResult.CreateFailure($"IO error renaming folder: {ex.Message}", ex);
+                return CommandResult.CreateFailure($"Failed to rename folder: {ex.Message}", ex);
             }
         }
 
         protected override async Task<CommandResult> UndoInternalAsync(CancellationToken cancellationToken)
         {
+            if (!_wasRenamed)
+                return CommandResult.CreateFailure("Rename operation was not executed, cannot undo");
+
             try
             {
-                if (Directory.Exists(_newPath))
+                await Task.Run(() =>
                 {
-                    await Task.Run(() =>
+                    if (Directory.Exists(_newPath))
                     {
                         Directory.Move(_newPath, _folderPath);
-                    }, cancellationToken);
+                        _wasRenamed = false;
+                    }
+                }, cancellationToken);
 
-                    LogCommand($"Undid folder rename: {Path.GetFileName(_newPath)} back to {_oldName}");
-                    return CommandResult.CreateSuccess($"Rename operation undone: {_oldName}");
-                }
-                else
-                {
-                    return CommandResult.CreateFailure("Renamed folder no longer exists, cannot undo rename");
-                }
+                return CommandResult.CreateSuccess($"Undid rename operation, restored name to '{_oldName}'");
             }
             catch (Exception ex)
             {
@@ -112,7 +103,7 @@ namespace ImageFolderManager.Commands
 
         public override string[] GetAffectedPaths()
         {
-            return new[] { _folderPath, _newPath, _parentPath };
+            return new[] { _folderPath, _newPath };
         }
     }
 }

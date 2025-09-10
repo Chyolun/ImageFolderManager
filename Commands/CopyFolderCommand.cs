@@ -12,22 +12,22 @@ namespace ImageFolderManager.Commands
     public class CopyFolderCommand : BaseFolderCommand
     {
         private readonly string _sourcePath;
-        private readonly string _targetParentPath;
-        private readonly string _newName;
-        private string _destinationPath;
+        private readonly string _destinationPath;
+        private string _actualDestinationPath;
+        private bool _wasCopied;
 
-        public CopyFolderCommand(string sourcePath, string targetParentPath, string newName = null)
-            : base(FolderCommandType.Copy)
+        public CopyFolderCommand(string sourcePath, string destinationPath) : base(FolderCommandType.Copy)
         {
             _sourcePath = PathService.NormalizePath(sourcePath);
-            _targetParentPath = PathService.NormalizePath(targetParentPath);
-            _newName = newName ?? Path.GetFileName(_sourcePath);
+            _destinationPath = PathService.NormalizePath(destinationPath);
+            _wasCopied = false;
         }
 
         public string SourcePath => _sourcePath;
-        public string TargetParentPath => _targetParentPath;
-        public string NewName => _newName;
         public string DestinationPath => _destinationPath;
+        public string ActualDestinationPath => _actualDestinationPath;
+
+        public override bool CanUndo => true; // Copy can be undone by deleting the copied folder
 
         protected override async Task<CommandResult> ValidateAsync(CancellationToken cancellationToken)
         {
@@ -36,17 +36,23 @@ namespace ImageFolderManager.Commands
             if (string.IsNullOrWhiteSpace(_sourcePath))
                 return CommandResult.CreateFailure("Source path cannot be empty");
 
-            if (string.IsNullOrWhiteSpace(_targetParentPath))
-                return CommandResult.CreateFailure("Target parent path cannot be empty");
+            if (string.IsNullOrWhiteSpace(_destinationPath))
+                return CommandResult.CreateFailure("Destination path cannot be empty");
 
             if (!Directory.Exists(_sourcePath))
                 return CommandResult.CreateFailure($"Source folder does not exist: {_sourcePath}");
 
-            if (!Directory.Exists(_targetParentPath))
-                return CommandResult.CreateFailure($"Target parent folder does not exist: {_targetParentPath}");
+            var destinationParent = Path.GetDirectoryName(_destinationPath);
+            if (!Directory.Exists(destinationParent))
+                return CommandResult.CreateFailure($"Destination parent directory does not exist: {destinationParent}");
 
-            // Generate destination path and ensure uniqueness
-            _destinationPath = PathService.GetUniqueDirectoryPath(_targetParentPath, _newName);
+            if (string.Equals(_sourcePath, _destinationPath, StringComparison.OrdinalIgnoreCase))
+                return CommandResult.CreateFailure("Source and destination paths are the same");
+
+            // Generate unique destination path if target already exists
+            _actualDestinationPath = PathService.GetUniqueDirectoryPath(
+                Path.GetDirectoryName(_destinationPath),
+                Path.GetFileName(_destinationPath));
 
             return CommandResult.CreateSuccess("Validation passed");
         }
@@ -57,46 +63,51 @@ namespace ImageFolderManager.Commands
             {
                 await Task.Run(() =>
                 {
-                    CopyDirectory(_sourcePath, _destinationPath, cancellationToken);
+                    CopyDirectory(_sourcePath, _actualDestinationPath, true, cancellationToken);
+                    _wasCopied = true;
                 }, cancellationToken);
 
-                LogCommand($"Copied folder from {_sourcePath} to {_destinationPath}");
-                return CommandResult.CreateSuccess(
-                    $"Folder copied: {Path.GetFileName(_sourcePath)} → {Path.GetFileName(_destinationPath)}",
-                    _destinationPath);
+                return CommandResult.CreateSuccess($"Copied folder from {_sourcePath} to {_actualDestinationPath}");
             }
-            catch (UnauthorizedAccessException ex)
+            catch (OperationCanceledException)
             {
-                return CommandResult.CreateFailure($"Access denied copying folder: {ex.Message}", ex);
+                // Cleanup partial copy on cancellation
+                try
+                {
+                    if (Directory.Exists(_actualDestinationPath))
+                    {
+                        Directory.Delete(_actualDestinationPath, true);
+                    }
+                }
+                catch
+                {
+                    // Ignore cleanup errors
+                }
+                throw;
             }
-            catch (DirectoryNotFoundException ex)
+            catch (Exception ex)
             {
-                return CommandResult.CreateFailure($"Directory not found: {ex.Message}", ex);
-            }
-            catch (IOException ex)
-            {
-                return CommandResult.CreateFailure($"IO error copying folder: {ex.Message}", ex);
+                return CommandResult.CreateFailure($"Failed to copy folder: {ex.Message}", ex);
             }
         }
 
         protected override async Task<CommandResult> UndoInternalAsync(CancellationToken cancellationToken)
         {
+            if (!_wasCopied)
+                return CommandResult.CreateFailure("Copy operation was not executed, cannot undo");
+
             try
             {
-                if (Directory.Exists(_destinationPath))
+                await Task.Run(() =>
                 {
-                    await Task.Run(() =>
+                    if (Directory.Exists(_actualDestinationPath))
                     {
-                        Directory.Delete(_destinationPath, true);
-                    }, cancellationToken);
+                        Directory.Delete(_actualDestinationPath, true);
+                        _wasCopied = false;
+                    }
+                }, cancellationToken);
 
-                    LogCommand($"Undid folder copy by deleting: {_destinationPath}");
-                    return CommandResult.CreateSuccess($"Copy operation undone");
-                }
-                else
-                {
-                    return CommandResult.CreateSuccess("Copied folder no longer exists (already undone)");
-                }
+                return CommandResult.CreateSuccess($"Undid copy operation, deleted copied folder at {_actualDestinationPath}");
             }
             catch (Exception ex)
             {
@@ -106,34 +117,41 @@ namespace ImageFolderManager.Commands
 
         public override string[] GetAffectedPaths()
         {
-            return new[] { _sourcePath, _destinationPath, _targetParentPath };
+            return new[] { _sourcePath, _destinationPath };
         }
 
         /// <summary>
-        /// Recursively copy directory and all its contents
+        /// Recursively copy directory contents
         /// </summary>
-        private void CopyDirectory(string sourceDir, string targetDir, CancellationToken cancellationToken)
+        private static void CopyDirectory(string sourceDir, string destinationDir, bool recursive, CancellationToken cancellationToken)
         {
-            Directory.CreateDirectory(targetDir);
+            var dir = new DirectoryInfo(sourceDir);
+
+            if (!dir.Exists)
+                throw new DirectoryNotFoundException($"Source directory not found: {dir.FullName}");
+
+            DirectoryInfo[] dirs = dir.GetDirectories();
+            Directory.CreateDirectory(destinationDir);
 
             // Copy files
-            foreach (var filePath in Directory.GetFiles(sourceDir))
+            foreach (FileInfo file in dir.GetFiles())
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                string fileName = Path.GetFileName(filePath);
-                string destFilePath = Path.Combine(targetDir, fileName);
-                File.Copy(filePath, destFilePath, true);
+                string targetFilePath = Path.Combine(destinationDir, file.Name);
+                file.CopyTo(targetFilePath);
             }
 
-            // Copy subdirectories
-            foreach (var dirPath in Directory.GetDirectories(sourceDir))
+            // Copy subdirectories if recursive
+            if (recursive)
             {
-                cancellationToken.ThrowIfCancellationRequested();
+                foreach (DirectoryInfo subDir in dirs)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
 
-                string dirName = Path.GetFileName(dirPath);
-                string destDirPath = Path.Combine(targetDir, dirName);
-                CopyDirectory(dirPath, destDirPath, cancellationToken);
+                    string newDestinationDir = Path.Combine(destinationDir, subDir.Name);
+                    CopyDirectory(subDir.FullName, newDestinationDir, true, cancellationToken);
+                }
             }
         }
     }

@@ -14,7 +14,7 @@ namespace ImageFolderManager.Views
         public int SelectedHeight { get; private set; }
         public int SelectedMaxCacheSize { get; private set; }
         public int SelectedThreadCount { get; private set; }
-        public bool DialogResult { get; private set; } = false;
+        public bool PreviewDialogResult { get; private set; } = false;
 
         private bool _isCalculatingCacheSize = false;
 
@@ -101,13 +101,13 @@ namespace ImageFolderManager.Views
             SelectedHeight = (int)HeightUpDown.Value;
             SelectedMaxCacheSize = (int)MaxCacheSizeUpDown.Value;
             SelectedThreadCount = (int)ThreadCountUpDown.Value;
-            DialogResult = true;
+            PreviewDialogResult = true;
             Close();
         }
 
         private void Cancel_Click(object sender, RoutedEventArgs e)
         {
-            DialogResult = false;
+            PreviewDialogResult = false;
             Close();
         }
 

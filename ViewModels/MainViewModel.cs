@@ -6,7 +6,6 @@ using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
-using System.Windows.Forms;
 using System.Windows.Input;
 using CommunityToolkit.Mvvm.Input;
 using ImageFolderManager.Models;
@@ -19,7 +18,8 @@ using Microsoft.WindowsAPICodePack.Dialogs;
 using static ImageFolderManager.Controls.ShellTreeView;
 using System.Diagnostics;
 using System.Threading;
-
+using ImageFolderManager.Commands;
+using ImageFolderManager.StateMachine;
 
 namespace ImageFolderManager.ViewModels
 {
@@ -28,38 +28,39 @@ namespace ImageFolderManager.ViewModels
     /// </summary>
     public class MainViewModel : ViewModelBase
     {
-        #region Sub-ViewModels
-
-        public FolderOperationsViewModel FolderOperations { get; }
-        public SearchViewModel Search { get; }
-        public ImageLoadingViewModel ImageLoading { get; }
-        public TagManagementViewModel TagManagement { get; }
-
-        #endregion
-
-        #region Properties
-
-        private System.Threading.Timer _statusMessageTimer;
-        private bool _isImportantStatusMessageActive = false;
-        private readonly object _statusMessageLock = new object();
+        #region Fields
 
         private readonly UnifiedFolderService _unifiedFolderService;
         private readonly FolderTagService _tagService;
         private readonly List<FolderInfo> _allLoadedFolders;
 
-        // Operation synchronization mechanism
-        private readonly SemaphoreSlim _folderOperationSemaphore = new SemaphoreSlim(1, 1);
-        private readonly SemaphoreSlim _initializationSemaphore = new SemaphoreSlim(1, 1);
+        // Command system components
+        private CommandSystemInitializer _commandSystem;
+        private CommandExecutor _commandExecutor;
+        private FolderStateMachine _stateMachine;
 
-        // State tracking
-        private volatile bool _isTreeViewInitialized = false;
-        private volatile bool _isMonitoringActive = false;
+        // Sub-ViewModels
+        public FolderOperationsViewModel FolderOperations { get; }
+        public SearchViewModel Search { get; }
+        public ImageLoadingViewModel ImageLoading { get; }
+        public TagManagementViewModel TagManagement { get; }
 
-
-        //private ShellTreeView ShellTreeView { get; set; }
-        private ShellTreeView _shellTreeView;
-
+        // UI State
+        private string _statusMessage = "Ready";
         private FolderInfo _selectedFolder;
+        private bool _isCommandSystemActive;
+
+        #endregion
+
+
+        #region Properties
+
+        public string StatusMessage
+        {
+            get => _statusMessage;
+            set => SetProperty(ref _statusMessage, value);
+        }
+
         public FolderInfo SelectedFolder
         {
             get => _selectedFolder;
@@ -72,39 +73,43 @@ namespace ImageFolderManager.ViewModels
             }
         }
 
-
-        private string _statusMessage = "Ready";
-        public string StatusMessage
+        /// <summary>
+        /// Indicates whether the command system is active and operational
+        /// </summary>
+        public bool IsCommandSystemActive
         {
-            get => _statusMessage;
-            set
-            {
-                lock (_statusMessageLock)
-                {
-                    // If an important message is active, only allow new important messages to override it
-                    if (_isImportantStatusMessageActive)
-                    {
-                        // Skip setting the message as it would override an important message
-                        return;
-                    }
+            get => _isCommandSystemActive;
+            private set => SetProperty(ref _isCommandSystemActive, value);
+        }
 
-                    SetProperty(ref _statusMessage, value);
-                }
+        /// <summary>
+        /// Gets information about current folder operations
+        /// </summary>
+        public string OperationStatusInfo
+        {
+            get
+            {
+                if (!IsCommandSystemActive || FolderOperations == null)
+                    return "Command system inactive";
+
+                var count = FolderOperations.OperationsInProgressCount;
+                return count == 0 ? "No operations in progress" : $"{count} operation(s) in progress";
             }
         }
 
+        // Expose properties from sub-ViewModels for backward compatibility
         public ObservableCollection<TagDisplayInfo> TagDisplayItems => TagManagement.TagDisplayItems;
         public ObservableCollection<FolderInfo> RootFolders { get; } = new ObservableCollection<FolderInfo>();
-
-        // Expose properties from sub-ViewModels for backward compatibility
         public ObservableCollection<ImageInfo> Images => ImageLoading.Images;
         public ObservableCollection<string> FolderTags => TagManagement.FolderTags;
         public string DisplayTagLine => TagManagement.DisplayTagLine;
+
         public int Rating
         {
             get => TagManagement.Rating;
             set => TagManagement.Rating = value;
         }
+
         public ObservableCollection<StarModel> Stars => TagManagement.Stars;
 
         public string TagInputText
@@ -116,6 +121,7 @@ namespace ImageFolderManager.ViewModels
                 OnPropertyChanged();
             }
         }
+
         public string SearchText
         {
             get => Search.SearchText;
@@ -132,11 +138,36 @@ namespace ImageFolderManager.ViewModels
         public int PreviewWidth => AppSettings.Instance.PreviewWidth;
         public int PreviewHeight => AppSettings.Instance.PreviewHeight;
 
+        /// <summary>
         /// Checks if folder indexing is currently in progress
+        /// </summary>
         public bool IsIndexing => _unifiedFolderService?.IsIndexing == true;
 
+        /// <summary>
         /// Gets the current root directory path
+        /// </summary>
         public string CurrentRootDirectory => _unifiedFolderService?.RootDirectory ?? string.Empty;
+
+        #endregion
+
+        #region Properties
+
+        private System.Threading.Timer _statusMessageTimer;
+        private bool _isImportantStatusMessageActive = false;
+        private readonly object _statusMessageLock = new object();
+
+
+        // Operation synchronization mechanism
+        private readonly SemaphoreSlim _folderOperationSemaphore = new SemaphoreSlim(1, 1);
+        private readonly SemaphoreSlim _initializationSemaphore = new SemaphoreSlim(1, 1);
+
+        // State tracking
+        private volatile bool _isTreeViewInitialized = false;
+        private volatile bool _isMonitoringActive = false;
+
+
+        //private ShellTreeView ShellTreeView { get; set; }
+        private ShellTreeView _shellTreeView;
 
         #endregion
 
@@ -147,173 +178,537 @@ namespace ImageFolderManager.ViewModels
         public IAsyncRelayCommand SearchCommand => Search.SearchCommand;
         public ICommand SetRatingCommand => TagManagement.SetRatingCommand;
         public ICommand EditTagsCommand => TagManagement.EditTagsCommand;
-
         public IAsyncRelayCommand<FolderInfo> DeleteFolderCommand => FolderOperations.DeleteFolderCommand;
         public IAsyncRelayCommand TagsCloudCommand => TagManagement.TagsCloudCommand;
 
         // Main commands
         public IAsyncRelayCommand SetRootDirectoryCommand { get; }
         public ICommand CollapseParentDirectoryCommand { get; }
-        // Edit Commands
-        private RelayCommand _cutCommand;
-        private RelayCommand _copyCommand;
-        private RelayCommand _pasteCommand;
-        private RelayCommand _deleteCommand;
-        public ICommand CutCommand => _cutCommand;
-        public ICommand CopyCommand => _copyCommand;
-        public ICommand PasteCommand => _pasteCommand;
-        public ICommand DeleteCommand => _deleteCommand;
 
+        // Edit Commands with command system integration
+        public ICommand CutCommand { get; }
+        public ICommand CopyCommand { get; }
+        public ICommand PasteCommand { get; }
+        public ICommand DeleteCommand { get; }
         public ICommand UndoFolderMovementCommand => FolderOperations.UndoFolderMovementCommand;
+
+        // Command system specific commands
+        public IAsyncRelayCommand CancelAllOperationsCommand => FolderOperations.CancelAllOperationsCommand;
+        public ICommand RefreshCommandSystemCommand { get; }
+        public ICommand ShowCommandSystemStatusCommand { get; }
+
         #endregion
+
+        #region Constructor
 
         public MainViewModel()
         {
-
-            // Initialize shared category service
-            var categoryService = new TagCategoryService();
-            // Initialize services
-            _unifiedFolderService = new UnifiedFolderService();
-            _tagService = new FolderTagService(categoryService);
-            _allLoadedFolders = new List<FolderInfo>();
-
-            // Initialize sub-ViewModels with enhanced TagCloudViewModel
-            FolderOperations = new FolderOperationsViewModel(_unifiedFolderService);
-            Search = new SearchViewModel(_unifiedFolderService, _allLoadedFolders);
-            ImageLoading = new ImageLoadingViewModel(_unifiedFolderService);
-            TagManagement = new TagManagementViewModel(_tagService, new TagCloudViewModel(categoryService));
-
-            _cutCommand = new RelayCommand(ExecuteCutCommand, CanExecuteCutCommand);
-            _copyCommand = new RelayCommand(ExecuteCopyCommand, CanExecuteCopyCommand);
-            _pasteCommand = new RelayCommand(ExecutePasteCommand, CanExecutePasteCommand);
-            _deleteCommand = new RelayCommand(ExecuteDeleteCommand, CanExecuteDeleteCommand);
-
-            // Initialize commands
-            SetRootDirectoryCommand = new AsyncRelayCommand(SetDefaultRootDirectoryAsync);
-            CollapseParentDirectoryCommand = new CommunityToolkit.Mvvm.Input.RelayCommand(
-                CollapseParentDirectory,
-                CanCollapseParentDirectory);
-
-            // Subscribe to events from sub-ViewModels
-            SubscribeToSubViewModelEvents();
-
-            // Subscribe to unified service events
-            SubscribeToServiceEvents();
-        }
-
-
-        #region Event Subscriptions
-
-        private void SubscribeToSubViewModelEvents()
-        {
-            // Forward status messages
-            FolderOperations.StatusMessageChanged += (s, message) => SetImportantStatusMessage(message);
-            Search.StatusMessageChanged += (s, message) => StatusMessage = message;
-            ImageLoading.StatusMessageChanged += (s, message) => StatusMessage = message;
-            TagManagement.StatusMessageChanged += (s, message) => StatusMessage = message;
-
-            FolderOperations.PropertyChanged += OnFolderOperationsPropertyChanged;
-
-            // Handle search result selection
-            Search.SearchResultSelected += (s, folder) =>
+            try
             {
-                SelectedFolder = folder;
-            };
+                // Initialize command system first
+                InitializeCommandSystem();
 
-            // Handle tag updates
-            TagManagement.TagsUpdated += async (s, e) =>
+                // Initialize shared category service
+                var categoryService = new TagCategoryService();
+
+                // Initialize services
+                _unifiedFolderService = new UnifiedFolderService();
+                _tagService = new FolderTagService(categoryService);
+                _allLoadedFolders = new List<FolderInfo>();
+
+                // Initialize sub-ViewModels with enhanced TagCloudViewModel
+                FolderOperations = new FolderOperationsViewModel(_unifiedFolderService);
+                Search = new SearchViewModel(_unifiedFolderService, _allLoadedFolders);
+                ImageLoading = new ImageLoadingViewModel(_unifiedFolderService);
+                TagManagement = new TagManagementViewModel(_tagService, new TagCloudViewModel(categoryService));
+
+                // Initialize main commands
+                SetRootDirectoryCommand = new AsyncRelayCommand(SetRootDirectoryAsync);
+                CollapseParentDirectoryCommand = new RelayCommand(CollapseParentDirectory);
+
+                // Initialize edit commands with command system integration
+                CutCommand = new RelayCommand(CutSelectedFolders, CanCutSelectedFolders);
+                CopyCommand = new RelayCommand(CopySelectedFolders, CanCopySelectedFolders);
+                PasteCommand = new RelayCommand(PasteFromClipboard, CanPasteFromClipboard);
+                DeleteCommand = new RelayCommand(DeleteSelectedFolders, CanDeleteSelectedFolders);
+
+                // Command system commands
+                RefreshCommandSystemCommand = new RelayCommand(RefreshCommandSystem);
+                ShowCommandSystemStatusCommand = new RelayCommand(ShowCommandSystemStatus);
+
+                // Subscribe to events
+                SubscribeToEvents();
+
+                // Auto-load default directory if available
+                _ = Task.Run(async () => await AutoLoadDefaultDirectoryAsync());
+
+                StatusMessage = "Application initialized with command system support";
+                IsCommandSystemActive = true;
+            }
+            catch (Exception ex)
             {
-                await HandleTagsUpdated(e);
-                // Notify that DisplayTagLine has changed
-                OnPropertyChanged(nameof(DisplayTagLine));
-            };
-
-            // Handle tag cloud request
-            TagManagement.TagCloudRequested += (s, e) =>
-            {
-                ShowTagCloud();
-            };
-
-            // Enhanced property forwarding from TagManagement
-            TagManagement.PropertyChanged += (s, e) =>
-            {
-                switch (e.PropertyName)
-                {
-                    case nameof(TagManagement.DisplayTagLine):
-                        OnPropertyChanged(nameof(DisplayTagLine));
-                        break;
-                    case nameof(TagManagement.FolderTags):
-                        OnPropertyChanged(nameof(FolderTags));
-                        OnPropertyChanged(nameof(DisplayTagLine)); // DisplayTagLine depends on FolderTags
-                        break;
-                    case nameof(TagManagement.TagInputText):
-                        OnPropertyChanged(nameof(TagInputText));
-                        break;
-                    case nameof(TagManagement.Stars):
-                        OnPropertyChanged(nameof(Stars));
-                        break;
-                    case nameof(TagManagement.Rating):
-                        OnPropertyChanged(nameof(Rating));
-                        break;
-                    case nameof(TagManagement.TagDisplayItems):
-                        OnPropertyChanged(nameof(TagDisplayItems));
-                        break;
-                }
-            };
-
-            // Property forwarding from Search
-            Search.PropertyChanged += (s, e) =>
-            {
-                switch (e.PropertyName)
-                {
-                    case nameof(Search.SearchText):
-                        OnPropertyChanged(nameof(SearchText));
-                        break;
-                    case nameof(Search.SearchResultFolders):
-                        OnPropertyChanged(nameof(SearchResultFolders));
-                        break;
-                }
-            };
-
-            // Property forwarding from ImageLoading
-            ImageLoading.PropertyChanged += (s, e) =>
-            {
-                switch (e.PropertyName)
-                {
-                    case nameof(ImageLoading.Images):
-                        OnPropertyChanged(nameof(Images));
-                        break;
-                    case nameof(ImageLoading.IsLoadingImages):
-                        OnPropertyChanged(nameof(ImageLoading.IsLoadingImages));
-                        break;
-                }
-            };
-        }
-
-        private void SubscribeToServiceEvents()
-        {
-            _unifiedFolderService.FolderCreated += OnIndexedFolderCreated;
-            _unifiedFolderService.FolderDeleted += OnIndexedFolderDeleted;
-            _unifiedFolderService.FolderRenamed += OnIndexedFolderRenamed;
-            _unifiedFolderService.IndexRebuilt += OnIndexRebuilt;
-        }
-
-        private void OnFolderOperationsPropertyChanged(object sender, PropertyChangedEventArgs e)
-        {
-            if (e.PropertyName == nameof(FolderOperationsViewModel.HasClipboardContent))
-            {
-                RefreshEditCommands();
+                StatusMessage = $"Error initializing application: {ex.Message}";
+                IsCommandSystemActive = false;
+                MessageBox.Show($"Error initializing application: {ex.Message}",
+                    "Initialization Error", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
-        public void RefreshEditCommands()
+        #endregion
+        #region Command System Integration
+
+        /// <summary>
+        /// Initialize the command system
+        /// </summary>
+        private void InitializeCommandSystem()
         {
-            _cutCommand?.NotifyCanExecuteChanged();
-            _copyCommand?.NotifyCanExecuteChanged();
-            _pasteCommand?.NotifyCanExecuteChanged();
-            _deleteCommand?.NotifyCanExecuteChanged();
+            try
+            {
+                _commandSystem = new CommandSystemInitializer();
+                _commandSystem.Initialize();
+
+                _commandExecutor = _commandSystem.CommandExecutor;
+                _stateMachine = _commandSystem.StateMachine;
+
+                // Subscribe to command system events
+                _commandExecutor.CommandStarted += OnCommandSystemEvent;
+                _commandExecutor.CommandCompleted += OnCommandSystemEvent;
+                _commandExecutor.CommandFailed += OnCommandSystemEvent;
+
+                IsCommandSystemActive = true;
+            }
+            catch (Exception ex)
+            {
+                IsCommandSystemActive = false;
+                throw new InvalidOperationException("Failed to initialize command system", ex);
+            }
         }
 
+        /// <summary>
+        /// Handle command system events
+        /// </summary>
+        private void OnCommandSystemEvent(object sender, CommandExecutionEventArgs e)
+        {
+            Application.Current?.Dispatcher.Invoke(() =>
+            {
+                OnPropertyChanged(nameof(OperationStatusInfo));
+
+                // Update status based on event phase
+                switch (e.Phase)
+                {
+                    case CommandExecutionPhase.Started:
+                        StatusMessage = $"Starting {e.Command.CommandType} operation...";
+                        break;
+                    case CommandExecutionPhase.Completed:
+                        StatusMessage = $"{e.Command.CommandType} operation completed successfully";
+                        break;
+                    case CommandExecutionPhase.Failed:
+                        StatusMessage = $"{e.Command.CommandType} operation failed: {e.Result?.Message}";
+                        break;
+                }
+            });
+        }
+
+        /// <summary>
+        /// Refresh the command system
+        /// </summary>
+        private void RefreshCommandSystem()
+        {
+            try
+            {
+                _commandSystem?.Dispose();
+                InitializeCommandSystem();
+                StatusMessage = "Command system refreshed successfully";
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = $"Error refreshing command system: {ex.Message}";
+                MessageBox.Show($"Error refreshing command system: {ex.Message}",
+                    "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        /// <summary>
+        /// Show command system status information
+        /// </summary>
+        private void ShowCommandSystemStatus()
+        {
+            try
+            {
+                var lockStats = _commandSystem?.PathLockManager?.GetStatistics();
+                var message = $"Command System Status:\n\n" +
+                             $"Active: {IsCommandSystemActive}\n" +
+                             $"Operations in Progress: {FolderOperations?.OperationsInProgressCount ?? 0}\n" +
+                             $"Locked Paths: {lockStats?.LockedPaths ?? 0}\n" +
+                             $"Total Paths: {lockStats?.TotalPaths ?? 0}\n" +
+                             $"Active Lock IDs: {lockStats?.ActiveLockIds ?? 0}";
+
+                MessageBox.Show(message, "Command System Status", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error getting command system status: {ex.Message}",
+                    "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        #endregion
+
+        #region Enhanced Edit Commands
+
+        /// <summary>
+        /// Cut selected folders using command system validation
+        /// </summary>
+        private void CutSelectedFolders()
+        {
+            var selectedFolders = GetSelectedFolders();
+            if (!selectedFolders.Any()) return;
+
+            // Check if any folders are locked
+            var lockedFolders = selectedFolders.Where(f => _unifiedFolderService.IsFolderLocked(f.FolderPath)).ToList();
+            if (lockedFolders.Any())
+            {
+                var folderNames = string.Join(", ", lockedFolders.Select(f => f.Name));
+                MessageBox.Show($"Cannot cut locked folders: {folderNames}",
+                    "Operation Not Allowed", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            FolderOperations.CutFolders(selectedFolders);
+        }
+
+        /// <summary>
+        /// Copy selected folders using command system validation
+        /// </summary>
+        private void CopySelectedFolders()
+        {
+            var selectedFolders = GetSelectedFolders();
+            if (!selectedFolders.Any()) return;
+
+            FolderOperations.CopyFolders(selectedFolders);
+        }
+
+        /// <summary>
+        /// Paste from clipboard using command system
+        /// </summary>
+        private async void PasteFromClipboard()
+        {
+            if (SelectedFolder == null) return;
+
+            await FolderOperations.PasteFoldersAsync(SelectedFolder);
+        }
+
+        /// <summary>
+        /// Delete selected folders using command system
+        /// </summary>
+        private async void DeleteSelectedFolders()
+        {
+            var selectedFolders = GetSelectedFolders();
+            if (!selectedFolders.Any()) return;
+
+            // Check if any folders are locked
+            var lockedFolders = selectedFolders.Where(f => _unifiedFolderService.IsFolderLocked(f.FolderPath)).ToList();
+            if (lockedFolders.Any())
+            {
+                var folderNames = string.Join(", ", lockedFolders.Select(f => f.Name));
+                MessageBox.Show($"Cannot delete locked folders: {folderNames}",
+                    "Operation Not Allowed", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            // Delete folders one by one or use batch operation
+            if (selectedFolders.Count == 1)
+            {
+                await FolderOperations.DeleteFolderAsync(selectedFolders.First());
+            }
+            else
+            {
+                // Batch delete operation
+                var deleteCommands = selectedFolders.Select(f => new DeleteFolderCommand(f.FolderPath) as IFolderCommand);
+                await _unifiedFolderService.ExecuteBatchOperationAsync(deleteCommands);
+            }
+        }
+
+        #endregion
+
+        #region Command Validation
+
+        private bool CanCutSelectedFolders()
+        {
+            var selectedFolders = GetSelectedFolders();
+            return selectedFolders.Any() &&
+                   selectedFolders.All(f => !_unifiedFolderService.IsFolderLocked(f.FolderPath));
+        }
+
+        private bool CanCopySelectedFolders()
+        {
+            return GetSelectedFolders().Any();
+        }
+
+        private bool CanPasteFromClipboard()
+        {
+            return SelectedFolder != null &&
+                   FolderOperations.HasClipboardContent &&
+                   !_unifiedFolderService.IsFolderLocked(SelectedFolder.FolderPath);
+        }
+
+        private bool CanDeleteSelectedFolders()
+        {
+            var selectedFolders = GetSelectedFolders();
+            return selectedFolders.Any() &&
+                   selectedFolders.All(f => !_unifiedFolderService.IsFolderLocked(f.FolderPath));
+        }
+
+        #endregion
+
+        #region Folder State Management
+
+        /// <summary>
+        /// Get the state of a folder using the state machine
+        /// </summary>
+        public FolderState GetFolderState(FolderInfo folder)
+        {
+            return folder != null ? _unifiedFolderService.GetFolderState(folder.FolderPath) : FolderState.Available;
+        }
+
+        /// <summary>
+        /// Check if a folder is locked
+        /// </summary>
+        public bool IsFolderLocked(FolderInfo folder)
+        {
+            return folder != null && _unifiedFolderService.IsFolderLocked(folder.FolderPath);
+        }
+
+        /// <summary>
+        /// Get visual indication for folder state
+        /// </summary>
+        public string GetFolderStateIndicator(FolderInfo folder)
+        {
+            if (folder == null) return "";
+
+            var state = GetFolderState(folder);
+            return state switch
+            {
+                FolderState.Processing => "⏳",
+                FolderState.Error => "❌",
+                FolderState.Monitoring => "👁",
+                FolderState.Deleted => "🗑",
+                _ => ""
+            };
+        }
+
+        #endregion
+
+        #region Event Subscriptions
+        private void SubscribeToEvents()
+        {
+            // Subscribe to FolderOperations events
+            FolderOperations.StatusMessageChanged += (sender, message) => StatusMessage = message;
+            FolderOperations.CommandStarted += (sender, args) => OnPropertyChanged(nameof(OperationStatusInfo));
+            FolderOperations.CommandCompleted += (sender, args) => OnPropertyChanged(nameof(OperationStatusInfo));
+            FolderOperations.CommandFailed += (sender, args) => OnPropertyChanged(nameof(OperationStatusInfo));
+
+            // Subscribe to other sub-ViewModel events
+            TagManagement.StatusMessageChanged += (sender, message) => StatusMessage = message;
+            Search.StatusMessageChanged += (sender, message) => StatusMessage = message;
+            ImageLoading.StatusMessageChanged += (sender, message) => StatusMessage = message;
+
+            // Subscribe to unified folder service events
+            _unifiedFolderService.CommandStarted += (sender, args) => OnPropertyChanged(nameof(OperationStatusInfo));
+            _unifiedFolderService.CommandCompleted += (sender, args) => OnPropertyChanged(nameof(OperationStatusInfo));
+            _unifiedFolderService.CommandFailed += (sender, args) => OnPropertyChanged(nameof(OperationStatusInfo));
+        }
+
+        public async Task SetRootDirectoryAsync()
+        {
+            try
+            {
+                var dialog = new System.Windows.Forms.FolderBrowserDialog
+                {
+                    Description = "Select root directory for image folder management",
+                    ShowNewFolderButton = true
+                };
+
+                if (!string.IsNullOrEmpty(AppSettings.Instance.DefaultRootDirectory))
+                {
+                    dialog.SelectedPath = AppSettings.Instance.DefaultRootDirectory;
+                }
+
+                if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
+                {
+                    await LoadRootDirectoryAsync(dialog.SelectedPath);
+                }
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = $"Error setting root directory: {ex.Message}";
+                MessageBox.Show($"Error setting root directory: {ex.Message}",
+                    "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        public async Task LoadRootDirectoryAsync(string rootPath)
+        {
+            if (string.IsNullOrEmpty(rootPath) || !Directory.Exists(rootPath))
+            {
+                StatusMessage = "Invalid directory path";
+                return;
+            }
+
+            try
+            {
+                StatusMessage = "Loading directory...";
+
+                // Save to settings
+                AppSettings.Instance.DefaultRootDirectory = rootPath;
+                AppSettings.Instance.Save();
+
+                // Start monitoring with command system
+                await _unifiedFolderService.StartMonitoringAsync(rootPath);
+
+                // Load folders
+                await RefreshAllFoldersDataAsync();
+
+                StatusMessage = $"Loaded directory: {rootPath}";
+                OnPropertyChanged(nameof(CurrentRootDirectory));
+                OnPropertyChanged(nameof(IsRealTimeIndexingActive));
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = $"Error loading directory: {ex.Message}";
+                MessageBox.Show($"Error loading directory: {ex.Message}",
+                    "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private async Task AutoLoadDefaultDirectoryAsync()
+        {
+            try
+            {
+                var defaultPath = AppSettings.Instance.DefaultRootDirectory;
+                if (!string.IsNullOrEmpty(defaultPath) && Directory.Exists(defaultPath))
+                {
+                    await Application.Current.Dispatcher.InvokeAsync(async () =>
+                    {
+                        await LoadRootDirectoryAsync(defaultPath);
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                await Application.Current.Dispatcher.InvokeAsync(() =>
+                {
+                    StatusMessage = $"Error auto-loading directory: {ex.Message}";
+                });
+            }
+        }
+
+        private void OnSelectedFolderChanged()
+        {
+            if (SelectedFolder != null)
+            {
+                _ = Task.Run(async () =>
+                {
+                    await TagManagement.LoadFolderMetadataAsync(SelectedFolder);
+                    await ImageLoading.LoadImagesAsync(SelectedFolder);
+                });
+
+                // Update command validation
+                CommandManager.InvalidateRequerySuggested();
+            }
+        }
+
+        private void CollapseParentDirectory()
+        {
+            try
+            {
+                var currentRoot = AppSettings.Instance.DefaultRootDirectory;
+                if (!string.IsNullOrEmpty(currentRoot))
+                {
+                    var parentDir = Directory.GetParent(currentRoot)?.FullName;
+                    if (!string.IsNullOrEmpty(parentDir) && Directory.Exists(parentDir))
+                    {
+                        _ = Task.Run(async () => await LoadRootDirectoryAsync(parentDir));
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = $"Error collapsing directory: {ex.Message}";
+            }
+        }
+
+        public async Task UpdateTagCloudAsync()
+        {
+            var freshFolders = await _unifiedFolderService.LoadFoldersRecursivelyAsync(
+                AppSettings.Instance.DefaultRootDirectory);
+
+            _allLoadedFolders.Clear();
+            _allLoadedFolders.AddRange(freshFolders);
+
+            await TagManagement.UpdateTagCloudAsync(_allLoadedFolders);
+        }
+
+        public async Task RefreshAllFoldersDataAsync()
+        {
+            if (string.IsNullOrEmpty(AppSettings.Instance.DefaultRootDirectory) ||
+                !Directory.Exists(AppSettings.Instance.DefaultRootDirectory))
+            {
+                return;
+            }
+
+            try
+            {
+                StatusMessage = "Refreshing folder data...";
+
+                _allLoadedFolders.Clear();
+                var folders = await _unifiedFolderService.LoadFoldersRecursivelyAsync(
+                    AppSettings.Instance.DefaultRootDirectory);
+                _allLoadedFolders.AddRange(folders);
+
+                await UpdateTagCloudAsync();
+                StatusMessage = "Ready";
+                OnPropertyChanged(nameof(IndexedFolderCount));
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = $"Error refreshing folder data: {ex.Message}";
+                MessageBox.Show($"Error refreshing folder data: {ex.Message}",
+                    "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        #endregion
+
+        #region Helper Methods
+
+        /// <summary>
+        /// Get currently selected folders (implement based on your UI selection mechanism)
+        /// </summary>
+        private List<FolderInfo> GetSelectedFolders()
+        {
+            // This method should be implemented based on your UI selection mechanism
+            // For now, return the currently selected folder if any
+            return SelectedFolder != null ? new List<FolderInfo> { SelectedFolder } : new List<FolderInfo>();
+        }
+
+        public List<string> GetAllIndexedFolderPaths()
+        {
+            return _allLoadedFolders.Select(f => f.FolderPath).ToList();
+        }
+
+        #endregion
+
+        #region Delegation Methods for Backward Compatibility
+
+        public bool HasClipboardContent() => FolderOperations.HasClipboardContent;
+        public void ShowInExplorer(FolderInfo folder) => System.Diagnostics.Process.Start("explorer.exe", folder.FolderPath);
+        public async Task CreateNewFolder(FolderInfo parentFolder) => await FolderOperations.CreateNewFolderAsync(parentFolder);
+        public async Task DeleteFolder(FolderInfo folder) => await FolderOperations.DeleteFolderAsync(folder);
+        public async Task MoveFolder(FolderInfo sourceFolder, FolderInfo targetFolder) =>
+            await FolderOperations.MoveFoldersAsync(new[] { sourceFolder }, targetFolder);
+        public async Task RenameTag(string oldTag, string newTag, List<string> folderPaths = null) =>
+            await TagManagement.RenameTagAsync(oldTag, newTag);
 
         #endregion
 
@@ -1309,84 +1704,12 @@ namespace ImageFolderManager.ViewModels
                 StatusMessage += $" Warning: Failed to refresh folder tree - {ex.Message}";
             }
         }
-
-
-
-        public async Task UpdateTagCloudAsync()
-        {
-            var freshFolders = await _unifiedFolderService.LoadFoldersRecursivelyAsync(
-                AppSettings.Instance.DefaultRootDirectory);
-
-            _allLoadedFolders.Clear();
-            _allLoadedFolders.AddRange(freshFolders);
-
-            await TagManagement.UpdateTagCloudAsync(_allLoadedFolders);
-        }
-
-        public async Task RefreshAllFoldersDataAsync()
-        {
-            if (string.IsNullOrEmpty(AppSettings.Instance.DefaultRootDirectory) ||
-                !Directory.Exists(AppSettings.Instance.DefaultRootDirectory))
-            {
-                return;
-            }
-
-            try
-            {
-                StatusMessage = "Refreshing folder data...";
-
-                _allLoadedFolders.Clear();
-                var folders = await _unifiedFolderService.LoadFoldersRecursivelyAsync(
-                    AppSettings.Instance.DefaultRootDirectory);
-                _allLoadedFolders.AddRange(folders);
-
-                await UpdateTagCloudAsync();
-                StatusMessage = "Ready";
-            }
-            catch (Exception ex)
-            {
-                StatusMessage = $"Error refreshing folder data: {ex.Message}";
-                MessageBox.Show($"Error refreshing folder data: {ex.Message}",
-                    "Error", MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-        }
-        public void Cleanup()
-        {
-            try
-            {
-                _unifiedFolderService?.StopMonitoringAsync().Wait(2000);
-                _unifiedFolderService?.Dispose();
-                ImageLoading?.CancelCurrentLoading();
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"Error during cleanup: {ex.Message}");
-            }
-        }
-
-
-        public async Task RenameTag(string oldTag, string newTag, List<string> folderPaths = null)
-        {
-            // If no folder paths provided, get all of them
-            if (folderPaths == null || folderPaths.Count == 0)
-            {
-                folderPaths = GetAllIndexedFolderPaths();
-            }
-
-            await TagManagement.RenameTagAsync(oldTag, newTag, folderPaths);
-
-            // Refresh tag cloud after renaming
-            await UpdateTagCloudAsync();
-        }
-
+        
+       
         #endregion
 
         #region Delegation Methods for Backward Compatibility
-        public bool HasClipboardContent() => FolderOperations.HasClipboardContent;
-
-        public void ShowInExplorer(FolderInfo folder) => System.Diagnostics.Process.Start("explorer.exe", folder.FolderPath);
-        public async Task CreateNewFolder(FolderInfo parentFolder) => await FolderOperations.CreateNewFolderAsync(parentFolder);
-        public async Task RenameFolder(FolderInfo folder) => await FolderOperations.RenameFolderAsync(folder);
+       public async Task RenameFolder(FolderInfo folder) => await FolderOperations.RenameFolderAsync(folder);
 
         // New unified methods
         public void CutFolders(IEnumerable<FolderInfo> folders) => FolderOperations.CutFolders(folders);
@@ -1418,45 +1741,7 @@ namespace ImageFolderManager.ViewModels
 
         #endregion
 
-        #region  Edit Command implementation methods
-        private bool CanExecuteCutCommand() => _shellTreeView?.HasSelectedItems() ?? false;
-        private void ExecuteCutCommand()
-        {
-            if (_shellTreeView != null)
-            {
-                _shellTreeView.MultiFolderCut_Click(this, new RoutedEventArgs());
-            }
-        }
-
-        private bool CanExecuteCopyCommand() => _shellTreeView?.HasSelectedItems() ?? false;
-        private void ExecuteCopyCommand()
-        {
-            if (_shellTreeView != null)
-            {
-                _shellTreeView.MultiFolderCopy_Click(this, new RoutedEventArgs());
-            }
-        }
-
-        private bool CanExecutePasteCommand() => HasClipboardContent();
-        private void ExecutePasteCommand()
-        {
-            if(_shellTreeView != null)
-            {
-                _shellTreeView.Paste_Click(this, new RoutedEventArgs());
-            }
-        }
-
-        private bool CanExecuteDeleteCommand() => _shellTreeView?.HasSelectedItems() ?? false;
-        private void ExecuteDeleteCommand()
-        {
-            if (_shellTreeView != null)
-            {
-                _shellTreeView.MultiFolderDelete_Click(this, new RoutedEventArgs());
-            }
-        }
-
-        // Method to set the ShellTreeView reference
-        #endregion
+      
 
         #region Private Methods
 
@@ -1637,39 +1922,7 @@ namespace ImageFolderManager.ViewModels
 
        
 
-
-        private void OnSelectedFolderChanged()
-        {
-            if (SelectedFolder != null)
-            {
-                // Don't set the status message here, as it would override operation messages
-                // The ShellTreeView already sets a status message when a folder is selected
-
-                Task.Run(async () =>
-                {
-                    await TagManagement.LoadFolderMetadataAsync(SelectedFolder);
-                    // Ensure UI properties are updated on the UI thread
-                    Application.Current.Dispatcher.Invoke(() =>
-                    {
-                        OnPropertyChanged(nameof(DisplayTagLine));
-                        OnPropertyChanged(nameof(TagDisplayItems));
-                    });
-                });
-            }
-            else
-            {
-                ImageLoading.ClearImages();
-
-                // Ensure we're on the UI thread for collection modifications
-                Application.Current.Dispatcher.Invoke(() =>
-                {
-                    TagManagement.FolderTags.Clear();
-                    TagManagement.TagDisplayItems.Clear(); // Also clear tag display items
-                    OnPropertyChanged(nameof(DisplayTagLine));
-                    OnPropertyChanged(nameof(TagDisplayItems));
-                });
-            }
-        }
+       
 
         private bool CanCollapseParentDirectory()
         {
@@ -1678,30 +1931,7 @@ namespace ImageFolderManager.ViewModels
                    !string.IsNullOrEmpty(Path.GetDirectoryName(SelectedFolder.FolderPath));
         }
 
-        public List<string> GetAllIndexedFolderPaths()
-        {
-            // Return all indexed folder paths from the unified folder service
-            return _unifiedFolderService?.IndexedFolders?.ToList() ??
-                   _allLoadedFolders.Select(f => f.FolderPath).ToList();
-        }
-
-        private void CollapseParentDirectory()
-        {
-            if (SelectedFolder == null || string.IsNullOrEmpty(SelectedFolder.FolderPath))
-            {
-                StatusMessage = "No folder selected.";
-                return;
-            }
-
-            string parentPath = Path.GetDirectoryName(SelectedFolder.FolderPath);
-            if (string.IsNullOrEmpty(parentPath))
-            {
-                StatusMessage = "Selected folder has no parent directory.";
-                return;
-            }
-
-            StatusMessage = $"Collapsing parent directory: {Path.GetFileName(parentPath)}";
-        }
+    
 
         private void ShowTagCloud()
         {
@@ -2056,7 +2286,35 @@ namespace ImageFolderManager.ViewModels
                 default:
                     return FolderOperationType.Manual; // Default to manual for unknown operations
             }
-        } 
+        }
+
+        #endregion
+
+        #region Cleanup
+
+        public void Cleanup()
+        {
+            try
+            {
+                _unifiedFolderService?.StopMonitoringAsync().Wait(2000);
+                _unifiedFolderService?.Dispose();
+                _commandSystem?.Dispose();
+                ImageLoading?.CancelCurrentLoading();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error during cleanup: {ex.Message}");
+            }
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                Cleanup();
+            }
+            base.Dispose(disposing);
+        }
 
         #endregion
     }

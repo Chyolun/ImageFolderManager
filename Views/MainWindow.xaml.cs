@@ -212,7 +212,7 @@ namespace ImageFolderManager
             dialog.Owner = this;
             dialog.ShowDialog();
 
-            if (dialog.DialogResult)
+            if (dialog.PreviewDialogResult)
             {
                 await ViewModel.SetPreviewSize(
                     dialog.SelectedWidth,
