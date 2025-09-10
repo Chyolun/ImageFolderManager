@@ -22,6 +22,7 @@ namespace ImageFolderManager
         {
             try
             {
+                ShutdownMode = ShutdownMode.OnMainWindowClose;
                 // Initialize application settings first
                 InitializeApplicationSettings();
 
