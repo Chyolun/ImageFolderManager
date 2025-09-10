@@ -17,8 +17,8 @@ using Timer = System.Threading.Timer;
 namespace ImageFolderManager.Services
 {
     /// <summary>
-    /// Unified service that combines folder management and real-time indexing with command pattern integration
-    /// Replaces both FolderManagementService and FileSystemIndexingService
+    /// Unified service that combines folder management and real-time indexing with optional command system support
+    /// Maintains backward compatibility with existing interfaces
     /// </summary>
     public class UnifiedFolderService : IDisposable
     {
@@ -32,7 +32,7 @@ namespace ImageFolderManager.Services
         // Legacy callback for existing MainViewModel integration
         public event Action<FolderInfo, FileSystemEventArgs, WatcherChangeTypes> FileSystemEvent;
 
-        // Command system events
+        // Command system events (optional)
         public event EventHandler<CommandExecutionEventArgs> CommandStarted;
         public event EventHandler<CommandExecutionEventArgs> CommandCompleted;
         public event EventHandler<CommandExecutionEventArgs> CommandFailed;
@@ -44,11 +44,12 @@ namespace ImageFolderManager.Services
         // Services
         private readonly FolderTagService _tagService = new FolderTagService();
 
-        // Command system components
+        // Command system components (optional)
         private CommandSystemInitializer _commandSystem;
         private CommandExecutor _commandExecutor;
         private FolderStateMachine _stateMachine;
         private PathLockManager _pathLockManager;
+        private bool _commandSystemEnabled = false;
 
         // Single file system watcher for the entire tree
         private FileSystemWatcher _rootWatcher;
@@ -109,12 +110,17 @@ namespace ImageFolderManager.Services
         public int IndexedFolderCount => _folderIndex.Count;
 
         /// <summary>
-        /// Gets the command executor for advanced operations
+        /// Gets a collection of all indexed folder paths
+        /// </summary>
+        public IEnumerable<string> IndexedFolders => _folderIndex.Keys;
+
+        /// <summary>
+        /// Gets the command executor for advanced operations (if enabled)
         /// </summary>
         public CommandExecutor CommandExecutor => _commandExecutor;
 
         /// <summary>
-        /// Gets the state machine for folder state tracking
+        /// Gets the state machine for folder state tracking (if enabled)
         /// </summary>
         public FolderStateMachine StateMachine => _stateMachine;
 
@@ -122,10 +128,15 @@ namespace ImageFolderManager.Services
 
         #region Constructor and Initialization
 
-        public UnifiedFolderService()
+        public UnifiedFolderService(bool enableCommandSystem = false)
         {
-            // Initialize command system
-            InitializeCommandSystem();
+            _commandSystemEnabled = enableCommandSystem;
+
+            // Initialize command system if requested
+            if (_commandSystemEnabled)
+            {
+                InitializeCommandSystem();
+            }
 
             // Initialize event processing timer
             _eventProcessingTimer = new Timer(ProcessEventQueue, null,
@@ -133,7 +144,7 @@ namespace ImageFolderManager.Services
         }
 
         /// <summary>
-        /// Initialize the command system components
+        /// Initialize the command system components (optional)
         /// </summary>
         private void InitializeCommandSystem()
         {
@@ -147,22 +158,25 @@ namespace ImageFolderManager.Services
                 _pathLockManager = _commandSystem.PathLockManager;
 
                 // Subscribe to command events
-                _commandExecutor.CommandStarted += OnCommandStarted;
-                _commandExecutor.CommandCompleted += OnCommandCompleted;
-                _commandExecutor.CommandFailed += OnCommandFailed;
+                if (_commandExecutor != null)
+                {
+                    _commandExecutor.CommandStarted += OnCommandStarted;
+                    _commandExecutor.CommandCompleted += OnCommandCompleted;
+                    _commandExecutor.CommandFailed += OnCommandFailed;
+                }
 
                 Debug.WriteLine("Command system initialized successfully");
             }
             catch (Exception ex)
             {
                 Debug.WriteLine($"Failed to initialize command system: {ex.Message}");
-                throw;
+                _commandSystemEnabled = false;
             }
         }
 
         #endregion
 
-        #region Command System Event Handlers
+        #region Command System Event Handlers (Optional)
 
         private void OnCommandStarted(object sender, CommandExecutionEventArgs e)
         {
@@ -228,13 +242,6 @@ namespace ImageFolderManager.Services
                             FolderRenamed?.Invoke(renameCmd.OldPath, renameCmd.NewPath);
                         }
                         break;
-
-                    case FolderCommandType.BatchMove:
-                    case FolderCommandType.BatchCopy:
-                    case FolderCommandType.BatchDelete:
-                        // For batch operations, trigger a full refresh
-                        await RefreshIndexAsync();
-                        break;
                 }
             }
             catch (Exception ex)
@@ -245,81 +252,7 @@ namespace ImageFolderManager.Services
 
         #endregion
 
-        #region Command-Based Folder Operations
-
-        /// <summary>
-        /// Create a new folder using the command system
-        /// </summary>
-        public async Task<CommandResult> CreateFolderAsync(string parentPath, string folderName, CancellationToken cancellationToken = default)
-        {
-            var command = new CreateFolderCommand(parentPath, folderName);
-            return await _commandExecutor.ExecuteCommandAsync(command, cancellationToken);
-        }
-
-        /// <summary>
-        /// Delete a folder using the command system
-        /// </summary>
-        public async Task<CommandResult> DeleteFolderAsync(string folderPath, bool useRecycleBin = true, CancellationToken cancellationToken = default)
-        {
-            var command = new DeleteFolderCommand(folderPath, useRecycleBin);
-            return await _commandExecutor.ExecuteCommandAsync(command, cancellationToken);
-        }
-
-        /// <summary>
-        /// Move a folder using the command system
-        /// </summary>
-        public async Task<CommandResult> MoveFolderAsync(string sourcePath, string destinationPath, CancellationToken cancellationToken = default)
-        {
-            var command = new MoveFolderCommand(sourcePath, destinationPath);
-            return await _commandExecutor.ExecuteCommandAsync(command, cancellationToken);
-        }
-
-        /// <summary>
-        /// Rename a folder using the command system
-        /// </summary>
-        public async Task<CommandResult> RenameFolderAsync(string folderPath, string newName, CancellationToken cancellationToken = default)
-        {
-            var command = new RenameFolderCommand(folderPath, newName);
-            return await _commandExecutor.ExecuteCommandAsync(command, cancellationToken);
-        }
-
-        /// <summary>
-        /// Copy a folder using the command system
-        /// </summary>
-        public async Task<CommandResult> CopyFolderAsync(string sourcePath, string destinationPath, CancellationToken cancellationToken = default)
-        {
-            var command = new CopyFolderCommand(sourcePath, destinationPath);
-            return await _commandExecutor.ExecuteCommandAsync(command, cancellationToken);
-        }
-
-        /// <summary>
-        /// Execute multiple folder operations as a batch
-        /// </summary>
-        public async Task<CommandResult> ExecuteBatchOperationAsync(IEnumerable<IFolderCommand> commands, CancellationToken cancellationToken = default)
-        {
-            var batchCommand = new BatchOperationCommand(commands);
-            return await _commandExecutor.ExecuteCommandAsync(batchCommand, cancellationToken);
-        }
-
-        /// <summary>
-        /// Check if a folder is currently locked by the command system
-        /// </summary>
-        public bool IsFolderLocked(string folderPath)
-        {
-            return _pathLockManager?.IsPathLocked(folderPath) ?? false;
-        }
-
-        /// <summary>
-        /// Get the current state of a folder
-        /// </summary>
-        public FolderState GetFolderState(string folderPath)
-        {
-            return _stateMachine?.GetFolderState(folderPath) ?? FolderState.Available;
-        }
-
-        #endregion
-
-        #region Existing Methods (Legacy Support)
+        #region Legacy Methods (Backward Compatibility)
 
         /// <summary>
         /// Start monitoring a directory for changes
@@ -356,7 +289,7 @@ namespace ImageFolderManager.Services
             }
 
             _folderIndex.Clear();
-
+         
             _lastEventTime.Clear();
 
             _rootDirectory = null;
@@ -412,6 +345,194 @@ namespace ImageFolderManager.Services
             }
 
             return folders;
+        }
+
+        /// <summary>
+        /// Creates a FolderInfo without loading images (for performance)
+        /// </summary>
+        public async Task<FolderInfo> CreateFolderInfoWithoutImagesAsync(string folderPath)
+        {
+            return await Task.Run(() => CreateFolderInfo(folderPath));
+        }
+
+        /// <summary>
+        /// Search folders by name or path containing the specified term
+        /// </summary>
+        public IEnumerable<string> SearchFolders(string searchTerm)
+        {
+            if (string.IsNullOrWhiteSpace(searchTerm))
+                return Enumerable.Empty<string>();
+
+            var normalizedSearchTerm = searchTerm.ToLowerInvariant();
+
+            return _folderIndex.Keys.Where(folderPath =>
+            {
+                var folderName = Path.GetFileName(folderPath)?.ToLowerInvariant() ?? "";
+                var fullPath = folderPath.ToLowerInvariant();
+
+                return folderName.Contains(normalizedSearchTerm) ||
+                       fullPath.Contains(normalizedSearchTerm);
+            });
+        }
+
+        #endregion
+
+        #region Enhanced Methods (Using Command System if Available)
+
+        /// <summary>
+        /// Create a new folder (uses command system if available)
+        /// </summary>
+        public async Task<bool> CreateFolderAsync(string parentPath, string folderName)
+        {
+            if (_commandSystemEnabled && _commandExecutor != null)
+            {
+                var command = new CreateFolderCommand(parentPath, folderName);
+                var result = await _commandExecutor.ExecuteCommandAsync(command);
+                return result.Success;
+            }
+            else
+            {
+                // Fallback to direct operation
+                try
+                {
+                    var newFolderPath = Path.Combine(parentPath, folderName);
+                    Directory.CreateDirectory(newFolderPath);
+
+                    await AddFolderToIndex(newFolderPath);
+                    FolderCreated?.Invoke(newFolderPath);
+
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"Error creating folder: {ex.Message}");
+                    return false;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Delete a folder (uses command system if available)
+        /// </summary>
+        public async Task<bool> DeleteFolderAsync(string folderPath, bool useRecycleBin = true)
+        {
+            if (_commandSystemEnabled && _commandExecutor != null)
+            {
+                var command = new DeleteFolderCommand(folderPath, useRecycleBin);
+                var result = await _commandExecutor.ExecuteCommandAsync(command);
+                return result.Success;
+            }
+            else
+            {
+                // Fallback to direct operation
+                try
+                {
+                    if (useRecycleBin)
+                    {
+                        Microsoft.VisualBasic.FileIO.FileSystem.DeleteDirectory(
+                            folderPath,
+                            Microsoft.VisualBasic.FileIO.UIOption.OnlyErrorDialogs,
+                            Microsoft.VisualBasic.FileIO.RecycleOption.SendToRecycleBin);
+                    }
+                    else
+                    {
+                        Directory.Delete(folderPath, true);
+                    }
+
+                    RemoveFolderFromIndex(folderPath);
+                    FolderDeleted?.Invoke(folderPath);
+
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"Error deleting folder: {ex.Message}");
+                    return false;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Move a folder (uses command system if available)
+        /// </summary>
+        public async Task<bool> MoveFolderAsync(string sourcePath, string destinationPath)
+        {
+            if (_commandSystemEnabled && _commandExecutor != null)
+            {
+                var command = new MoveFolderCommand(sourcePath, destinationPath);
+                var result = await _commandExecutor.ExecuteCommandAsync(command);
+                return result.Success;
+            }
+            else
+            {
+                // Fallback to direct operation
+                try
+                {
+                    Directory.Move(sourcePath, destinationPath);
+
+                    RemoveFolderFromIndex(sourcePath);
+                    await AddFolderToIndex(destinationPath);
+                    FolderRenamed?.Invoke(sourcePath, destinationPath);
+
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"Error moving folder: {ex.Message}");
+                    return false;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Rename a folder (uses command system if available)
+        /// </summary>
+        public async Task<bool> RenameFolderAsync(string folderPath, string newName)
+        {
+            if (_commandSystemEnabled && _commandExecutor != null)
+            {
+                var command = new RenameFolderCommand(folderPath, newName);
+                var result = await _commandExecutor.ExecuteCommandAsync(command);
+                return result.Success;
+            }
+            else
+            {
+                // Fallback to direct operation
+                try
+                {
+                    var newPath = Path.Combine(Path.GetDirectoryName(folderPath), newName);
+                    Directory.Move(folderPath, newPath);
+
+                    RemoveFolderFromIndex(folderPath);
+                    await AddFolderToIndex(newPath);
+                    FolderRenamed?.Invoke(folderPath, newPath);
+
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"Error renaming folder: {ex.Message}");
+                    return false;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Check if a folder is currently locked by the command system
+        /// </summary>
+        public bool IsFolderLocked(string folderPath)
+        {
+            return _commandSystemEnabled && _pathLockManager?.IsPathLocked(folderPath) == true;
+        }
+
+        /// <summary>
+        /// Get the current state of a folder
+        /// </summary>
+        public FolderState GetFolderState(string folderPath)
+        {
+            return _commandSystemEnabled && _stateMachine != null
+                ? _stateMachine.GetFolderState(folderPath)
+                : FolderState.Available;
         }
 
         #endregion
@@ -558,7 +679,9 @@ namespace ImageFolderManager.Services
                 var dirInfo = new DirectoryInfo(folderPath);
                 var folderInfo = new FolderInfo
                 {
+
                     FolderPath = folderPath,
+
                     Tags = new ObservableCollection<string>()
                 };
 
