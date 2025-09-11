@@ -19,6 +19,7 @@ using Microsoft.WindowsAPICodePack.Dialogs;
 using static ImageFolderManager.Controls.ShellTreeView;
 using System.Diagnostics;
 using System.Threading;
+using ImageFolderManager.Diagnostics;
 
 
 namespace ImageFolderManager.ViewModels
@@ -55,8 +56,6 @@ namespace ImageFolderManager.ViewModels
         private volatile bool _isTreeViewInitialized = false;
         private volatile bool _isMonitoringActive = false;
 
-
-        //private ShellTreeView ShellTreeView { get; set; }
         private ShellTreeView _shellTreeView;
 
         private FolderInfo _selectedFolder;
@@ -182,6 +181,7 @@ namespace ImageFolderManager.ViewModels
             Search = new SearchViewModel(_unifiedFolderService, _allLoadedFolders);
             ImageLoading = new ImageLoadingViewModel(_unifiedFolderService);
             TagManagement = new TagManagementViewModel(_tagService, new TagCloudViewModel(categoryService));
+
 
             _cutCommand = new RelayCommand(ExecuteCutCommand, CanExecuteCutCommand);
             _copyCommand = new RelayCommand(ExecuteCopyCommand, CanExecuteCopyCommand);
@@ -1860,14 +1860,31 @@ namespace ImageFolderManager.ViewModels
         public void SetShellTreeView(ShellTreeView shellTreeView)
         {
             _shellTreeView = shellTreeView;
+            TreeViewRefreshDebugger.TrackFolderServiceOperation("SetShellTreeView",
+        $"Called with shellTreeView: {shellTreeView != null}, FolderOperations: {FolderOperations != null}");
 
             // Subscribe to folder operation events for incremental refresh
             if (FolderOperations != null)
             {
                 // Unsubscribe any existing handlers first
                 FolderOperations.FolderOperationCompleted -= OnFolderOperationCompleted;
+
+                // ADD DEBUG TRACKING FOR UNSUBSCRIBE
+                TreeViewRefreshDebugger.TrackFolderServiceOperation("EventUnsubscribe",
+                    "Unsubscribed from FolderOperationCompleted event");
+
                 // Subscribe to new handler
                 FolderOperations.FolderOperationCompleted += OnFolderOperationCompleted;
+
+                // ADD DEBUG TRACKING FOR SUBSCRIBE
+                TreeViewRefreshDebugger.TrackFolderServiceOperation("EventSubscribe",
+                    "Subscribed to FolderOperationCompleted event");
+            }
+            else
+            {
+                // ADD DEBUG TRACKING FOR NULL
+                TreeViewRefreshDebugger.TrackFolderServiceOperation("EventSubscribe",
+                    "FolderOperations is NULL - cannot subscribe to events");
             }
         }
 
@@ -1907,6 +1924,7 @@ namespace ImageFolderManager.ViewModels
         /// </summary>
         private async void OnFolderOperationCompleted(object sender, FolderOperationEventArgs e)
         {
+            TreeViewRefreshDebugger.TrackMainViewModelEventReceived(e);
             try
             {
                 // Use dedicated handler method to avoid nested async
@@ -1915,6 +1933,7 @@ namespace ImageFolderManager.ViewModels
             catch (Exception ex)
             {
                 // Properly handle exceptions in async void methods
+                TreeViewRefreshDebugger.TrackMainViewModelEventReceived(e);
                 Debug.WriteLine($"Unhandled exception in OnFolderOperationCompleted: {ex}");
                 StatusMessage = "An error occurred during the folder operation.";
 
@@ -1928,6 +1947,7 @@ namespace ImageFolderManager.ViewModels
         /// </summary>
         private async Task HandleFolderOperationCompletedAsync(FolderOperationEventArgs e)
         {
+            TreeViewRefreshDebugger.TrackMainViewModelEventReceived(e);
             // Prevent race conditions from concurrent operations
             await _folderOperationSemaphore.WaitAsync();
 
@@ -1947,6 +1967,12 @@ namespace ImageFolderManager.ViewModels
                         await ExecuteFolderOperationOnUIThread(e);
                     });
                 }
+                TreeViewRefreshDebugger.TrackHandleFolderOperationEnd(e, true);
+            }
+            catch (Exception ex)
+            {
+                TreeViewRefreshDebugger.TrackHandleFolderOperationEnd(e, false, ex.Message); 
+                throw;
             }
             finally
             {
@@ -1959,10 +1985,8 @@ namespace ImageFolderManager.ViewModels
         /// </summary>
         private async Task ExecuteFolderOperationOnUIThread(FolderOperationEventArgs e)
         {
-            // Ensure we're on UI thread
-            Debug.Assert(Application.Current.Dispatcher.CheckAccess(),
-                "ExecuteFolderOperationOnUIThread must be called from UI thread");
 
+            TreeViewRefreshDebugger.TrackUIThreadExecutionStart(e);
             try
             {
                 if (e.Success && _shellTreeView != null)
@@ -1996,6 +2020,7 @@ namespace ImageFolderManager.ViewModels
                     StatusMessage = $"{operationName} failed: {e.ErrorMessage}";
                     Debug.WriteLine($"Folder operation failed: {e.ErrorMessage}");
                 }
+                TreeViewRefreshDebugger.TrackAfterTreeViewRefresh(e, true);
             }
             catch (Exception ex)
             {
@@ -2011,6 +2036,7 @@ namespace ImageFolderManager.ViewModels
                 {
                     Debug.WriteLine($"Failed to refresh tree after error: {refreshEx.Message}");
                 }
+                TreeViewRefreshDebugger.TrackAfterTreeViewRefresh(e, false, ex.Message);
             }
         }
 
@@ -2071,8 +2097,31 @@ namespace ImageFolderManager.ViewModels
                 default:
                     return FolderOperationType.Manual; // Default to manual for unknown operations
             }
-        } 
+        }
 
         #endregion
+
+        public void DebugCheckFolderOperationsState()
+        {
+            TreeViewRefreshDebugger.TrackFolderServiceOperation("FolderOperationsCheck",
+                $"FolderOperations is {(FolderOperations != null ? "NOT NULL" : "NULL")}");
+
+            if (FolderOperations != null)
+            {
+                // Check if we can access the event
+                try
+                {
+                    // This will test if the event subscription works
+                    var eventInfo = FolderOperations.GetType().GetEvent("FolderOperationCompleted");
+                    TreeViewRefreshDebugger.TrackFolderServiceOperation("FolderOperationsCheck",
+                        $"FolderOperationCompleted event exists: {eventInfo != null}");
+                }
+                catch (Exception ex)
+                {
+                    TreeViewRefreshDebugger.TrackFolderServiceOperation("FolderOperationsCheck",
+                        $"Error checking event: {ex.Message}");
+                }
+            }
+        }
     }
 }

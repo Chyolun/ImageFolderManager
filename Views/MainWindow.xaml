@@ -130,6 +130,7 @@
                         <TextBlock Text="↑" FontSize="14" VerticalAlignment="Center" />
                     </MenuItem.Icon>
                 </MenuItem>
+               
             </MenuItem>
 
             <MenuItem Header="Help" Foreground="White">

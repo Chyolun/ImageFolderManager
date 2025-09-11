@@ -509,6 +509,30 @@ namespace ImageFolderManager.ViewModels
 
         #region Helper Methods
 
+        /// <summary>
+        /// Ensures folder operation completed event is properly raised
+        /// </summary>
+        private void RaiseFolderOperationCompleted(FolderOperation operation, string sourcePath, string destinationPath, bool success)
+        {
+            try
+            {
+                var eventArgs = success
+                    ? FolderOperationEventArgs.CreateSuccess(operation, sourcePath, destinationPath)
+                    : FolderOperationEventArgs.CreateFailure(operation, sourcePath, "Operation failed");
+
+                // Ensure event is raised on UI thread
+                Application.Current.Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    FolderOperationCompleted?.Invoke(this, eventArgs);
+                }));
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error raising FolderOperationCompleted event: {ex.Message}");
+            }
+        }
+
+
         private async Task<bool> MoveSingleFolderAsync(FolderInfo sourceFolder, FolderInfo targetFolder)
         {
             try

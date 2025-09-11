@@ -13,6 +13,7 @@ using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Shapes;
 using System.Windows.Threading;
+using ImageFolderManager.Diagnostics;
 using ImageFolderManager.Models;
 using ImageFolderManager.Services;
 using ImageFolderManager.ViewModels;
@@ -62,7 +63,7 @@ namespace ImageFolderManager.Controls
                 new Dictionary<string, TreeViewItem>(StringComparer.OrdinalIgnoreCase);
 
         // Current root directory
-        private string _rootDirectory;
+        public string _rootDirectory;
 
         // Multi-selection support
         private ObservableCollection<TreeViewItem> _selectedItems = new ObservableCollection<TreeViewItem>();
@@ -3222,6 +3223,7 @@ namespace ImageFolderManager.Controls
         /// </summary>
         public async Task RefreshTreeIncremental(FolderOperationType operationType, string sourcePath, string destinationPath = null)
         {
+            TreeViewRefreshDebugger.TrackTreeViewRefreshStart(operationType, sourcePath, destinationPath);
             try
             {
                 Debug.WriteLine($"RefreshTreeIncremental: {operationType}, Source: {sourcePath}, Dest: {destinationPath}");
@@ -3249,11 +3251,13 @@ namespace ImageFolderManager.Controls
                         RefreshTreeFull();
                         break;
                 }
+                TreeViewRefreshDebugger.TrackTreeViewRefreshEnd(operationType, true);
             }
             catch (Exception ex)
             {
                 Debug.WriteLine($"RefreshTreeIncremental failed: {ex.Message}");
                 Debug.WriteLine("Falling back to full refresh to ensure consistency");
+                TreeViewRefreshDebugger.TrackTreeViewRefreshEnd(operationType, false, ex.Message);
                 RefreshTreeFull();
             }
         }
@@ -3263,6 +3267,8 @@ namespace ImageFolderManager.Controls
         /// </summary>
         private async Task HandleFolderCreate(string newFolderPath)
         {
+            TreeViewRefreshDebugger.TrackTreeViewOperation("HandleFolderCreate",
+                                                     $"Creating tree item for: {newFolderPath}");
             if (string.IsNullOrEmpty(newFolderPath) || !PathService.DirectoryExists(newFolderPath))
             {
                 return;
@@ -3348,6 +3354,8 @@ namespace ImageFolderManager.Controls
         /// </summary>
         private async Task HandleFolderDelete(string deletedFolderPath)
         {
+            TreeViewRefreshDebugger.TrackTreeViewOperation("HandleFolderDelete",
+                                                     $"Deleting tree item for: {deletedFolderPath}");
 
             if (string.IsNullOrEmpty(deletedFolderPath))
             {              
@@ -3394,6 +3402,9 @@ namespace ImageFolderManager.Controls
         /// </summary>
         private async Task HandleFolderRename(string oldPath, string newPath)
         {
+            TreeViewRefreshDebugger.TrackTreeViewOperation("HandleFolderRename",
+                                                     $"Renaming tree item for: {oldPath}");
+
             if (string.IsNullOrEmpty(oldPath) || string.IsNullOrEmpty(newPath))
                 return;
 
@@ -3457,6 +3468,8 @@ namespace ImageFolderManager.Controls
         /// </summary>
         private async Task HandleFolderMove(string sourcePath, string destinationPath)
         {
+            TreeViewRefreshDebugger.TrackTreeViewOperation("HandleFolderMove",
+                                                     $"Moving tree item to: {destinationPath}");
             if (string.IsNullOrEmpty(sourcePath) || string.IsNullOrEmpty(destinationPath))
                 return;
 
