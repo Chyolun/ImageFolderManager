@@ -33,98 +33,158 @@ namespace ImageFolderManager
         #endregion
 
 
+        // ADD this to track which instance we're using
+        private string _mainViewModelInstanceInfo;
+
         public MainWindow()
         {
+            Debug.WriteLine("=== MainWindow Constructor Starting ===");
+
             InitializeComponent();
-            
+
             // Create and set the MainViewModel
+            Debug.WriteLine("Creating MainViewModel...");
             var viewModel = new MainViewModel();
+            Debug.WriteLine("MainViewModel created successfully");
+
+            // STORE instance info for tracking
+            _mainViewModelInstanceInfo = viewModel.GetInstanceInfo();
+            Debug.WriteLine($"MainWindow using: {_mainViewModelInstanceInfo}");
+
             DataContext = viewModel;
+            Debug.WriteLine("DataContext set");
+
+            // Check if FolderOperations exists before calling SetShellTreeView
+            Debug.WriteLine($"Before SetShellTreeView - viewModel.FolderOperations: {viewModel.FolderOperations != null}");
+            if (viewModel.FolderOperations != null)
+            {
+                Debug.WriteLine($"FolderOperations info: {viewModel.FolderOperations.GetInstanceInfo()}");
+            }
 
             // Set the ShellTreeView reference in the MainViewModel
             viewModel.SetShellTreeView(ShellTreeViewControl);
+            Debug.WriteLine("SetShellTreeView called");
+
+
+            // Verify subscription worked
+            if (viewModel.FolderOperations != null)
+            {
+                // Try to get the event handler list (for verification)
+                var eventInfo = viewModel.FolderOperations.GetType().GetEvent("FolderOperationCompleted");
+                Debug.WriteLine($"Event subscription verification - Event exists: {eventInfo != null}");
+            }
 
             Debug.WriteLine("MainWindow initialized");
-
-            // Monitor DataContext changes
-            ShellTreeViewControl.DataContextChanged += (s, e) =>
-            {
-                Debug.WriteLine("ShellTreeViewControl DataContext changed");
-                Debug.WriteLine($"Old value: {(e.OldValue != null ? e.OldValue.GetType().FullName : "null")}");
-                Debug.WriteLine($"New value: {(e.NewValue != null ? e.NewValue.GetType().FullName : "null")}");
-            };
             // ADD THIS: Subscribe to the Loaded event for debug initialization
             this.Loaded += MainWindow_Loaded;
 
             // ADD THIS: Subscribe to the Closing event for debug cleanup
             this.Closing += MainWindow_Closing;
 
+            DiagnoseInitializationOrder();
             // Load default root directory if set
             LoadDefaultRootDirectoryAsync();
         }
+
+        private void TestManualHandler(object sender, FolderOperationEventArgs e)
+        {
+            Debug.WriteLine("=== TestManualHandler CALLED ===");
+            Debug.WriteLine($"MainWindow instance info: {_mainViewModelInstanceInfo}");
+            Debug.WriteLine($"Event sender info: {(sender as FolderOperationsViewModel)?.GetInstanceInfo()}");
+            Debug.WriteLine($"This proves the event system works!");
+            Debug.WriteLine($"Operation: {e.Operation}, Success: {e.Success}");
+            Debug.WriteLine($"Source: {e.SourcePath}");
+        }
+
         // ADD THIS METHOD: Initialize debug monitoring when window is fully loaded
         private void MainWindow_Loaded(object sender, RoutedEventArgs e)
         {
+            Debug.WriteLine("=== MainWindow_Loaded Starting ===");
+
             try
             {
                 if (!_debugMonitorInitialized && ViewModel != null)
                 {
-                    // Get the required services from the ViewModel
-                    // Note: You may need to expose these services in MainViewModel if they're not accessible
-                    var folderOpsViewModel = ViewModel.FolderOperations;
-                    var shellTreeView = ShellTreeViewControl;
+                    // ... existing debug initialization code ...
 
-                    // You'll need to expose UnifiedFolderService from MainViewModel
-                    // or get it from the service container/DI system
-                    var folderService = GetUnifiedFolderService(); // This method needs to be implemented
+                    // ADD: Test manual subscription
+                    TestSubscription();
 
-                    // Initialize the debug monitor
-                    TreeViewRefreshDebugger.Initialize(
-                        ViewModel,
-                        folderOpsViewModel,
-                        shellTreeView,
-                        folderService);
+                    // ADD: Final state check
+                    Debug.WriteLine($"Final check - ViewModel.FolderOperations: {ViewModel.FolderOperations != null}");
+                    Debug.WriteLine($"Final check - ShellTreeViewControl: {ShellTreeViewControl != null}");
 
                     _debugMonitorInitialized = true;
                     Debug.WriteLine("TreeView debug monitoring initialized successfully");
-
-                    // Create initial checkpoint
-                    TreeViewRefreshDebugger.CreateCheckpoint("ApplicationStartup",
-                        "Debug monitoring started with application startup");
-
-                    // ADD THIS: Check FolderOperations state after initialization
-                    ViewModel.DebugCheckFolderOperationsState();
-
-                    // ADD THIS: Force re-subscription to test
-                    TreeViewRefreshDebugger.CreateCheckpoint("ForceResubscription",
-                        "Testing manual event subscription");
-
-                    // Test if we can manually subscribe
-                    if (ViewModel.FolderOperations != null)
-                    {
-                        // Try manual subscription as a test
-                        ViewModel.FolderOperations.FolderOperationCompleted += TestEventHandler;
-                        TreeViewRefreshDebugger.TrackFolderServiceOperation("ManualSubscription",
-                            "Manually subscribed test handler");
-                    }
-                    else
-                    {
-                        TreeViewRefreshDebugger.TrackFolderServiceOperation("ManualSubscription",
-                            "FolderOperations is NULL - cannot manually subscribe");
-                    }
                 }
             }
             catch (Exception ex)
             {
                 Debug.WriteLine($"Failed to initialize TreeView debug monitoring: {ex.Message}");
-                // Don't let debug initialization prevent normal application startup
             }
+
+            Debug.WriteLine("=== MainWindow_Loaded Completed ===");
         }
+
+
         private void TestEventHandler(object sender, FolderOperationEventArgs e)
         {
             TreeViewRefreshDebugger.TrackFolderServiceOperation("TestEventHandler",
                 $"TEST HANDLER CALLED - Operation: {e.Operation}, Success: {e.Success}");
         }
+        private void TestSubscription()
+        {
+            Debug.WriteLine("=== Testing Manual Subscription ===");
+
+            if (ViewModel?.FolderOperations != null)
+            {
+                Debug.WriteLine("FolderOperations exists, testing manual subscription");
+
+                // Remove any existing subscription
+                ViewModel.FolderOperations.FolderOperationCompleted -= TestManualHandler;
+
+                // Add our test handler
+                ViewModel.FolderOperations.FolderOperationCompleted += TestManualHandler;
+
+                Debug.WriteLine("Manual test handler subscribed");
+            }
+            else
+            {
+                Debug.WriteLine("Cannot test - FolderOperations is null");
+            }
+        }
+      
+
+        public void DiagnoseInitializationOrder()
+        {
+            Debug.WriteLine("=== DIAGNOSTIC: Initialization Order Check ===");
+            Debug.WriteLine($"ViewModel: {ViewModel != null}");
+            Debug.WriteLine($"ViewModel.FolderOperations: {ViewModel?.FolderOperations != null}");
+            Debug.WriteLine($"ShellTreeViewControl: {ShellTreeViewControl != null}");
+            Debug.WriteLine($"DataContext: {DataContext != null}");
+            Debug.WriteLine($"DataContext type: {DataContext?.GetType().Name}");
+
+            if (ViewModel != null)
+            {
+                Debug.WriteLine($"ViewModel type: {ViewModel.GetType().Name}");
+
+                if (ViewModel.FolderOperations != null)
+                {
+                    Debug.WriteLine($"FolderOperations type: {ViewModel.FolderOperations.GetType().Name}");
+
+                    // Check if the event exists
+                    var eventInfo = ViewModel.FolderOperations.GetType().GetEvent("FolderOperationCompleted");
+                    Debug.WriteLine($"FolderOperationCompleted event exists: {eventInfo != null}");
+
+                    if (eventInfo != null)
+                    {
+                        Debug.WriteLine($"Event type: {eventInfo.EventHandlerType}");
+                    }
+                }
+            }
+            Debug.WriteLine("=== DIAGNOSTIC COMPLETED ===");
+        }
+
 
         // ADD THIS METHOD: Cleanup debug monitoring when window is closing
         private void MainWindow_Closing(object sender, System.ComponentModel.CancelEventArgs e)

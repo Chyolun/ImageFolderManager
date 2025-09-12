@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -24,6 +25,8 @@ namespace ImageFolderManager.ViewModels
         // Legacy clipboard state for backward compatibility
         private List<FolderInfo> _clipboardFolders = new List<FolderInfo>();
         private bool _isCutOperation;
+        private static int _instanceCounter = 0;
+        private readonly int _instanceId;
 
         // Legacy undo support
         private readonly Stack<FolderMoveOperation> _undoStack = new Stack<FolderMoveOperation>();
@@ -53,12 +56,18 @@ namespace ImageFolderManager.ViewModels
 
         public FolderOperationsViewModel(UnifiedFolderService folderService)
         {
+            _instanceId = ++_instanceCounter;
+            Debug.WriteLine($"=== FolderOperationsViewModel Constructor (Instance #{_instanceId}) ===");
+
             _folderService = folderService ?? throw new ArgumentNullException(nameof(folderService));
+
 
             // Initialize commands
             UndoFolderMovementCommand = new AsyncRelayCommand(UndoLastFolderMovementAsync, CanUndoFolderMovement);
             DeleteFolderCommand = new AsyncRelayCommand<FolderInfo>(DeleteFolderAsync, CanDeleteFolder);
             CreateNewFolderCommand = new AsyncRelayCommand<FolderInfo>(CreateNewFolderAsync, CanCreateNewFolder);
+
+            Debug.WriteLine($"=== FolderOperationsViewModel Constructor Completed (Instance #{_instanceId}) ===");
         }
 
         #region Legacy Folder Operations (Backward Compatibility)
@@ -688,11 +697,23 @@ namespace ImageFolderManager.ViewModels
 
         private void OnFolderOperationCompleted(FolderOperationEventArgs e)
         {
+            Debug.WriteLine($"=== FolderOperationsViewModel.OnFolderOperationCompleted (Instance #{_instanceId}) ===");
+            Debug.WriteLine($"Instance #{_instanceId}: About to fire event for Operation: {e.Operation}");
+            Debug.WriteLine($"Instance #{_instanceId}: My hash: {this.GetHashCode()}");
+
             FolderOperationCompleted?.Invoke(this, e);
+
+            Debug.WriteLine($"Instance #{_instanceId}: Event fired completed");
+        }
+
+        // ADD method to get instance info
+        public string GetInstanceInfo()
+        {
+            return $"FolderOperationsViewModel Instance #{_instanceId}";
         }
 
         #endregion
 
-      
+
     }
 }

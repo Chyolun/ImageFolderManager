@@ -112,13 +112,12 @@ namespace ImageFolderManager
         {
             try
             {
-                // Create main view model
-                _mainViewModel = new MainViewModel();
+               
 
                 // Create and setup main window
                 var mainWindow = new MainWindow
                 {
-                    DataContext = _mainViewModel
+                    
                 };
 
                 // Set as main window

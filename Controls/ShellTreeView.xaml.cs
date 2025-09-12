@@ -2650,8 +2650,6 @@ namespace ImageFolderManager.Controls
         }
 
 
-
-
         private void ShellTreeView_KeyDown(object sender, KeyEventArgs e)
         {
             if (e.Key == Key.Delete)
@@ -3218,134 +3216,366 @@ namespace ImageFolderManager.Controls
             }
         }
 
+        private readonly Dictionary<string, DateTime> _recentOperations = new Dictionary<string, DateTime>();
+        private readonly TimeSpan _operationCooldown = TimeSpan.FromMilliseconds(1000); // 1 second cooldown
+
+        /// <summary>
+        /// Check if an operation was recently performed to prevent duplicates
+        /// </summary>
+        private bool IsRecentOperation(FolderOperationType operationType, string sourcePath, string destinationPath = null)
+        {
+            string operationKey = $"{operationType}:{sourcePath}:{destinationPath}";
+
+            if (_recentOperations.TryGetValue(operationKey, out DateTime lastTime))
+            {
+                if (DateTime.Now - lastTime < _operationCooldown)
+                {
+                    Debug.WriteLine($"DUPLICATE OPERATION DETECTED: {operationKey} (last performed {DateTime.Now - lastTime} ago)");
+                    return true;
+                }
+            }
+
+            _recentOperations[operationKey] = DateTime.Now;
+
+            // Clean up old entries
+            var oldEntries = _recentOperations.Where(kvp => DateTime.Now - kvp.Value > _operationCooldown).ToList();
+            foreach (var entry in oldEntries)
+            {
+                _recentOperations.Remove(entry.Key);
+            }
+
+            return false;
+        }
+
         /// <summary>
         /// Performs incremental updates for specific folder operations
         /// </summary>
         public async Task RefreshTreeIncremental(FolderOperationType operationType, string sourcePath, string destinationPath = null)
         {
-            TreeViewRefreshDebugger.TrackTreeViewRefreshStart(operationType, sourcePath, destinationPath);
             try
             {
-                Debug.WriteLine($"RefreshTreeIncremental: {operationType}, Source: {sourcePath}, Dest: {destinationPath}");
+                Debug.WriteLine($"=== RefreshTreeIncremental START ===");
+                Debug.WriteLine($"Operation: {operationType}");
+                Debug.WriteLine($"Source: {sourcePath}");
+                Debug.WriteLine($"Dest: {destinationPath}");
+
+                // Check for duplicate operations
+                if (IsRecentOperation(operationType, sourcePath, destinationPath))
+                {
+                    Debug.WriteLine($"=== SKIPPING DUPLICATE OPERATION ===");
+                    return;
+                }
+
                 Debug.WriteLine($"PathToTreeViewItem dictionary contains {_pathToTreeViewItem.Count} entries");
 
                 switch (operationType)
                 {
                     case FolderOperationType.Create:
-                        await HandleFolderCreate(destinationPath);
+                        Debug.WriteLine("=== Calling HandleFolderCreate ===");
+                        await HandleFolderCreate(sourcePath);
                         break;
                     case FolderOperationType.Delete:
+                        Debug.WriteLine("=== Calling HandleFolderDelete ===");
                         await HandleFolderDelete(sourcePath);
                         break;
                     case FolderOperationType.Rename:
+                        Debug.WriteLine("=== Calling HandleFolderRename ===");
                         await HandleFolderRename(sourcePath, destinationPath);
                         break;
                     case FolderOperationType.Move:
+                        Debug.WriteLine("=== Calling HandleFolderMove [ULTIMATE VERSION] ===");
+
+                        // Pre-check
+                        string normalizedDest = PathService.NormalizePath(destinationPath);
+                        if (_pathToTreeViewItem.ContainsKey(normalizedDest))
+                        {
+                            Debug.WriteLine($"=== PRE-CHECK: Destination exists, aborting ===");
+                            break;
+                        }
+
+                        DiagnosePathMappings("Before Move");
+
                         await HandleFolderMove(sourcePath, destinationPath);
+
+                        DiagnosePathMappings("After Move");
+
+                        // Emergency cleanup
+                        EmergencyRemoveDuplicates();
+
+                        // Final verification
+                        string normalizedSrc = PathService.NormalizePath(sourcePath);
+                        if (_pathToTreeViewItem.ContainsKey(normalizedSrc))
+                        {
+                            Debug.WriteLine($"=== FINAL CLEANUP: Force removing source ===");
+                            _pathToTreeViewItem.Remove(normalizedSrc);
+                        }
+
+                        Debug.WriteLine($"=== MOVE OPERATION COMPLETED ===");
                         break;
+
                     case FolderOperationType.UndoMove:
+                        Debug.WriteLine("=== Calling HandleFolderUndoMove ===");
                         await HandleFolderUndoMove(sourcePath, destinationPath);
                         break;
                     default:
-                        Debug.WriteLine($"Unknown operation type: {operationType}. Falling back to full refresh");
+                        Debug.WriteLine($"Unknown operation type: {operationType}");
                         RefreshTreeFull();
                         break;
                 }
-                TreeViewRefreshDebugger.TrackTreeViewRefreshEnd(operationType, true);
+
+                Debug.WriteLine($"=== RefreshTreeIncremental END ===");
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"RefreshTreeIncremental failed: {ex.Message}");
-                Debug.WriteLine("Falling back to full refresh to ensure consistency");
-                TreeViewRefreshDebugger.TrackTreeViewRefreshEnd(operationType, false, ex.Message);
-                RefreshTreeFull();
+                Debug.WriteLine($"=== RefreshTreeIncremental ERROR: {ex.Message} ===");
+                HandleException("Error during incremental refresh", ex);
             }
         }
 
         /// <summary>
-        /// Handles folder creation - adds new item to parent
+        /// Emergency method to remove all duplicate children from TreeView
         /// </summary>
-        private async Task HandleFolderCreate(string newFolderPath)
+        public void EmergencyRemoveDuplicates()
         {
-            TreeViewRefreshDebugger.TrackTreeViewOperation("HandleFolderCreate",
-                                                     $"Creating tree item for: {newFolderPath}");
-            if (string.IsNullOrEmpty(newFolderPath) || !PathService.DirectoryExists(newFolderPath))
+            Debug.WriteLine("=== Emergency Duplicate Removal ===");
+
+            try
             {
-                return;
-            }
+                var duplicatesRemoved = 0;
 
-            string parentPath = Path.GetDirectoryName(newFolderPath);
-            if (string.IsNullOrEmpty(parentPath))
-            {
-                return;
-            }
-
-            // Find parent TreeViewItem
-            if (_pathToTreeViewItem.TryGetValue(parentPath, out var parentItem))
-            {
-                // Invalidate parent cache
-                PathService.InvalidatePathCache(parentPath, false);
-
-                // Special handling for previously empty folders
-                bool wasEmpty = GetRealChildrenCount(parentItem) == 0;
-
-                // If parent is expanded, add the new folder
-                if (parentItem.IsExpanded)
+                foreach (var kvp in _pathToTreeViewItem.ToList())
                 {
-                    // If this was an empty folder, ensure any loading indicators are removed first
-                    if (wasEmpty)
+                    var parentItem = kvp.Value.Parent as TreeViewItem;
+                    if (parentItem == null) continue;
+
+                    // Check for duplicates in this parent
+                    var childNames = new Dictionary<string, List<TreeViewItem>>();
+
+                    foreach (TreeViewItem child in parentItem.Items)
                     {
-                        RemoveDummyNode(parentItem);
-                    }
-
-                    await AddNewFolderToParent(parentItem, newFolderPath);
-                }
-                else
-                {
-                    // If parent is not expanded, ensure it has the expansion indicator
-                    await EnsureParentHasExpansionIndicator(parentItem);
-                }
-
-                // Select the newly created folder
-                SelectPath(newFolderPath);
-            }
-            else
-            {
-                // Fallback path: parent not found, likely initialization race condition
-                Debug.WriteLine($"Parent path not found in dictionary during create: {parentPath}");
-                Debug.WriteLine("Possible timing issue detected. Attempting recovery...");
-
-                // Strategy 1: Delayed retry (handle initialization race condition)
-                await Task.Delay(250); // Give tree initialization time to complete
-
-                if (_pathToTreeViewItem.TryGetValue(parentPath, out parentItem))
-                {
-                    Debug.WriteLine("Recovery successful after delay");
-                    PathService.InvalidatePathCache(parentPath, false);
-
-                    bool wasEmpty = GetRealChildrenCount(parentItem) == 0;
-
-                    if (parentItem.IsExpanded)
-                    {
-                        if (wasEmpty)
+                        string childName = "";
+                        if (child.Header is StackPanel panel)
                         {
-                            RemoveDummyNode(parentItem);
+                            foreach (var element in panel.Children)
+                            {
+                                if (element is TextBlock textBlock)
+                                {
+                                    childName = textBlock.Text;
+                                    break;
+                                }
+                            }
                         }
-                        await AddNewFolderToParent(parentItem, newFolderPath);
-                    }
-                    else
-                    {
-                        await EnsureParentHasExpansionIndicator(parentItem);
+                        else
+                        {
+                            childName = child.Header?.ToString() ?? "";
+                        }
+
+                        if (!childNames.ContainsKey(childName))
+                        {
+                            childNames[childName] = new List<TreeViewItem>();
+                        }
+                        childNames[childName].Add(child);
                     }
 
-                    SelectPath(newFolderPath);
+                    // Remove duplicates (keep only the first one)
+                    foreach (var nameGroup in childNames)
+                    {
+                        if (nameGroup.Value.Count > 1)
+                        {
+                            Debug.WriteLine($"Found {nameGroup.Value.Count} duplicates of: {nameGroup.Key}");
+
+                            // Keep the first, remove the rest
+                            for (int i = 1; i < nameGroup.Value.Count; i++)
+                            {
+                                parentItem.Items.Remove(nameGroup.Value[i]);
+                                duplicatesRemoved++;
+                                Debug.WriteLine($"Removed duplicate: {nameGroup.Key}");
+                            }
+                        }
+                    }
+                }
+
+                if (duplicatesRemoved > 0)
+                {
+                    Debug.WriteLine($"Emergency cleanup removed {duplicatesRemoved} duplicates");
+                    ShellTreeViewControl.UpdateLayout();
                 }
                 else
                 {
-                    // Strategy 2: Full refresh as fallback
-                    Debug.WriteLine("Delayed retry failed. Falling back to full refresh");
-                    RefreshTreeFull();
+                    Debug.WriteLine("No duplicates found");
                 }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error in emergency cleanup: {ex.Message}");
+            }
+        }
+
+
+
+        /// <summary>
+        /// Handles folder creation by adding new tree item
+        /// </summary>
+        private async Task HandleFolderCreate(string folderPath)
+        {
+            Debug.WriteLine($"=== HandleFolderCreate START ===");
+            Debug.WriteLine($"Folder path: {folderPath}");
+
+            try
+            {
+                if (string.IsNullOrEmpty(folderPath))
+                {
+                    Debug.WriteLine("ERROR: folderPath is null or empty");
+                    return;
+                }
+
+                // Normalize the path
+                string normalizedPath = PathService.NormalizePath(folderPath);
+                Debug.WriteLine($"Normalized path: {normalizedPath}");
+
+                // Check if directory actually exists
+                if (!PathService.DirectoryExists(normalizedPath))
+                {
+                    Debug.WriteLine($"ERROR: Directory does not exist: {normalizedPath}");
+                    return;
+                }
+
+                // Get parent directory
+                string parentPath = Path.GetDirectoryName(normalizedPath);
+                string normalizedParentPath = PathService.NormalizePath(parentPath);
+                Debug.WriteLine($"Parent path: {normalizedParentPath}");
+
+                // Check if parent exists in our tree
+                if (!_pathToTreeViewItem.TryGetValue(normalizedParentPath, out TreeViewItem parentItem))
+                {
+                    Debug.WriteLine($"ERROR: Parent item not found in PathToTreeViewItem dictionary");
+                    Debug.WriteLine($"Available paths in dictionary:");
+                    foreach (var kvp in _pathToTreeViewItem.Take(10)) // Show first 10 for debugging
+                    {
+                        Debug.WriteLine($"  {kvp.Key}");
+                    }
+                    Debug.WriteLine($"... and {Math.Max(0, _pathToTreeViewItem.Count - 10)} more entries");
+
+                    // Try to find a close match
+                    var closeMatches = _pathToTreeViewItem.Keys
+                        .Where(path => normalizedParentPath.StartsWith(path, StringComparison.OrdinalIgnoreCase) ||
+                                      path.StartsWith(normalizedParentPath, StringComparison.OrdinalIgnoreCase))
+                        .Take(5);
+
+                    Debug.WriteLine("Close matches:");
+                    foreach (var match in closeMatches)
+                    {
+                        Debug.WriteLine($"  Close match: {match}");
+                    }
+
+                    return;
+                }
+
+                Debug.WriteLine($"Found parent item: {parentItem != null}");
+                Debug.WriteLine($"Parent item header: {parentItem?.Header}");
+
+                // Check if the new folder already exists in the tree
+                if (_pathToTreeViewItem.ContainsKey(normalizedPath))
+                {
+                    Debug.WriteLine($"WARNING: Folder already exists in tree: {normalizedPath}");
+                    return;
+                }
+
+                // Ensure parent is expanded (without this, new items won't be visible)
+                if (!parentItem.IsExpanded)
+                {
+                    Debug.WriteLine("Parent item is not expanded - expanding now");
+                    parentItem.IsExpanded = true;
+
+                    // Wait for expansion to complete
+                    await Task.Delay(100);
+                }
+                else
+                {
+                    Debug.WriteLine("Parent item is already expanded");
+                }
+
+                // Create shell object for the new folder
+                Debug.WriteLine("Creating ShellObject for new folder...");
+                ShellObject shellObject;
+                try
+                {
+                    shellObject = ShellObject.FromParsingName(normalizedPath);
+                    Debug.WriteLine($"ShellObject created successfully: {shellObject.Name}");
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"ERROR creating ShellObject: {ex.Message}");
+                    return;
+                }
+
+                // Create new TreeViewItem
+                Debug.WriteLine("Creating new TreeViewItem...");
+                var newItem = await CreateShellTreeViewItemAsync(shellObject);
+                Debug.WriteLine($"New TreeViewItem created: {newItem != null}");
+                Debug.WriteLine($"New item header: {newItem?.Header}");
+
+                // Add to parent's children
+                Debug.WriteLine($"Adding to parent's children (current count: {parentItem.Items.Count})");
+                parentItem.Items.Add(newItem);
+                Debug.WriteLine($"Added to parent (new count: {parentItem.Items.Count})");
+
+                // Add to path mapping
+                _pathToTreeViewItem[normalizedPath] = newItem;
+                Debug.WriteLine($"Added to path mapping (total count: {_pathToTreeViewItem.Count})");
+
+                // Sort children alphabetically
+                Debug.WriteLine("Sorting parent's children...");
+                var sortedItems = parentItem.Items.Cast<TreeViewItem>()
+                    .OrderBy(item => item.Header.ToString())
+                    .ToList();
+
+                // Clear and re-add in sorted order
+                parentItem.Items.Clear();
+                foreach (var item in sortedItems)
+                {
+                    parentItem.Items.Add(item);
+                }
+                Debug.WriteLine("Children sorted and re-added");
+
+                // Force UI update
+                Debug.WriteLine("Forcing UI update...");
+                parentItem.UpdateLayout();
+                ShellTreeViewControl.UpdateLayout();
+
+                // Try to make the new item visible
+                Debug.WriteLine("Attempting to scroll new item into view...");
+                newItem.BringIntoView();
+
+                Debug.WriteLine($"=== HandleFolderCreate SUCCESS ===");
+                Debug.WriteLine($"New folder '{Path.GetFileName(normalizedPath)}' added to tree successfully");
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"=== HandleFolderCreate ERROR: {ex.Message} ===");
+                Debug.WriteLine($"Stack trace: {ex.StackTrace}");
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// Debug method to check current TreeView state
+        /// </summary>
+        public void DebugTreeViewState()
+        {
+            Debug.WriteLine("=== TreeView State Debug ===");
+            Debug.WriteLine($"Root directory: {_rootDirectory}");
+            Debug.WriteLine($"TreeView items count: {ShellTreeViewControl.Items.Count}");
+            Debug.WriteLine($"PathToTreeViewItem count: {_pathToTreeViewItem.Count}");
+
+            Debug.WriteLine("First 10 items in PathToTreeViewItem:");
+            foreach (var kvp in _pathToTreeViewItem.Take(10))
+            {
+                var item = kvp.Value;
+                Debug.WriteLine($"  Path: {kvp.Key}");
+                Debug.WriteLine($"    Header: {item?.Header}");
+                Debug.WriteLine($"    IsExpanded: {item?.IsExpanded}");
+                Debug.WriteLine($"    Children count: {item?.Items.Count}");
             }
         }
 
@@ -3466,117 +3696,504 @@ namespace ImageFolderManager.Controls
         /// <summary>
         /// Handles folder move - removes from source parent and adds to destination parent
         /// </summary>
+        //private async Task HandleFolderMove(string sourcePath, string destinationPath)
+        //{
+        //    TreeViewRefreshDebugger.TrackTreeViewOperation("HandleFolderMove",
+        //                                             $"Moving tree item to: {destinationPath}");
+        //    if (string.IsNullOrEmpty(sourcePath) || string.IsNullOrEmpty(destinationPath))
+        //        return;
+
+        //    Debug.WriteLine($"🔄 HandleFolderMove: {sourcePath} → {destinationPath}");
+
+        //    try
+        //    {
+        //        // Check if source node exists
+        //        if (!_pathToTreeViewItem.TryGetValue(sourcePath, out var sourceItem))
+        //        {
+        //            Debug.WriteLine($"Source item not found for move: {sourcePath}");
+        //            // If source doesn't exist, create target directly
+        //            await HandleFolderCreate(destinationPath);
+        //            return;
+        //        }
+
+        //        // Get destination parent path
+        //        string destParentPath = Path.GetDirectoryName(destinationPath);
+        //        if (string.IsNullOrEmpty(destParentPath))
+        //        {
+        //            Debug.WriteLine($"Invalid destination parent path for: {destinationPath}");
+        //            return;
+        //        }
+
+        //        // Check if destination parent node exists
+        //        if (!_pathToTreeViewItem.TryGetValue(destParentPath, out var destParentItem))
+        //        {
+        //            Debug.WriteLine($"Destination parent not found: {destParentPath}");
+        //            // Destination parent doesn't exist, perform traditional delete+create
+        //            await HandleFolderDelete(sourcePath);
+        //            await HandleFolderCreate(destinationPath);
+        //            return;
+        //        }
+
+        //        await Application.Current.Dispatcher.InvokeAsync(async () =>
+        //        {
+        //            try
+        //            {
+        //                // Atomic move operation: Remove from source parent, add to destination parent
+        //                var sourceParent = sourceItem.Parent as TreeViewItem;
+        //                if (sourceParent != null)
+        //                {
+        //                    sourceParent.Items.Remove(sourceItem);
+        //                }
+
+        //                // Update node's Shell object and path mapping
+        //                if (sourceItem.Tag is ShellObject sourceShellObject)
+        //                {
+        //                    try
+        //                    {
+        //                        var newShellObject = ShellObject.FromParsingName(destinationPath);
+        //                        sourceItem.Tag = newShellObject;
+
+        //                        // Update Header display
+        //                        sourceItem.Header = CreateModernShellObjectHeader(newShellObject);
+        //                    }
+        //                    catch (Exception ex)
+        //                    {
+        //                        Debug.WriteLine($"Error updating shell object: {ex.Message}");
+        //                        // If unable to update Shell object, create new node
+        //                        var newItem = await CreateShellTreeViewItemAsync(ShellObject.FromParsingName(destinationPath));
+        //                        sourceItem = newItem;
+        //                    }
+        //                }
+
+        //                // Ensure destination parent node is expanded
+        //                if (!destParentItem.IsExpanded)
+        //                {
+        //                    await ExpandItemWithAnimationAsync(destParentItem);
+        //                    await Task.Delay(150); // Wait for expansion to complete
+        //                }
+
+        //                // Find correct insertion index and add
+        //                int insertIndex = FindNaturalInsertionIndex(destParentItem, sourceItem);
+        //                destParentItem.Items.Insert(insertIndex, sourceItem);
+
+        //                // Update path mapping
+        //                _pathToTreeViewItem.Remove(sourcePath);
+        //                _pathToTreeViewItem[destinationPath] = sourceItem;
+
+        //                // Update child node path mappings
+        //                UpdateChildPathMappings(sourcePath, destinationPath);
+
+        //                // Add animation effect
+        //                AnimateItemEntrance(sourceItem);
+
+        //                // Select the moved item
+        //                SelectPath(destinationPath);
+
+        //                Debug.WriteLine($"✅ Atomic move completed: {sourcePath} → {destinationPath}");
+        //            }
+        //            catch (Exception ex)
+        //            {
+        //                Debug.WriteLine($"Error in atomic move operation: {ex.Message}");
+        //                // Fall back to traditional method on failure
+        //                await HandleFolderDelete(sourcePath);
+        //                await HandleFolderCreate(destinationPath);
+        //            }
+        //        });
+        //    }
+        //    catch (Exception ex)
+        //    {
+        //        Debug.WriteLine($"Error in HandleFolderMove: {ex.Message}");
+        //        // Final fallback
+        //        await HandleFolderDelete(sourcePath);
+        //        await HandleFolderCreate(destinationPath);
+        //    }
+        //}
+
+        /// <summary>
+        /// Enhanced folder move handling with complete cleanup (.NET Framework 4.8 compatible)
+        /// </summary>
         private async Task HandleFolderMove(string sourcePath, string destinationPath)
         {
-            TreeViewRefreshDebugger.TrackTreeViewOperation("HandleFolderMove",
-                                                     $"Moving tree item to: {destinationPath}");
-            if (string.IsNullOrEmpty(sourcePath) || string.IsNullOrEmpty(destinationPath))
-                return;
+            string moveId = Guid.NewGuid().ToString("N").Substring(0, 8);
 
-            Debug.WriteLine($"🔄 HandleFolderMove: {sourcePath} → {destinationPath}");
+            Debug.WriteLine($"=== HandleFolderMove START [ULTIMATE] [{moveId}] ===");
+            Debug.WriteLine($"[{moveId}] Source: {sourcePath}");
+            Debug.WriteLine($"[{moveId}] Destination: {destinationPath}");
+            Debug.WriteLine($"[{moveId}] PathToTreeViewItem count BEFORE: {_pathToTreeViewItem.Count}");
 
             try
             {
-                // Check if source node exists
-                if (!_pathToTreeViewItem.TryGetValue(sourcePath, out var sourceItem))
+                if (string.IsNullOrEmpty(sourcePath) || string.IsNullOrEmpty(destinationPath))
                 {
-                    Debug.WriteLine($"Source item not found for move: {sourcePath}");
-                    // If source doesn't exist, create target directly
-                    await HandleFolderCreate(destinationPath);
+                    Debug.WriteLine($"[{moveId}] ERROR: Source or destination path is null or empty");
                     return;
                 }
 
-                // Get destination parent path
-                string destParentPath = Path.GetDirectoryName(destinationPath);
-                if (string.IsNullOrEmpty(destParentPath))
+                string normalizedSourcePath = PathService.NormalizePath(sourcePath);
+                string normalizedDestPath = PathService.NormalizePath(destinationPath);
+
+                Debug.WriteLine($"[{moveId}] Normalized source: {normalizedSourcePath}");
+                Debug.WriteLine($"[{moveId}] Normalized destination: {normalizedDestPath}");
+
+                // ===== ULTIMATE CHECK: Prevent any duplicates =====
+                if (_pathToTreeViewItem.ContainsKey(normalizedDestPath))
                 {
-                    Debug.WriteLine($"Invalid destination parent path for: {destinationPath}");
+                    Debug.WriteLine($"[{moveId}] === ULTIMATE BLOCK: Destination exists ===");
                     return;
                 }
 
-                // Check if destination parent node exists
-                if (!_pathToTreeViewItem.TryGetValue(destParentPath, out var destParentItem))
+                // ===== STEP 1: Find source and destination info =====
+                TreeViewItem sourceItem;
+                if (!_pathToTreeViewItem.TryGetValue(normalizedSourcePath, out sourceItem))
                 {
-                    Debug.WriteLine($"Destination parent not found: {destParentPath}");
-                    // Destination parent doesn't exist, perform traditional delete+create
-                    await HandleFolderDelete(sourcePath);
-                    await HandleFolderCreate(destinationPath);
+                    Debug.WriteLine($"[{moveId}] Source not found, using Create fallback");
+                    await HandleFolderCreate(normalizedDestPath);
                     return;
                 }
 
-                await Application.Current.Dispatcher.InvokeAsync(async () =>
+                TreeViewItem sourceParent = sourceItem.Parent as TreeViewItem;
+                if (sourceParent == null)
                 {
-                    try
+                    Debug.WriteLine($"[{moveId}] ERROR: Source has no parent");
+                    return;
+                }
+
+                string destParentPath = Path.GetDirectoryName(normalizedDestPath);
+                string normalizedDestParentPath = PathService.NormalizePath(destParentPath);
+
+                TreeViewItem destParentItem;
+                if (!_pathToTreeViewItem.TryGetValue(normalizedDestParentPath, out destParentItem))
+                {
+                    Debug.WriteLine($"[{moveId}] Dest parent not found, using Create+Delete fallback");
+                    await HandleFolderCreate(normalizedDestPath);
+                    await HandleFolderDelete(normalizedSourcePath);
+                    return;
+                }
+
+                Debug.WriteLine($"[{moveId}] Source parent children BEFORE: {sourceParent.Items.Count}");
+                Debug.WriteLine($"[{moveId}] Dest parent children BEFORE: {destParentItem.Items.Count}");
+
+                // ===== STEP 2: AGGRESSIVE SOURCE CLEANUP =====
+                Debug.WriteLine($"[{moveId}] === STEP 2: AGGRESSIVE SOURCE CLEANUP ===");
+
+                // Find ALL instances of the source item in its parent (defensive)
+                var sourceItemsToRemove = new List<TreeViewItem>();
+                foreach (TreeViewItem child in sourceParent.Items)
+                {
+                    // Check by reference AND by comparing path mapping
+                    bool matchByReference = (child == sourceItem);
+                    bool matchByPath = false;
+
+                    // Find this child's path in the mapping
+                    foreach (var kvp in _pathToTreeViewItem)
                     {
-                        // Atomic move operation: Remove from source parent, add to destination parent
-                        var sourceParent = sourceItem.Parent as TreeViewItem;
-                        if (sourceParent != null)
+                        if (kvp.Value == child && kvp.Key.Equals(normalizedSourcePath, StringComparison.OrdinalIgnoreCase))
                         {
-                            sourceParent.Items.Remove(sourceItem);
+                            matchByPath = true;
+                            break;
                         }
-
-                        // Update node's Shell object and path mapping
-                        if (sourceItem.Tag is ShellObject sourceShellObject)
-                        {
-                            try
-                            {
-                                var newShellObject = ShellObject.FromParsingName(destinationPath);
-                                sourceItem.Tag = newShellObject;
-
-                                // Update Header display
-                                sourceItem.Header = CreateModernShellObjectHeader(newShellObject);
-                            }
-                            catch (Exception ex)
-                            {
-                                Debug.WriteLine($"Error updating shell object: {ex.Message}");
-                                // If unable to update Shell object, create new node
-                                var newItem = await CreateShellTreeViewItemAsync(ShellObject.FromParsingName(destinationPath));
-                                sourceItem = newItem;
-                            }
-                        }
-
-                        // Ensure destination parent node is expanded
-                        if (!destParentItem.IsExpanded)
-                        {
-                            await ExpandItemWithAnimationAsync(destParentItem);
-                            await Task.Delay(150); // Wait for expansion to complete
-                        }
-
-                        // Find correct insertion index and add
-                        int insertIndex = FindNaturalInsertionIndex(destParentItem, sourceItem);
-                        destParentItem.Items.Insert(insertIndex, sourceItem);
-
-                        // Update path mapping
-                        _pathToTreeViewItem.Remove(sourcePath);
-                        _pathToTreeViewItem[destinationPath] = sourceItem;
-
-                        // Update child node path mappings
-                        UpdateChildPathMappings(sourcePath, destinationPath);
-
-                        // Add animation effect
-                        AnimateItemEntrance(sourceItem);
-
-                        // Select the moved item
-                        SelectPath(destinationPath);
-
-                        Debug.WriteLine($"✅ Atomic move completed: {sourcePath} → {destinationPath}");
                     }
-                    catch (Exception ex)
+
+                    if (matchByReference || matchByPath)
                     {
-                        Debug.WriteLine($"Error in atomic move operation: {ex.Message}");
-                        // Fall back to traditional method on failure
-                        await HandleFolderDelete(sourcePath);
-                        await HandleFolderCreate(destinationPath);
+                        sourceItemsToRemove.Add(child);
+                        Debug.WriteLine($"[{moveId}] Found source item to remove (ref:{matchByReference}, path:{matchByPath})");
                     }
-                });
+                }
+
+                // Remove ALL found source items
+                foreach (var item in sourceItemsToRemove)
+                {
+                    sourceParent.Items.Remove(item);
+                    Debug.WriteLine($"[{moveId}] Removed source item from parent");
+                }
+
+                // Clean up PathToTreeViewItem mapping
+                var pathsToRemove = new List<string>();
+                foreach (var kvp in _pathToTreeViewItem)
+                {
+                    if (kvp.Key.Equals(normalizedSourcePath, StringComparison.OrdinalIgnoreCase) ||
+                        kvp.Key.StartsWith(normalizedSourcePath + "\\", StringComparison.OrdinalIgnoreCase))
+                    {
+                        pathsToRemove.Add(kvp.Key);
+                    }
+                }
+
+                Debug.WriteLine($"[{moveId}] Removing {pathsToRemove.Count} paths from mapping");
+                foreach (var path in pathsToRemove)
+                {
+                    _pathToTreeViewItem.Remove(path);
+                    Debug.WriteLine($"[{moveId}] Removed path: {path}");
+                }
+
+                Debug.WriteLine($"[{moveId}] Source parent children AFTER cleanup: {sourceParent.Items.Count}");
+                Debug.WriteLine($"[{moveId}] PathToTreeViewItem count after cleanup: {_pathToTreeViewItem.Count}");
+
+                // ===== STEP 3: ADD TO DESTINATION (carefully) =====
+                Debug.WriteLine($"[{moveId}] === STEP 3: ADD TO DESTINATION ===");
+
+                // Ensure destination parent is expanded
+                if (!destParentItem.IsExpanded)
+                {
+                    destParentItem.IsExpanded = true;
+                    await Task.Delay(100);
+                }
+
+                // CRITICAL: Check if destination parent already has a child with the same name
+                string folderName = Path.GetFileName(normalizedDestPath);
+                TreeViewItem existingChild = null;
+
+                foreach (TreeViewItem child in destParentItem.Items)
+                {
+                    // Get the child's display name
+                    string childName = "";
+                    if (child.Header is StackPanel panel)
+                    {
+                        // Look for TextBlock in the StackPanel
+                        foreach (var element in panel.Children)
+                        {
+                            if (element is TextBlock textBlock)
+                            {
+                                childName = textBlock.Text;
+                                break;
+                            }
+                        }
+                    }
+                    else
+                    {
+                        childName = child.Header?.ToString() ?? "";
+                    }
+
+                    if (childName.Equals(folderName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        existingChild = child;
+                        Debug.WriteLine($"[{moveId}] FOUND EXISTING CHILD with same name: {childName}");
+                        break;
+                    }
+                }
+
+                // If there's an existing child with the same name, remove it first
+                if (existingChild != null)
+                {
+                    Debug.WriteLine($"[{moveId}] Removing existing child to prevent duplicates");
+                    destParentItem.Items.Remove(existingChild);
+
+                    // Also remove from path mapping if it exists
+                    var existingPath = PathService.NormalizePath(Path.Combine(normalizedDestParentPath, folderName));
+                    if (_pathToTreeViewItem.ContainsKey(existingPath))
+                    {
+                        _pathToTreeViewItem.Remove(existingPath);
+                        Debug.WriteLine($"[{moveId}] Removed existing path from mapping: {existingPath}");
+                    }
+                }
+
+                // Now add the source item to destination
+                destParentItem.Items.Add(sourceItem);
+                _pathToTreeViewItem[normalizedDestPath] = sourceItem;
+
+                Debug.WriteLine($"[{moveId}] Dest parent children AFTER adding: {destParentItem.Items.Count}");
+                Debug.WriteLine($"[{moveId}] PathToTreeViewItem count after adding: {_pathToTreeViewItem.Count}");
+
+                // ===== STEP 4: SORT AND FORCE UI UPDATE =====
+                Debug.WriteLine($"[{moveId}] === STEP 4: SORT AND UI UPDATE ===");
+
+                // Sort destination parent children
+                var sortedItems = destParentItem.Items.Cast<TreeViewItem>()
+                    .OrderBy(item => {
+                        string name = "";
+                        if (item.Header is StackPanel panel)
+                        {
+                            foreach (var element in panel.Children)
+                            {
+                                if (element is TextBlock textBlock)
+                                {
+                                    name = textBlock.Text;
+                                    break;
+                                }
+                            }
+                        }
+                        else
+                        {
+                            name = item.Header?.ToString() ?? "";
+                        }
+                        return name;
+                    })
+                    .ToList();
+
+                destParentItem.Items.Clear();
+                foreach (var item in sortedItems)
+                {
+                    destParentItem.Items.Add(item);
+                }
+
+                // AGGRESSIVE UI UPDATE
+                sourceParent.UpdateLayout();
+                destParentItem.UpdateLayout();
+                ShellTreeViewControl.UpdateLayout();
+                ShellTreeViewControl.InvalidateVisual();
+
+                // Additional force refresh
+                sourceParent.InvalidateVisual();
+                destParentItem.InvalidateVisual();
+
+                // ===== STEP 5: FINAL VERIFICATION AND CLEANUP =====
+                Debug.WriteLine($"[{moveId}] === STEP 5: FINAL VERIFICATION ===");
+
+                int finalCount = _pathToTreeViewItem.Count;
+                bool sourceStillExists = _pathToTreeViewItem.ContainsKey(normalizedSourcePath);
+                bool destExists = _pathToTreeViewItem.ContainsKey(normalizedDestPath);
+
+                Debug.WriteLine($"[{moveId}] PathToTreeViewItem count FINAL: {finalCount}");
+                Debug.WriteLine($"[{moveId}] Source still exists: {sourceStillExists}");
+                Debug.WriteLine($"[{moveId}] Destination exists: {destExists}");
+                Debug.WriteLine($"[{moveId}] Source parent children FINAL: {sourceParent.Items.Count}");
+                Debug.WriteLine($"[{moveId}] Dest parent children FINAL: {destParentItem.Items.Count}");
+
+                // EMERGENCY CLEANUP: If source still exists anywhere, force remove it
+                if (sourceStillExists)
+                {
+                    Debug.WriteLine($"[{moveId}] === EMERGENCY: Force removing source ===");
+                    _pathToTreeViewItem.Remove(normalizedSourcePath);
+                }
+
+                // EMERGENCY CLEANUP: Remove any visual duplicates
+                var duplicateChildren = new List<TreeViewItem>();
+                var seenNames = new HashSet<string>();
+
+                foreach (TreeViewItem child in destParentItem.Items)
+                {
+                    string childName = "";
+                    if (child.Header is StackPanel panel)
+                    {
+                        foreach (var element in panel.Children)
+                        {
+                            if (element is TextBlock textBlock)
+                            {
+                                childName = textBlock.Text;
+                                break;
+                            }
+                        }
+                    }
+                    else
+                    {
+                        childName = child.Header?.ToString() ?? "";
+                    }
+
+                    if (seenNames.Contains(childName))
+                    {
+                        duplicateChildren.Add(child);
+                        Debug.WriteLine($"[{moveId}] Found duplicate child: {childName}");
+                    }
+                    else
+                    {
+                        seenNames.Add(childName);
+                    }
+                }
+
+                // Remove duplicates
+                foreach (var duplicate in duplicateChildren)
+                {
+                    destParentItem.Items.Remove(duplicate);
+                    Debug.WriteLine($"[{moveId}] Removed duplicate child");
+                }
+
+                if (duplicateChildren.Count > 0)
+                {
+                    Debug.WriteLine($"[{moveId}] Removed {duplicateChildren.Count} duplicate children");
+                    Debug.WriteLine($"[{moveId}] Dest parent children after duplicate removal: {destParentItem.Items.Count}");
+                }
+
+                Debug.WriteLine($"[{moveId}] === HandleFolderMove SUCCESS ===");
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"Error in HandleFolderMove: {ex.Message}");
-                // Final fallback
-                await HandleFolderDelete(sourcePath);
-                await HandleFolderCreate(destinationPath);
+                Debug.WriteLine($"[{moveId}] === HandleFolderMove ERROR: {ex.Message} ===");
+                Debug.WriteLine($"[{moveId}] Emergency full refresh");
+                RefreshTreeFull();
+                throw;
             }
+        }
+
+        /// <summary>
+        /// Diagnostic method to check PathToTreeViewItem integrity (.NET Framework 4.8 compatible)
+        /// </summary>
+        public void DiagnosePathMappings(string context)
+        {
+            Debug.WriteLine($"=== Path Mapping Diagnostics ({context}) ===");
+            Debug.WriteLine($"Total entries: {_pathToTreeViewItem.Count}");
+
+            // Check for duplicate paths
+            var pathGroups = new Dictionary<string, int>();
+            foreach (var kvp in _pathToTreeViewItem)
+            {
+                if (pathGroups.ContainsKey(kvp.Key))
+                {
+                    pathGroups[kvp.Key]++;
+                }
+                else
+                {
+                    pathGroups[kvp.Key] = 1;
+                }
+            }
+
+            var duplicatePaths = new List<KeyValuePair<string, int>>();
+            foreach (var group in pathGroups)
+            {
+                if (group.Value > 1)
+                {
+                    duplicatePaths.Add(group);
+                }
+            }
+
+            if (duplicatePaths.Count > 0)
+            {
+                Debug.WriteLine($"FOUND DUPLICATE PATHS:");
+                foreach (var duplicate in duplicatePaths)
+                {
+                    Debug.WriteLine($"  {duplicate.Key} appears {duplicate.Value} times");
+                }
+            }
+
+            // Check for null TreeViewItems
+            var nullItems = new List<string>();
+            foreach (var kvp in _pathToTreeViewItem)
+            {
+                if (kvp.Value == null)
+                {
+                    nullItems.Add(kvp.Key);
+                }
+            }
+
+            if (nullItems.Count > 0)
+            {
+                Debug.WriteLine($"FOUND NULL ITEMS:");
+                foreach (var item in nullItems)
+                {
+                    Debug.WriteLine($"  {item} -> null");
+                }
+            }
+
+            // Show paths that might be orphaned
+            var suspiciousPaths = new List<string>();
+            foreach (var path in _pathToTreeViewItem.Keys)
+            {
+                if (suspiciousPaths.Count >= 5) break;
+                if (path.Contains("\\") && !PathService.DirectoryExists(path))
+                {
+                    suspiciousPaths.Add(path);
+                }
+            }
+
+            if (suspiciousPaths.Count > 0)
+            {
+                Debug.WriteLine($"SUSPICIOUS PATHS (don't exist on disk):");
+                foreach (var path in suspiciousPaths)
+                {
+                    Debug.WriteLine($"  {path}");
+                }
+            }
+
+            Debug.WriteLine($"=== End Diagnostics ===");
         }
 
         /// <summary>
