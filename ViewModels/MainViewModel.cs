@@ -2048,17 +2048,12 @@ namespace ImageFolderManager.ViewModels
                         }
                     }
 
-                    // ADD: Debug TreeView state before operation
-                    _shellTreeView.DebugTreeViewState();
-
+            
                     // Execute incremental refresh (guaranteed to be on UI thread)
                     await _shellTreeView.RefreshTreeIncremental(operationType, e.SourcePath, e.DestinationPath);
 
                     Debug.WriteLine("=== TreeView state after operation ===");
-                    _shellTreeView.DebugTreeViewState();
-
                     Debug.WriteLine($"Instance #{_instanceId}: RefreshTreeIncremental completed");
-
 
                     // Update status message
                     string operationName = e.IsUndoOperation ? $"Undo {e.Operation}" : e.Operation.ToString();

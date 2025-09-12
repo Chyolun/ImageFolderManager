@@ -7,16 +7,16 @@
       "RelativeMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|solutionrelative:controls\\shelltreeview.xaml.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     },
     {
-      "AbsoluteMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|d:\\imagefoldermanager\\viewmodels\\mainviewmodel.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "AbsoluteMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|D:\\ImageFolderManager\\views\\mainwindow.xaml.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|solutionrelative:views\\mainwindow.xaml.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|D:\\ImageFolderManager\\viewmodels\\mainviewmodel.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
       "RelativeMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|solutionrelative:viewmodels\\mainviewmodel.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     },
     {
       "AbsoluteMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|D:\\ImageFolderManager\\app.xaml.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
       "RelativeMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|solutionrelative:app.xaml.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|D:\\ImageFolderManager\\views\\mainwindow.xaml.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
-      "RelativeMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|solutionrelative:views\\mainwindow.xaml.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     },
     {
       "AbsoluteMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|D:\\ImageFolderManager\\services\\unifiedfolderservice.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
@@ -34,11 +34,15 @@
       "DocumentGroups": [
         {
           "DockedHeight": 988,
-          "SelectedChildIndex": 1,
+          "SelectedChildIndex": 2,
           "Children": [
             {
               "$type": "Bookmark",
               "Name": "ST:0:0:{d78612c7-9962-4b83-95d9-268046dad23a}"
+            },
+            {
+              "$type": "Bookmark",
+              "Name": "ST:0:0:{34e76e81-ee4a-11d0-ae2e-00a0c90fffc3}"
             },
             {
               "$type": "Document",
@@ -48,31 +52,27 @@
               "RelativeDocumentMoniker": "Controls\\ShellTreeView.xaml.cs",
               "ToolTip": "D:\\ImageFolderManager\\Controls\\ShellTreeView.xaml.cs",
               "RelativeToolTip": "Controls\\ShellTreeView.xaml.cs",
-              "ViewState": "AgIAAOMOAAAAAAAAAAAQwG4OAAAAAAAAAAAAAA==",
+              "ViewState": "AgIAAE8OAAAAAAAAAAAcwOwNAAAcAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
               "WhenOpened": "2025-09-12T07:11:12.04Z",
               "EditorCaption": ""
             },
             {
-              "$type": "Bookmark",
-              "Name": "ST:0:0:{34e76e81-ee4a-11d0-ae2e-00a0c90fffc3}"
-            },
-            {
               "$type": "Document",
-              "DocumentIndex": 1,
+              "DocumentIndex": 2,
               "Title": "MainViewModel.cs",
               "DocumentMoniker": "D:\\ImageFolderManager\\ViewModels\\MainViewModel.cs",
               "RelativeDocumentMoniker": "ViewModels\\MainViewModel.cs",
               "ToolTip": "D:\\ImageFolderManager\\ViewModels\\MainViewModel.cs",
               "RelativeToolTip": "ViewModels\\MainViewModel.cs",
-              "ViewState": "AgIAAAAIAAAAAAAAAAAAAAAIAAAVAAAAAAAAAA==",
+              "ViewState": "AgIAAM8HAAAAAAAAAADwvwgIAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
               "WhenOpened": "2025-09-04T09:21:14.078Z",
               "EditorCaption": ""
             },
             {
               "$type": "Document",
-              "DocumentIndex": 2,
+              "DocumentIndex": 3,
               "Title": "App.xaml.cs",
               "DocumentMoniker": "D:\\ImageFolderManager\\App.xaml.cs",
               "RelativeDocumentMoniker": "App.xaml.cs",
@@ -84,15 +84,16 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 3,
+              "DocumentIndex": 1,
               "Title": "MainWindow.xaml.cs",
               "DocumentMoniker": "D:\\ImageFolderManager\\Views\\MainWindow.xaml.cs",
               "RelativeDocumentMoniker": "Views\\MainWindow.xaml.cs",
               "ToolTip": "D:\\ImageFolderManager\\Views\\MainWindow.xaml.cs",
               "RelativeToolTip": "Views\\MainWindow.xaml.cs",
-              "ViewState": "AgIAAI4AAAAAAAAAAAAswJsAAAAGAAAAAAAAAA==",
+              "ViewState": "AgIAAFwAAAAAAAAAAAAmwJsAAAAGAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2025-09-11T03:25:04.149Z"
+              "WhenOpened": "2025-09-11T03:25:04.149Z",
+              "EditorCaption": ""
             },
             {
               "$type": "Document",
