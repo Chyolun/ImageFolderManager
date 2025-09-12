@@ -3,7 +3,11 @@
   "WorkspaceRootPath": "D:\\ImageFolderManager\\",
   "Documents": [
     {
-      "AbsoluteMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|D:\\ImageFolderManager\\viewmodels\\mainviewmodel.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "AbsoluteMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|d:\\imagefoldermanager\\controls\\shelltreeview.xaml.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|solutionrelative:controls\\shelltreeview.xaml.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|d:\\imagefoldermanager\\viewmodels\\mainviewmodel.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
       "RelativeMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|solutionrelative:viewmodels\\mainviewmodel.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     },
     {
@@ -30,11 +34,24 @@
       "DocumentGroups": [
         {
           "DockedHeight": 988,
-          "SelectedChildIndex": 4,
+          "SelectedChildIndex": 1,
           "Children": [
             {
               "$type": "Bookmark",
               "Name": "ST:0:0:{d78612c7-9962-4b83-95d9-268046dad23a}"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 0,
+              "Title": "ShellTreeView.xaml.cs",
+              "DocumentMoniker": "D:\\ImageFolderManager\\Controls\\ShellTreeView.xaml.cs",
+              "RelativeDocumentMoniker": "Controls\\ShellTreeView.xaml.cs",
+              "ToolTip": "D:\\ImageFolderManager\\Controls\\ShellTreeView.xaml.cs",
+              "RelativeToolTip": "Controls\\ShellTreeView.xaml.cs",
+              "ViewState": "AgIAAOMOAAAAAAAAAAAQwG4OAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2025-09-12T07:11:12.04Z",
+              "EditorCaption": ""
             },
             {
               "$type": "Bookmark",
@@ -43,6 +60,19 @@
             {
               "$type": "Document",
               "DocumentIndex": 1,
+              "Title": "MainViewModel.cs",
+              "DocumentMoniker": "D:\\ImageFolderManager\\ViewModels\\MainViewModel.cs",
+              "RelativeDocumentMoniker": "ViewModels\\MainViewModel.cs",
+              "ToolTip": "D:\\ImageFolderManager\\ViewModels\\MainViewModel.cs",
+              "RelativeToolTip": "ViewModels\\MainViewModel.cs",
+              "ViewState": "AgIAAAAIAAAAAAAAAAAAAAAIAAAVAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2025-09-04T09:21:14.078Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 2,
               "Title": "App.xaml.cs",
               "DocumentMoniker": "D:\\ImageFolderManager\\App.xaml.cs",
               "RelativeDocumentMoniker": "App.xaml.cs",
@@ -54,7 +84,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 2,
+              "DocumentIndex": 3,
               "Title": "MainWindow.xaml.cs",
               "DocumentMoniker": "D:\\ImageFolderManager\\Views\\MainWindow.xaml.cs",
               "RelativeDocumentMoniker": "Views\\MainWindow.xaml.cs",
@@ -66,20 +96,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 0,
-              "Title": "MainViewModel.cs",
-              "DocumentMoniker": "D:\\ImageFolderManager\\ViewModels\\MainViewModel.cs",
-              "RelativeDocumentMoniker": "ViewModels\\MainViewModel.cs",
-              "ToolTip": "D:\\ImageFolderManager\\ViewModels\\MainViewModel.cs",
-              "RelativeToolTip": "ViewModels\\MainViewModel.cs",
-              "ViewState": "AgIAAOQHAAAAAAAAAAAuwAAIAAAVAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2025-09-04T09:21:14.078Z",
-              "EditorCaption": ""
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 3,
+              "DocumentIndex": 4,
               "Title": "UnifiedFolderService.cs",
               "DocumentMoniker": "D:\\ImageFolderManager\\Services\\UnifiedFolderService.cs",
               "RelativeDocumentMoniker": "Services\\UnifiedFolderService.cs",
@@ -91,7 +108,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 4,
+              "DocumentIndex": 5,
               "Title": "FolderOperationsViewModel.cs",
               "DocumentMoniker": "D:\\ImageFolderManager\\ViewModels\\FolderOperationsViewModel.cs",
               "RelativeDocumentMoniker": "ViewModels\\FolderOperationsViewModel.cs",
