@@ -684,7 +684,9 @@ namespace ImageFolderManager.Controls
                         Tag = shellObject,
                         IsExpanded = false,
                         RenderTransform = new ScaleTransform(1.0, 1.0), // Initialize ScaleTransform
-                        RenderTransformOrigin = new Point(0.5, 0.5)
+                        RenderTransformOrigin = new Point(0.5, 0.5),
+                         HorizontalContentAlignment = HorizontalAlignment.Left,
+                        VerticalContentAlignment = VerticalAlignment.Center
                     };
 
                     // This ensures the folder name is displayed correctly
@@ -3804,13 +3806,83 @@ namespace ImageFolderManager.Controls
                             // Add the moved item
                             destParentItem.Items.Add(sourceItem);
 
-                            // Check if parent should have expansion indicator based on actual directory content
+                            Debug.WriteLine($"[{moveId}] FIXED: Loading remaining children immediately");
+
+                            // CRITICAL FIX: 
                             string destParentActualPath = PathService.GetPathFromShellObject((ShellObject)destParentItem.Tag);
-                            if (!string.IsNullOrEmpty(destParentActualPath) && ShouldHaveExpansionIndicator(destParentActualPath))
+                            if (!string.IsNullOrEmpty(destParentActualPath))
                             {
-                                // Parent has other subdirectories, add dummy node back for lazy loading
-                                AddDummyNode(destParentItem);
-                                Debug.WriteLine($"[{moveId}] Re-added dummy node for remaining subdirectories");
+                                Task.Run(async () =>
+                                {
+                                    try
+                                    {
+                                        Debug.WriteLine($"[{moveId}] Background loading children for: {destParentActualPath}");
+
+                                        var subdirectories = Directory.GetDirectories(destParentActualPath);
+                                        var newItems = new List<TreeViewItem>();
+
+                                        var existingNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                                        await Application.Current.Dispatcher.InvokeAsync(() =>
+                                        {
+                                            foreach (TreeViewItem child in destParentItem.Items)
+                                            {
+                                                if (child.Tag is ShellObject shellObj)
+                                                {
+                                                    existingNames.Add(shellObj.Name);
+                                                }
+                                            }
+                                        });
+                                        foreach (var subdir in subdirectories)
+                                        {
+                                            string dirName = Path.GetFileName(subdir);
+                                            if (!existingNames.Contains(dirName))
+                                            {
+                                                try
+                                                {
+                                                    var shellObj = ShellObject.FromParsingName(subdir);
+                                                    var newItem = await CreateShellTreeViewItemAsync(shellObj);
+                                                    newItems.Add(newItem);
+                                                    Debug.WriteLine($"[{moveId}] Created item for: {dirName}");
+                                                }
+                                                catch (Exception ex)
+                                                {
+                                                    Debug.WriteLine($"[{moveId}] Error creating item for {dirName}: {ex.Message}");
+                                                }
+                                            }
+                                        }
+
+                                        if (newItems.Count > 0)
+                                        {
+                                            await Application.Current.Dispatcher.InvokeAsync(() =>
+                                            {
+                                                foreach (var item in newItems)
+                                                {
+                                                    destParentItem.Items.Add(item);
+
+                                                    if (item.Tag is ShellObject shellObj)
+                                                    {
+                                                        string itemPath = PathService.GetPathFromShellObject(shellObj);
+                                                        if (!string.IsNullOrEmpty(itemPath))
+                                                        {
+                                                            _pathToTreeViewItem[itemPath] = item;
+                                                        }
+                                                    }
+                                                }
+                                                Debug.WriteLine($"[{moveId}] Added {newItems.Count} additional child folders");
+                                            });
+                                            await EnsureNaturalSorting(destParentItem);
+                                            Debug.WriteLine($"[{moveId}] Applied natural sorting");
+                                        }
+                                        else
+                                        {
+                                            Debug.WriteLine($"[{moveId}] No additional child folders to add");
+                                        }
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        Debug.WriteLine($"[{moveId}] Error in background loading: {ex.Message}");
+                                    }
+                                });
                             }
                         }
                         else
