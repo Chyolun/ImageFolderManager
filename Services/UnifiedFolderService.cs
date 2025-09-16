@@ -66,6 +66,13 @@ namespace ImageFolderManager.Services
         private readonly Timer _eventProcessingTimer;
         private readonly object _processingLock = new object();
 
+        private readonly ConcurrentDictionary<string, CancellationTokenSource> _activeOperations =
+                 new ConcurrentDictionary<string, CancellationTokenSource>();
+        private readonly SemaphoreSlim _eventProcessingSemaphore = new SemaphoreSlim(1, 1);
+
+        private readonly ConcurrentDictionary<string, bool> _loadingStates =
+                 new ConcurrentDictionary<string, bool>();
+
         // Configuration
         private string _rootDirectory;
         private bool _isIndexing = false;
@@ -587,62 +594,239 @@ namespace ImageFolderManager.Services
             _eventQueue.Enqueue(eventData);
         }
 
-        private void ProcessEventQueue(object state)
+        private async void ProcessEventQueue(object state)
         {
-            var eventsToProcess = new List<FileSystemEventData>();
+            if (!await _eventProcessingSemaphore.WaitAsync(100))
+                return; // Skip if already processing
 
-            // Dequeue all pending events
-            while (_eventQueue.TryDequeue(out var eventData))
+            try
             {
-                var timeSinceLastEvent = DateTime.Now - (_lastEventTime.GetOrAdd(eventData.Path, DateTime.MinValue));
+                var eventsToProcess = new List<FileSystemEventData>();
+                var eventsByPath = new Dictionary<string, FileSystemEventData>(StringComparer.OrdinalIgnoreCase);
 
-                if (timeSinceLastEvent.TotalMilliseconds >= EVENT_THROTTLE_MS)
+                // Dequeue and deduplicate events by path
+                while (_eventQueue.TryDequeue(out var eventData))
                 {
-                    eventsToProcess.Add(eventData);
-                    _lastEventTime[eventData.Path] = DateTime.Now;
+                    var normalizedPath = PathService.CanonicalizePathForIndex(eventData.Path);
+                    var timeSinceLastEvent = DateTime.Now - (_lastEventTime.GetOrAdd(normalizedPath, DateTime.MinValue));
+
+                    if (timeSinceLastEvent.TotalMilliseconds >= EVENT_THROTTLE_MS)
+                    {
+                        // Keep only the most recent event per path
+                        eventsByPath[normalizedPath] = eventData;
+                        _lastEventTime[normalizedPath] = DateTime.Now;
+                    }
+                }
+
+                eventsToProcess.AddRange(eventsByPath.Values);
+
+                // Process events sequentially to avoid conflicts
+                foreach (var eventData in eventsToProcess.OrderBy(e => e.Timestamp))
+                {
+                    await ProcessSingleEventSafe(eventData);
                 }
             }
-
-            // Process deduplicated events
-            foreach (var eventData in eventsToProcess.GroupBy(e => e.Path).Select(g => g.OrderByDescending(e => e.Timestamp).First()))
+            finally
             {
-                ProcessSingleEvent(eventData);
+                _eventProcessingSemaphore.Release();
             }
         }
 
-        private void ProcessSingleEvent(FileSystemEventData eventData)
+        private async Task ProcessSingleEventSafe(FileSystemEventData eventData)
         {
-           
+            var normalizedPath = PathService.CanonicalizePathForIndex(eventData.Path);
+
+            // Cancel any existing operation for this path
+            if (_activeOperations.TryGetValue(normalizedPath, out var existingCts))
+            {
+                existingCts.Cancel();
+                _activeOperations.TryRemove(normalizedPath, out _);
+            }
+
+            // Create new cancellation token for this operation
+            var cts = new CancellationTokenSource();
+            _activeOperations[normalizedPath] = cts;
+
             try
             {
                 switch (eventData.ChangeType)
                 {
                     case WatcherChangeTypes.Created:
-                        _ = Task.Run(async () => await AddFolderToIndex(eventData.Path));
+                        await AddFolderToIndexSafe(normalizedPath, cts.Token);
                         break;
 
                     case WatcherChangeTypes.Deleted:
-                        RemoveFolderFromIndex(eventData.Path);
+                        RemoveFolderFromIndexSafe(normalizedPath);
                         break;
                 }
 
                 // Fire legacy event for backward compatibility
-                var folderInfo = GetFolderInfoFromIndex(eventData.Path);
-                var args = new FileSystemEventArgs(eventData.ChangeType, Path.GetDirectoryName(eventData.Path), Path.GetFileName(eventData.Path));
-                FileSystemEvent?.Invoke(folderInfo, args, eventData.ChangeType);
+                if (!cts.Token.IsCancellationRequested)
+                {
+                    var folderInfo = GetFolderInfoFromIndex(normalizedPath);
+                    var args = new FileSystemEventArgs(eventData.ChangeType,
+                        Path.GetDirectoryName(eventData.Path), Path.GetFileName(eventData.Path));
+                    FileSystemEvent?.Invoke(folderInfo, args, eventData.ChangeType);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // Expected when operation is cancelled
             }
             catch (Exception ex)
             {
-
+                Debug.WriteLine($"Error processing filesystem event for {normalizedPath}: {ex.Message}");
+            }
+            finally
+            {
+                _activeOperations.TryRemove(normalizedPath, out _);
+                cts.Dispose();
             }
         }
+
+        private async Task AddFolderToIndexSafe(string folderPath, CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrEmpty(folderPath) || !Directory.Exists(folderPath))
+                return;
+
+            var normalizedPath = PathService.CanonicalizePathForIndex(folderPath);
+
+            // Check if already loading
+            if (!_loadingStates.TryAdd(normalizedPath, true))
+                return; // Already being loaded
+
+            try
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var folderInfo = await CreateFolderInfoSafe(normalizedPath, cancellationToken);
+
+                if (folderInfo != null && !cancellationToken.IsCancellationRequested)
+                {
+                    var indexEntry = new FolderIndexEntry
+                    {
+                        FolderInfo = folderInfo,
+                        LastAccessed = DateTime.Now,
+                        IsMonitored = true
+                    };
+
+                    _folderIndex.AddOrUpdate(normalizedPath, indexEntry, (key, existing) => indexEntry);
+                }
+            }
+            finally
+            {
+                _loadingStates.TryRemove(normalizedPath, out _);
+            }
+        }
+
+        // Add safe folder removal method:
+        private void RemoveFolderFromIndexSafe(string folderPath)
+        {
+            if (string.IsNullOrEmpty(folderPath)) return;
+
+            var normalizedPath = PathService.CanonicalizePathForIndex(folderPath);
+
+            // Cancel any loading operation
+            if (_activeOperations.TryRemove(normalizedPath, out var cts))
+            {
+                cts.Cancel();
+                cts.Dispose();
+            }
+
+            // Remove loading state
+            _loadingStates.TryRemove(normalizedPath, out _);
+
+            // Remove from index
+            _folderIndex.TryRemove(normalizedPath, out _);
+        }
+
+        // Add safe folder info creation:
+        private async Task<FolderInfo> CreateFolderInfoSafe(string folderPath, CancellationToken cancellationToken = default)
+        {
+            try
+            {
+                if (!Directory.Exists(folderPath) || cancellationToken.IsCancellationRequested)
+                    return null;
+
+                var dirInfo = new DirectoryInfo(folderPath);
+                var folderInfo = new FolderInfo
+                {
+                    FolderPath = folderPath,
+                    Tags = new ObservableCollection<string>(),
+                    IsLoading = true // Set loading state initially
+                };
+
+                // Load metadata asynchronously
+                try
+                {
+                    var tags = await _tagService.GetTagsForFolderAsync(folderPath);
+                    var rating = await _tagService.GetRatingForFolderAsync(folderPath);
+
+                    if (!cancellationToken.IsCancellationRequested)
+                    {
+                        // Update on UI thread if available
+                        if (Application.Current?.Dispatcher != null)
+                        {
+                            await Application.Current.Dispatcher.InvokeAsync(() =>
+                            {
+                                folderInfo.Tags.Clear();
+                                foreach (var tag in tags)
+                                {
+                                    folderInfo.Tags.Add(tag);
+                                }
+                                folderInfo.Rating = rating;
+                                folderInfo.IsLoading = false; // Clear loading state
+                            }, DispatcherPriority.Background, cancellationToken);
+                        }
+                        else
+                        {
+                            // Direct update if no dispatcher
+                            folderInfo.Tags.Clear();
+                            foreach (var tag in tags)
+                            {
+                                folderInfo.Tags.Add(tag);
+                            }
+                            folderInfo.Rating = rating;
+                            folderInfo.IsLoading = false;
+                        }
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    folderInfo.IsLoading = false;
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"Error loading metadata for {folderPath}: {ex.Message}");
+                    folderInfo.IsLoading = false;
+                }
+
+                return folderInfo;
+            }
+            catch (OperationCanceledException)
+            {
+                return null;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error creating FolderInfo for {folderPath}: {ex.Message}");
+                return null;
+            }
+        }
+
 
         private async Task AddFolderToIndex(string folderPath)
         {
             if (string.IsNullOrEmpty(folderPath) || !Directory.Exists(folderPath))
                 return;
 
-            var normalizedPath = PathService.NormalizePath(folderPath);
+            var normalizedPath = PathService.CanonicalizePathForIndex(folderPath);
+
+            // Add validation to prevent corruption
+            if (string.IsNullOrEmpty(normalizedPath))
+                return;
+
             var folderInfo = CreateFolderInfo(normalizedPath);
 
             if (folderInfo != null)
@@ -654,7 +838,17 @@ namespace ImageFolderManager.Services
                     IsMonitored = true
                 };
 
-                _folderIndex.AddOrUpdate(normalizedPath, indexEntry, (key, existing) => indexEntry);
+
+               // Use atomic update to prevent race conditions
+                _folderIndex.AddOrUpdate(normalizedPath, indexEntry, (key, existing) =>
+                {
+                    // Preserve loading state if exists
+                    if (existing?.FolderInfo?.IsLoading == true && folderInfo.IsLoading == false)
+                    {
+                        folderInfo.IsLoading = false;
+                    }
+                    return indexEntry;
+                });
             }
         }
 
@@ -662,7 +856,11 @@ namespace ImageFolderManager.Services
         {
             if (string.IsNullOrEmpty(folderPath)) return;
 
-            var normalizedPath = PathService.NormalizePath(folderPath);
+            var normalizedPath = PathService.CanonicalizePathForIndex(folderPath);
+
+            // Add validation to prevent corruption
+            if (string.IsNullOrEmpty(normalizedPath))
+                return;
             _folderIndex.TryRemove(normalizedPath, out _);
         }
 
@@ -670,7 +868,8 @@ namespace ImageFolderManager.Services
         {
             if (string.IsNullOrEmpty(folderPath)) return null;
 
-            var normalizedPath = PathService.NormalizePath(folderPath);
+            var normalizedPath = PathService.CanonicalizePathForIndex(folderPath);
+                       
             return _folderIndex.TryGetValue(normalizedPath, out var indexEntry) ? indexEntry.FolderInfo : null;
         }
 
@@ -763,9 +962,26 @@ namespace ImageFolderManager.Services
 
             _isDisposed = true;
 
+            // Cancel all active operations
+            foreach (var kvp in _activeOperations)
+            {
+                try
+                {
+                    kvp.Value.Cancel();
+                    kvp.Value.Dispose();
+                }
+                catch { }
+            }
+            _activeOperations.Clear();
+
+            // Clear loading states
+            _loadingStates.Clear();
+
+            // Dispose resources
             _eventProcessingTimer?.Dispose();
             _rootWatcher?.Dispose();
             _commandSystem?.Dispose();
+            _eventProcessingSemaphore?.Dispose();
 
             GC.SuppressFinalize(this);
         }

@@ -30,6 +30,27 @@ namespace ImageFolderManager.Services
         }
 
         /// <summary>
+        /// Enhanced path normalization with proper canonicalization
+        /// </summary>
+        public static string CanonicalizePathForIndex(string path)
+        {
+            if (string.IsNullOrEmpty(path))
+                return path;
+
+            try
+            {
+                // Get full path and normalize separators
+                string fullPath = Path.GetFullPath(path);
+                return fullPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            }
+            catch
+            {
+                // Fallback to simple normalization if full path fails
+                return NormalizePath(path);
+            }
+        }
+
+        /// <summary>
         /// Compares two paths for equality
         /// </summary>
         public static bool PathsEqual(string path1, string path2)
