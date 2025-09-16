@@ -19,8 +19,6 @@ using Microsoft.WindowsAPICodePack.Dialogs;
 using static ImageFolderManager.Controls.ShellTreeView;
 using System.Diagnostics;
 using System.Threading;
-using ImageFolderManager.Diagnostics;
-
 
 namespace ImageFolderManager.ViewModels
 {
@@ -1869,34 +1867,19 @@ namespace ImageFolderManager.ViewModels
         /// <param name="shellTreeView">The ShellTreeView control instance</param>
         public void SetShellTreeView(ShellTreeView shellTreeView)
         {
-            Debug.WriteLine($"=== SetShellTreeView Called (Instance #{_instanceId}) ===");
-            Debug.WriteLine($"shellTreeView parameter: {shellTreeView != null}");
-            Debug.WriteLine($"FolderOperations before assignment: {FolderOperations != null}");
-
             _shellTreeView = shellTreeView;
 
             // Subscribe to folder operation events for incremental refresh
             if (FolderOperations != null)
             {
-                Debug.WriteLine($"Instance #{_instanceId}: FolderOperations is NOT NULL - proceeding with subscription");
-
-                // Unsubscribe any existing handlers first
-                FolderOperations.FolderOperationCompleted -= OnFolderOperationCompleted;
-                Debug.WriteLine($"Instance #{_instanceId}: Unsubscribed existing handlers");
-
-                // Subscribe to new handler
+                 // Unsubscribe any existing handlers first
+                FolderOperations.FolderOperationCompleted -= OnFolderOperationCompleted;        
                 FolderOperations.FolderOperationCompleted += OnFolderOperationCompleted;
-                Debug.WriteLine($"Instance #{_instanceId}: Subscribed to FolderOperationCompleted event");
-
-                // CRITICAL: Check if this FolderOperations instance is shared
-                Debug.WriteLine($"Instance #{_instanceId}: FolderOperations hash: {FolderOperations.GetHashCode()}");
-            }
+             }
             else
             {
                 Debug.WriteLine($"Instance #{_instanceId}: ERROR: FolderOperations is NULL - cannot subscribe to events");
             }
-
-            Debug.WriteLine($"=== SetShellTreeView Completed (Instance #{_instanceId}) ===");
         }
 
         /// <summary>
@@ -1935,12 +1918,6 @@ namespace ImageFolderManager.ViewModels
         /// </summary>
         private async void OnFolderOperationCompleted(object sender, FolderOperationEventArgs e)
         {
-            Debug.WriteLine($"=== MainViewModel.OnFolderOperationCompleted CALLED (Instance #{_instanceId}) ===");
-            Debug.WriteLine($"Instance #{_instanceId}: Sender: {sender?.GetType().Name}");
-            Debug.WriteLine($"Instance #{_instanceId}: Sender hash: {sender?.GetHashCode()}");
-            Debug.WriteLine($"Instance #{_instanceId}: Operation: {e.Operation}, Success: {e.Success}");
-            Debug.WriteLine($"Instance #{_instanceId}: Source: {e.SourcePath}");
-
             try
             {
                 await HandleFolderOperationCompletedAsync(e);
@@ -1964,7 +1941,6 @@ namespace ImageFolderManager.ViewModels
         /// </summary>
         private async Task HandleFolderOperationCompletedAsync(FolderOperationEventArgs e)
         {
-            TreeViewRefreshDebugger.TrackMainViewModelEventReceived(e);
             // Prevent race conditions from concurrent operations
             await _folderOperationSemaphore.WaitAsync();
 
@@ -1984,11 +1960,10 @@ namespace ImageFolderManager.ViewModels
                         await ExecuteFolderOperationOnUIThread(e);
                     });
                 }
-                TreeViewRefreshDebugger.TrackHandleFolderOperationEnd(e, true);
+           
             }
             catch (Exception ex)
             {
-                TreeViewRefreshDebugger.TrackHandleFolderOperationEnd(e, false, ex.Message); 
                 throw;
             }
             finally
@@ -2002,13 +1977,6 @@ namespace ImageFolderManager.ViewModels
         /// </summary>
         private async Task ExecuteFolderOperationOnUIThread(FolderOperationEventArgs e)
         {
-
-            Debug.WriteLine($"=== ExecuteFolderOperationOnUIThread START (Instance #{_instanceId}) ===");
-            Debug.WriteLine($"Instance #{_instanceId}: Operation: {e.Operation}");
-            Debug.WriteLine($"Instance #{_instanceId}: Source: {e.SourcePath}");
-            Debug.WriteLine($"Instance #{_instanceId}: Destination: {e.DestinationPath}");
-            Debug.WriteLine($"Instance #{_instanceId}: Success: {e.Success}");
-            Debug.WriteLine($"Instance #{_instanceId}: IsUndo: {e.IsUndoOperation}");
 
             try
             {
@@ -2032,15 +2000,9 @@ namespace ImageFolderManager.ViewModels
                     // SPECIAL HANDLING FOR MOVE OPERATIONS
                     if (operationType == FolderOperationType.Move)
                     {
-                        Debug.WriteLine($"Instance #{_instanceId}: MOVE OPERATION DETECTED");
-                        Debug.WriteLine($"Instance #{_instanceId}: Will move from '{e.SourcePath}' to '{e.DestinationPath}'");
-
                         // Check if source still exists (it shouldn't after a successful move)
                         bool sourceStillExists = PathService.DirectoryExists(e.SourcePath);
                         bool destExists = PathService.DirectoryExists(e.DestinationPath);
-
-                        Debug.WriteLine($"Instance #{_instanceId}: Source still exists: {sourceStillExists}");
-                        Debug.WriteLine($"Instance #{_instanceId}: Destination exists: {destExists}");
 
                         if (sourceStillExists)
                         {
@@ -2051,10 +2013,6 @@ namespace ImageFolderManager.ViewModels
             
                     // Execute incremental refresh (guaranteed to be on UI thread)
                     await _shellTreeView.RefreshTreeIncremental(operationType, e.SourcePath, e.DestinationPath);
-
-                    Debug.WriteLine("=== TreeView state after operation ===");
-                    Debug.WriteLine($"Instance #{_instanceId}: RefreshTreeIncremental completed");
-
                     // Update status message
                     string operationName = e.IsUndoOperation ? $"Undo {e.Operation}" : e.Operation.ToString();
                     StatusMessage = $"{operationName} completed successfully.";
@@ -2079,7 +2037,6 @@ namespace ImageFolderManager.ViewModels
                 {
                     Debug.WriteLine($"Failed to refresh tree after error: {refreshEx.Message}");
                 }
-                Debug.WriteLine($"Instance #{_instanceId}: ERROR in ExecuteFolderOperationOnUIThread: {ex.Message}");
                 throw;
             }
         }
@@ -2149,9 +2106,7 @@ namespace ImageFolderManager.ViewModels
 
         public void DebugCheckFolderOperationsState()
         {
-            TreeViewRefreshDebugger.TrackFolderServiceOperation("FolderOperationsCheck",
-                $"FolderOperations is {(FolderOperations != null ? "NOT NULL" : "NULL")}");
-
+          
             if (FolderOperations != null)
             {
                 // Check if we can access the event
@@ -2159,13 +2114,10 @@ namespace ImageFolderManager.ViewModels
                 {
                     // This will test if the event subscription works
                     var eventInfo = FolderOperations.GetType().GetEvent("FolderOperationCompleted");
-                    TreeViewRefreshDebugger.TrackFolderServiceOperation("FolderOperationsCheck",
-                        $"FolderOperationCompleted event exists: {eventInfo != null}");
                 }
                 catch (Exception ex)
                 {
-                    TreeViewRefreshDebugger.TrackFolderServiceOperation("FolderOperationsCheck",
-                        $"Error checking event: {ex.Message}");
+                
                 }
             }
         }

@@ -134,7 +134,6 @@
     <Compile Include="Commands\IFolderCommand.cs" />
     <Compile Include="Commands\MoveFolderCommand.cs" />
     <Compile Include="Commands\RenameFolderCommand.cs" />
-    <Compile Include="Diagnostics\TreeViewRefreshDebugger.cs" />
     <Compile Include="Models\TagDisplayInfo.cs" />
     <Compile Include="Services\AppSettings.cs" />
     <Compile Include="Services\CommandSystemConfiguration.cs" />

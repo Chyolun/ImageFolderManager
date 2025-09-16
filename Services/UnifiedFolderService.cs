@@ -13,7 +13,7 @@ using ImageFolderManager.Models;
 using ImageFolderManager.Commands;
 using ImageFolderManager.StateMachine;
 using Timer = System.Threading.Timer;
-using ImageFolderManager.Diagnostics;
+
 
 namespace ImageFolderManager.Services
 {
@@ -483,6 +483,8 @@ namespace ImageFolderManager.Services
                     return false;
                 }
             }
+
+
         }
 
         /// <summary>
@@ -610,8 +612,7 @@ namespace ImageFolderManager.Services
 
         private void ProcessSingleEvent(FileSystemEventData eventData)
         {
-            TreeViewRefreshDebugger.TrackFolderServiceOperation("ProcessSingleEvent",
-            $"Processing {eventData.ChangeType} for {eventData.Path}");
+           
             try
             {
                 switch (eventData.ChangeType)
@@ -633,8 +634,6 @@ namespace ImageFolderManager.Services
             catch (Exception ex)
             {
 
-                TreeViewRefreshDebugger.TrackFolderServiceOperation("ProcessSingleEvent",
-           $"Error processing {eventData.ChangeType} for {eventData.Path}", ex);
             }
         }
 

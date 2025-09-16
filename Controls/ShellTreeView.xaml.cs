@@ -13,7 +13,6 @@ using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Shapes;
 using System.Windows.Threading;
-using ImageFolderManager.Diagnostics;
 using ImageFolderManager.Models;
 using ImageFolderManager.Services;
 using ImageFolderManager.ViewModels;
@@ -3256,80 +3255,55 @@ namespace ImageFolderManager.Controls
         {
             try
             {
-                Debug.WriteLine($"=== RefreshTreeIncremental START ===");
-                Debug.WriteLine($"Operation: {operationType}");
-                Debug.WriteLine($"Source: {sourcePath}");
-                Debug.WriteLine($"Dest: {destinationPath}");
-
+              
                 // Check for duplicate operations
                 if (IsRecentOperation(operationType, sourcePath, destinationPath))
                 {
-                    Debug.WriteLine($"=== SKIPPING DUPLICATE OPERATION ===");
                     return;
                 }
-
-                Debug.WriteLine($"PathToTreeViewItem dictionary contains {_pathToTreeViewItem.Count} entries");
-
                 switch (operationType)
                 {
                     case FolderOperationType.Create:
-                        Debug.WriteLine("=== Calling HandleFolderCreate ===");
+                      
                         await HandleFolderCreate(sourcePath);
                         break;
                     case FolderOperationType.Delete:
-                        Debug.WriteLine("=== Calling HandleFolderDelete ===");
+
                         await HandleFolderDelete(sourcePath);
                         break;
                     case FolderOperationType.Rename:
-                        Debug.WriteLine("=== Calling HandleFolderRename ===");
                         await HandleFolderRename(sourcePath, destinationPath);
                         break;
                     case FolderOperationType.Move:
-                        Debug.WriteLine("=== Calling HandleFolderMove [ULTIMATE VERSION] ===");
-
                         // Pre-check
                         string normalizedDest = PathService.NormalizePath(destinationPath);
                         if (_pathToTreeViewItem.ContainsKey(normalizedDest))
                         {
-                            Debug.WriteLine($"=== PRE-CHECK: Destination exists, aborting ===");
                             break;
                         }
-
-                        DiagnosePathMappings("Before Move");
-
                         await HandleFolderMove(sourcePath, destinationPath);
-
-                        DiagnosePathMappings("After Move");
-
                         // Emergency cleanup
                         EmergencyRemoveDuplicates();
-
                         // Final verification
                         string normalizedSrc = PathService.NormalizePath(sourcePath);
                         if (_pathToTreeViewItem.ContainsKey(normalizedSrc))
                         {
-                            Debug.WriteLine($"=== FINAL CLEANUP: Force removing source ===");
                             _pathToTreeViewItem.Remove(normalizedSrc);
                         }
-
-                        Debug.WriteLine($"=== MOVE OPERATION COMPLETED ===");
                         break;
 
                     case FolderOperationType.UndoMove:
-                        Debug.WriteLine("=== Calling HandleFolderUndoMove ===");
+
                         await HandleFolderUndoMove(sourcePath, destinationPath);
                         break;
                     default:
-                        Debug.WriteLine($"Unknown operation type: {operationType}");
                         RefreshTreeFull();
                         break;
                 }
 
-                Debug.WriteLine($"=== RefreshTreeIncremental END ===");
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"=== RefreshTreeIncremental ERROR: {ex.Message} ===");
                 HandleException("Error during incremental refresh", ex);
             }
         }
@@ -3339,8 +3313,7 @@ namespace ImageFolderManager.Controls
         /// </summary>
         public void EmergencyRemoveDuplicates()
         {
-            Debug.WriteLine("=== Emergency Duplicate Removal ===");
-
+          
             try
             {
                 var duplicatesRemoved = 0;
@@ -3384,8 +3357,7 @@ namespace ImageFolderManager.Controls
                     {
                         if (nameGroup.Value.Count > 1)
                         {
-                            Debug.WriteLine($"Found {nameGroup.Value.Count} duplicates of: {nameGroup.Key}");
-
+                          
                             // Keep the first, remove the rest
                             for (int i = 1; i < nameGroup.Value.Count; i++)
                             {
@@ -3399,7 +3371,6 @@ namespace ImageFolderManager.Controls
 
                 if (duplicatesRemoved > 0)
                 {
-                    Debug.WriteLine($"Emergency cleanup removed {duplicatesRemoved} duplicates");
                     ShellTreeViewControl.UpdateLayout();
                 }
                 else
@@ -3420,73 +3391,47 @@ namespace ImageFolderManager.Controls
         /// </summary>
         private async Task HandleFolderCreate(string folderPath)
         {
-            Debug.WriteLine($"=== HandleFolderCreate START ===");
-            Debug.WriteLine($"Folder path: {folderPath}");
-
+         
             try
             {
                 if (string.IsNullOrEmpty(folderPath))
                 {
-                    Debug.WriteLine("ERROR: folderPath is null or empty");
                     return;
                 }
 
                 // Normalize the path
                 string normalizedPath = PathService.NormalizePath(folderPath);
-                Debug.WriteLine($"Normalized path: {normalizedPath}");
 
                 // Check if directory actually exists
                 if (!PathService.DirectoryExists(normalizedPath))
                 {
-                    Debug.WriteLine($"ERROR: Directory does not exist: {normalizedPath}");
                     return;
                 }
 
                 // Get parent directory
                 string parentPath = Path.GetDirectoryName(normalizedPath);
                 string normalizedParentPath = PathService.NormalizePath(parentPath);
-                Debug.WriteLine($"Parent path: {normalizedParentPath}");
-
+              
                 // Check if parent exists in our tree
                 if (!_pathToTreeViewItem.TryGetValue(normalizedParentPath, out TreeViewItem parentItem))
                 {
-                    Debug.WriteLine($"ERROR: Parent item not found in PathToTreeViewItem dictionary");
-                    Debug.WriteLine($"Available paths in dictionary:");
-                    foreach (var kvp in _pathToTreeViewItem.Take(10)) // Show first 10 for debugging
-                    {
-                        Debug.WriteLine($"  {kvp.Key}");
-                    }
-                    Debug.WriteLine($"... and {Math.Max(0, _pathToTreeViewItem.Count - 10)} more entries");
-
                     // Try to find a close match
                     var closeMatches = _pathToTreeViewItem.Keys
                         .Where(path => normalizedParentPath.StartsWith(path, StringComparison.OrdinalIgnoreCase) ||
                                       path.StartsWith(normalizedParentPath, StringComparison.OrdinalIgnoreCase))
                         .Take(5);
-
-                    Debug.WriteLine("Close matches:");
-                    foreach (var match in closeMatches)
-                    {
-                        Debug.WriteLine($"  Close match: {match}");
-                    }
-
                     return;
                 }
-
-                Debug.WriteLine($"Found parent item: {parentItem != null}");
-                Debug.WriteLine($"Parent item header: {parentItem?.Header}");
-
+    
                 // Check if the new folder already exists in the tree
                 if (_pathToTreeViewItem.ContainsKey(normalizedPath))
                 {
-                    Debug.WriteLine($"WARNING: Folder already exists in tree: {normalizedPath}");
                     return;
                 }
 
                 // Ensure parent is expanded (without this, new items won't be visible)
                 if (!parentItem.IsExpanded)
                 {
-                    Debug.WriteLine("Parent item is not expanded - expanding now");
                     parentItem.IsExpanded = true;
 
                     // Wait for expansion to complete
@@ -3498,36 +3443,25 @@ namespace ImageFolderManager.Controls
                 }
 
                 // Create shell object for the new folder
-                Debug.WriteLine("Creating ShellObject for new folder...");
-                ShellObject shellObject;
+                 ShellObject shellObject;
                 try
                 {
                     shellObject = ShellObject.FromParsingName(normalizedPath);
-                    Debug.WriteLine($"ShellObject created successfully: {shellObject.Name}");
                 }
                 catch (Exception ex)
                 {
-                    Debug.WriteLine($"ERROR creating ShellObject: {ex.Message}");
-                    return;
+                     return;
                 }
 
                 // Create new TreeViewItem
-                Debug.WriteLine("Creating new TreeViewItem...");
                 var newItem = await CreateShellTreeViewItemAsync(shellObject);
-                Debug.WriteLine($"New TreeViewItem created: {newItem != null}");
-                Debug.WriteLine($"New item header: {newItem?.Header}");
-
-                // Add to parent's children
-                Debug.WriteLine($"Adding to parent's children (current count: {parentItem.Items.Count})");
+               
+                // Add to parent's children             
                 parentItem.Items.Add(newItem);
-                Debug.WriteLine($"Added to parent (new count: {parentItem.Items.Count})");
-
                 // Add to path mapping
                 _pathToTreeViewItem[normalizedPath] = newItem;
-                Debug.WriteLine($"Added to path mapping (total count: {_pathToTreeViewItem.Count})");
-
+              
                 // Sort children alphabetically
-                Debug.WriteLine("Sorting parent's children...");
                 var sortedItems = parentItem.Items.Cast<TreeViewItem>()
                     .OrderBy(item => item.Header.ToString())
                     .ToList();
@@ -3538,24 +3472,16 @@ namespace ImageFolderManager.Controls
                 {
                     parentItem.Items.Add(item);
                 }
-                Debug.WriteLine("Children sorted and re-added");
 
                 // Force UI update
-                Debug.WriteLine("Forcing UI update...");
                 parentItem.UpdateLayout();
                 ShellTreeViewControl.UpdateLayout();
 
                 // Try to make the new item visible
-                Debug.WriteLine("Attempting to scroll new item into view...");
                 newItem.BringIntoView();
-
-                Debug.WriteLine($"=== HandleFolderCreate SUCCESS ===");
-                Debug.WriteLine($"New folder '{Path.GetFileName(normalizedPath)}' added to tree successfully");
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"=== HandleFolderCreate ERROR: {ex.Message} ===");
-                Debug.WriteLine($"Stack trace: {ex.StackTrace}");
                 throw;
             }
         }
@@ -3566,8 +3492,7 @@ namespace ImageFolderManager.Controls
         /// </summary>
         private async Task HandleFolderDelete(string deletedFolderPath)
         {
-            TreeViewRefreshDebugger.TrackTreeViewOperation("HandleFolderDelete",
-                                                     $"Deleting tree item for: {deletedFolderPath}");
+          
 
             if (string.IsNullOrEmpty(deletedFolderPath))
             {              
@@ -3614,10 +3539,8 @@ namespace ImageFolderManager.Controls
         /// </summary>
         private async Task HandleFolderRename(string oldPath, string newPath)
         {
-            TreeViewRefreshDebugger.TrackTreeViewOperation("HandleFolderRename",
-                                                     $"Renaming tree item for: {oldPath}");
-
-            if (string.IsNullOrEmpty(oldPath) || string.IsNullOrEmpty(newPath))
+           
+        if (string.IsNullOrEmpty(oldPath) || string.IsNullOrEmpty(newPath))
                 return;
 
             if (_pathToTreeViewItem.TryGetValue(oldPath, out var renamedItem))
@@ -3683,29 +3606,20 @@ namespace ImageFolderManager.Controls
             string moveId = Guid.NewGuid().ToString("N").Substring(0, 8);
             bool destParentWasNotLoaded = false; // Variable to track destination parent loading state
 
-            Debug.WriteLine($"=== HandleFolderMove START [ULTIMATE] [{moveId}] ===");
-            Debug.WriteLine($"[{moveId}] Source: {sourcePath}");
-            Debug.WriteLine($"[{moveId}] Destination: {destinationPath}");
-            Debug.WriteLine($"[{moveId}] PathToTreeViewItem count BEFORE: {_pathToTreeViewItem.Count}");
-
             try
             {
                 if (string.IsNullOrEmpty(sourcePath) || string.IsNullOrEmpty(destinationPath))
                 {
-                    Debug.WriteLine($"[{moveId}] ERROR: Source or destination path is null or empty");
                     return;
                 }
 
                 string normalizedSourcePath = PathService.NormalizePath(sourcePath);
                 string normalizedDestPath = PathService.NormalizePath(destinationPath);
 
-                Debug.WriteLine($"[{moveId}] Normalized source: {normalizedSourcePath}");
-                Debug.WriteLine($"[{moveId}] Normalized destination: {normalizedDestPath}");
 
                 // ===== STEP 1: PREVENT DUPLICATES =====
                 if (_pathToTreeViewItem.ContainsKey(normalizedDestPath))
                 {
-                    Debug.WriteLine($"[{moveId}] === BLOCK: Destination already exists ===");
                     return;
                 }
 
@@ -3713,7 +3627,6 @@ namespace ImageFolderManager.Controls
                 TreeViewItem sourceItem;
                 if (!_pathToTreeViewItem.TryGetValue(normalizedSourcePath, out sourceItem))
                 {
-                    Debug.WriteLine($"[{moveId}] Source not found, using Create fallback");
                     await HandleFolderCreate(normalizedDestPath);
                     return;
                 }
@@ -3721,7 +3634,6 @@ namespace ImageFolderManager.Controls
                 TreeViewItem sourceParent = sourceItem.Parent as TreeViewItem;
                 if (sourceParent == null)
                 {
-                    Debug.WriteLine($"[{moveId}] ERROR: Source has no parent");
                     return;
                 }
 
@@ -3731,38 +3643,27 @@ namespace ImageFolderManager.Controls
                 TreeViewItem destParentItem;
                 if (!_pathToTreeViewItem.TryGetValue(normalizedDestParentPath, out destParentItem))
                 {
-                    Debug.WriteLine($"[{moveId}] Dest parent not found, using Create+Delete fallback");
                     await HandleFolderCreate(normalizedDestPath);
                     await HandleFolderDelete(normalizedSourcePath);
                     return;
                 }
 
-                Debug.WriteLine($"[{moveId}] Source parent children BEFORE: {sourceParent.Items.Count}");
-                Debug.WriteLine($"[{moveId}] Dest parent children BEFORE: {destParentItem.Items.Count}");
-
                 // ===== STEP 3: CHECK DESTINATION PARENT LOADING STATE =====
-                Debug.WriteLine($"[{moveId}] === STEP 3: CHECK DESTINATION PARENT LOADING STATE ===");
-
                 await Application.Current.Dispatcher.InvokeAsync(() =>
                 {
                     // Check if destination parent is in "not yet loaded" state
                     destParentWasNotLoaded = destParentItem.Items.Count == 1 &&
                                             destParentItem.Items[0] is TreeViewItem loadingItem &&
-                                            !loadingItem.IsEnabled; // Loading items are disabled
-
-                    Debug.WriteLine($"[{moveId}] Dest parent was in 'not loaded' state: {destParentWasNotLoaded}");
+                                            !loadingItem.IsEnabled; // Loading items are disabled                 
                 });
 
-                // ===== STEP 4: REMOVE SOURCE ITEM =====
-                Debug.WriteLine($"[{moveId}] === STEP 4: REMOVE SOURCE ITEM ===");
-
+                // ===== STEP 4: REMOVE SOURCE ITEM =====            
                 var sourceItemsToRemove = new List<TreeViewItem>();
                 foreach (TreeViewItem child in sourceParent.Items)
                 {
                     if (child == sourceItem)
                     {
                         sourceItemsToRemove.Add(child);
-                        Debug.WriteLine($"[{moveId}] Found source item to remove");
                         break;
                     }
                 }
@@ -3770,19 +3671,11 @@ namespace ImageFolderManager.Controls
                 foreach (var item in sourceItemsToRemove)
                 {
                     sourceParent.Items.Remove(item);
-                    Debug.WriteLine($"[{moveId}] Removed source item from parent");
                 }
 
                 // Remove from path mapping
                 _pathToTreeViewItem.Remove(normalizedSourcePath);
-                Debug.WriteLine($"[{moveId}] Removed source path from mapping");
-
-                Debug.WriteLine($"[{moveId}] Source parent children AFTER cleanup: {sourceParent.Items.Count}");
-                Debug.WriteLine($"[{moveId}] PathToTreeViewItem count after cleanup: {_pathToTreeViewItem.Count}");
-
                 // ===== STEP 5: UPDATE SHELLOBJECT AND ADD TO DESTINATION =====
-                Debug.WriteLine($"[{moveId}] === STEP 5: UPDATE SHELLOBJECT AND ADD TO DESTINATION ===");
-
                 await Application.Current.Dispatcher.InvokeAsync(() =>
                 {
                     try
@@ -3791,22 +3684,15 @@ namespace ImageFolderManager.Controls
                         var newShellObject = ShellObject.FromParsingName(normalizedDestPath);
                         sourceItem.Tag = newShellObject;
                         sourceItem.Header = CreateModernShellObjectHeader(newShellObject);
-
-                        Debug.WriteLine($"[{moveId}] Updated TreeViewItem's ShellObject to new path: {normalizedDestPath}");
-
                         // Handle based on destination parent loading state
                         if (destParentWasNotLoaded)
                         {
-                            Debug.WriteLine($"[{moveId}] Handling unloaded destination parent...");
-
+                           
                             // Remove the loading dummy node since we're adding real content
                             RemoveDummyNode(destParentItem);
-                            Debug.WriteLine($"[{moveId}] Removed dummy loading node");
-
+                          
                             // Add the moved item
                             destParentItem.Items.Add(sourceItem);
-
-                            Debug.WriteLine($"[{moveId}] FIXED: Loading remaining children immediately");
 
                             // CRITICAL FIX: 
                             string destParentActualPath = PathService.GetPathFromShellObject((ShellObject)destParentItem.Tag);
@@ -3816,8 +3702,6 @@ namespace ImageFolderManager.Controls
                                 {
                                     try
                                     {
-                                        Debug.WriteLine($"[{moveId}] Background loading children for: {destParentActualPath}");
-
                                         var subdirectories = Directory.GetDirectories(destParentActualPath);
                                         var newItems = new List<TreeViewItem>();
 
@@ -3842,8 +3726,7 @@ namespace ImageFolderManager.Controls
                                                     var shellObj = ShellObject.FromParsingName(subdir);
                                                     var newItem = await CreateShellTreeViewItemAsync(shellObj);
                                                     newItems.Add(newItem);
-                                                    Debug.WriteLine($"[{moveId}] Created item for: {dirName}");
-                                                }
+                                                                                                  }
                                                 catch (Exception ex)
                                                 {
                                                     Debug.WriteLine($"[{moveId}] Error creating item for {dirName}: {ex.Message}");
@@ -3868,10 +3751,9 @@ namespace ImageFolderManager.Controls
                                                         }
                                                     }
                                                 }
-                                                Debug.WriteLine($"[{moveId}] Added {newItems.Count} additional child folders");
+                                  
                                             });
                                             await EnsureNaturalSorting(destParentItem);
-                                            Debug.WriteLine($"[{moveId}] Applied natural sorting");
                                         }
                                         else
                                         {
@@ -3889,17 +3771,14 @@ namespace ImageFolderManager.Controls
                         {
                             // Normal case: parent was already loaded, just add the item
                             destParentItem.Items.Add(sourceItem);
-                            Debug.WriteLine($"[{moveId}] Added item to already-loaded parent");
                         }
 
                         // Update path mapping with correct reference
                         _pathToTreeViewItem[normalizedDestPath] = sourceItem;
-                        Debug.WriteLine($"[{moveId}] Updated path mapping");
                     }
                     catch (Exception ex)
                     {
-                        Debug.WriteLine($"[{moveId}] ERROR updating ShellObject: {ex.Message}");
-
+                     
                         // Fallback: create new item
                         try
                         {
@@ -3922,7 +3801,6 @@ namespace ImageFolderManager.Controls
                             }
 
                             _pathToTreeViewItem[normalizedDestPath] = fallbackItem;
-                            Debug.WriteLine($"[{moveId}] Created fallback item");
                         }
                         catch (Exception fallbackEx)
                         {
@@ -3932,17 +3810,12 @@ namespace ImageFolderManager.Controls
                     }
                 });
 
-                Debug.WriteLine($"[{moveId}] Dest parent children AFTER adding: {destParentItem.Items.Count}");
-                Debug.WriteLine($"[{moveId}] PathToTreeViewItem count after adding: {_pathToTreeViewItem.Count}");
-
                 // ===== STEP 6: SORT AND UI UPDATE (only if parent was already loaded) =====
-                Debug.WriteLine($"[{moveId}] === STEP 6: SORT AND UI UPDATE ===");
-
+           
                 if (!destParentWasNotLoaded)
                 {
                     // Only sort if parent was already loaded to avoid interfering with lazy loading
-                    await EnsureNaturalSorting(destParentItem);
-                    Debug.WriteLine($"[{moveId}] Applied natural sorting to loaded parent");
+                    await EnsureNaturalSorting(destParentItem);                    
                 }
                 else
                 {
@@ -3950,200 +3823,21 @@ namespace ImageFolderManager.Controls
                 }
 
                 // ===== STEP 7: FINAL VERIFICATION =====
-                Debug.WriteLine($"[{moveId}] === STEP 7: FINAL VERIFICATION ===");
-                Debug.WriteLine($"[{moveId}] PathToTreeViewItem count FINAL: {_pathToTreeViewItem.Count}");
-                Debug.WriteLine($"[{moveId}] Source still exists: {PathService.DirectoryExists(normalizedSourcePath)}");
-                Debug.WriteLine($"[{moveId}] Destination exists: {PathService.DirectoryExists(normalizedDestPath)}");
-                Debug.WriteLine($"[{moveId}] Source parent children FINAL: {sourceParent.Items.Count}");
-                Debug.WriteLine($"[{moveId}] Dest parent children FINAL: {destParentItem.Items.Count}");
-
                 // Verify the moved item's ShellObject points to correct path
                 if (_pathToTreeViewItem.TryGetValue(normalizedDestPath, out var verifyItem))
                 {
                     if (verifyItem.Tag is ShellObject shellObj)
                     {
                         string itemPath = PathService.GetPathFromShellObject(shellObj);
-                        Debug.WriteLine($"[{moveId}] Moved item's ShellObject path: {itemPath}");
-                        Debug.WriteLine($"[{moveId}] Expected path: {normalizedDestPath}");
-                        Debug.WriteLine($"[{moveId}] Paths match: {PathService.PathsEqual(itemPath, normalizedDestPath)}");
                     }
                 }
-
-                Debug.WriteLine($"[{moveId}] === HandleFolderMove SUCCESS ===");
-            }
+             }
             catch (Exception ex)
-            {
-                Debug.WriteLine($"[{moveId}] ERROR in HandleFolderMove: {ex.Message}");
-                Debug.WriteLine($"[{moveId}] Stack trace: {ex.StackTrace}");
+            {          
                 throw; // Re-throw to trigger any higher-level error handling
             }
         }
 
-        /// <summary>
-        /// Loads remaining children for a parent folder that was previously in lazy-load state
-        /// </summary>
-        private async Task LoadRemainingChildrenForParent(TreeViewItem parentItem, string parentPath)
-        {
-            try
-            {
-                Debug.WriteLine($"LoadRemainingChildrenForParent: Loading children for {parentPath}");
-
-                // Get existing children names to avoid duplicates
-                var existingChildren = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-                await Application.Current.Dispatcher.InvokeAsync(() =>
-                {
-                    foreach (TreeViewItem child in parentItem.Items)
-                    {
-                        if (child.Tag is ShellObject shellObj)
-                        {
-                            existingChildren.Add(shellObj.Name);
-                        }
-                    }
-                });
-
-                Debug.WriteLine($"LoadRemainingChildrenForParent: Found {existingChildren.Count} existing children");
-
-                // Load subdirectories from file system
-                var subdirectories = Directory.GetDirectories(parentPath);
-                var newItemsToAdd = new List<TreeViewItem>();
-
-                foreach (var subdirectory in subdirectories)
-                {
-                    string dirName = Path.GetFileName(subdirectory);
-
-                    // Skip if we already have this child
-                    if (existingChildren.Contains(dirName))
-                    {
-                        Debug.WriteLine($"LoadRemainingChildrenForParent: Skipping existing child: {dirName}");
-                        continue;
-                    }
-
-                    try
-                    {
-                        var shellObject = ShellObject.FromParsingName(subdirectory);
-                        var newItem = await CreateShellTreeViewItemAsync(shellObject);
-                        newItemsToAdd.Add(newItem);
-                        Debug.WriteLine($"LoadRemainingChildrenForParent: Created item for: {dirName}");
-                    }
-                    catch (Exception ex)
-                    {
-                        Debug.WriteLine($"LoadRemainingChildrenForParent: Error creating item for {dirName}: {ex.Message}");
-                    }
-                }
-
-                // Add new items to parent on UI thread
-                await Application.Current.Dispatcher.InvokeAsync(() =>
-                {
-                    foreach (var newItem in newItemsToAdd)
-                    {
-                        parentItem.Items.Add(newItem);
-
-                        // Update path mapping
-                        if (newItem.Tag is ShellObject shellObj)
-                        {
-                            string itemPath = PathService.GetPathFromShellObject(shellObj);
-                            if (!string.IsNullOrEmpty(itemPath))
-                            {
-                                _pathToTreeViewItem[itemPath] = newItem;
-                            }
-                        }
-                    }
-
-                    Debug.WriteLine($"LoadRemainingChildrenForParent: Added {newItemsToAdd.Count} new items");
-                });
-
-                // Sort all children naturally
-                await EnsureNaturalSorting(parentItem);
-                Debug.WriteLine($"LoadRemainingChildrenForParent: Applied natural sorting");
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"LoadRemainingChildrenForParent: Error loading children for {parentPath}: {ex.Message}");
-            }
-        }
-
-        /// <summary>
-        /// Diagnostic method to check PathToTreeViewItem integrity (.NET Framework 4.8 compatible)
-        /// </summary>
-        public void DiagnosePathMappings(string context)
-        {
-            Debug.WriteLine($"=== Path Mapping Diagnostics ({context}) ===");
-            Debug.WriteLine($"Total entries: {_pathToTreeViewItem.Count}");
-
-            // Check for duplicate paths
-            var pathGroups = new Dictionary<string, int>();
-            foreach (var kvp in _pathToTreeViewItem)
-            {
-                if (pathGroups.ContainsKey(kvp.Key))
-                {
-                    pathGroups[kvp.Key]++;
-                }
-                else
-                {
-                    pathGroups[kvp.Key] = 1;
-                }
-            }
-
-            var duplicatePaths = new List<KeyValuePair<string, int>>();
-            foreach (var group in pathGroups)
-            {
-                if (group.Value > 1)
-                {
-                    duplicatePaths.Add(group);
-                }
-            }
-
-            if (duplicatePaths.Count > 0)
-            {
-                Debug.WriteLine($"FOUND DUPLICATE PATHS:");
-                foreach (var duplicate in duplicatePaths)
-                {
-                    Debug.WriteLine($"  {duplicate.Key} appears {duplicate.Value} times");
-                }
-            }
-
-            // Check for null TreeViewItems
-            var nullItems = new List<string>();
-            foreach (var kvp in _pathToTreeViewItem)
-            {
-                if (kvp.Value == null)
-                {
-                    nullItems.Add(kvp.Key);
-                }
-            }
-
-            if (nullItems.Count > 0)
-            {
-                Debug.WriteLine($"FOUND NULL ITEMS:");
-                foreach (var item in nullItems)
-                {
-                    Debug.WriteLine($"  {item} -> null");
-                }
-            }
-
-            // Show paths that might be orphaned
-            var suspiciousPaths = new List<string>();
-            foreach (var path in _pathToTreeViewItem.Keys)
-            {
-                if (suspiciousPaths.Count >= 5) break;
-                if (path.Contains("\\") && !PathService.DirectoryExists(path))
-                {
-                    suspiciousPaths.Add(path);
-                }
-            }
-
-            if (suspiciousPaths.Count > 0)
-            {
-                Debug.WriteLine($"SUSPICIOUS PATHS (don't exist on disk):");
-                foreach (var path in suspiciousPaths)
-                {
-                    Debug.WriteLine($"  {path}");
-                }
-            }
-
-            Debug.WriteLine($"=== End Diagnostics ===");
-        }
 
         /// <summary>
         /// Handles undo move operation - essentially a move back to original location
@@ -4458,17 +4152,51 @@ namespace ImageFolderManager.Controls
         /// </summary>
         private void UpdateChildPathMappings(string oldParentPath, string newParentPath)
         {
-            var childPathsToUpdate = _pathToTreeViewItem.Keys
-                .Where(p => p.StartsWith(oldParentPath + Path.DirectorySeparatorChar))
-                .ToList();
+            var allAffectedPaths = new List<string>();
 
-            foreach (var oldChildPath in childPathsToUpdate)
+            // Collect all paths that need updating (including deeply nested)
+            foreach (var path in _pathToTreeViewItem.Keys.ToList())
             {
-                string newChildPath = oldChildPath.Replace(oldParentPath, newParentPath);
-                var item = _pathToTreeViewItem[oldChildPath];
+                if (path.StartsWith(oldParentPath + Path.DirectorySeparatorChar) ||
+                    path.Equals(oldParentPath, StringComparison.OrdinalIgnoreCase))
+                {
+                    allAffectedPaths.Add(path);
+                }
+            }
 
-                _pathToTreeViewItem.Remove(oldChildPath);
-                _pathToTreeViewItem[newChildPath] = item;
+            // Update all paths atomically to prevent partial state
+            var tempMappings = new Dictionary<string, TreeViewItem>();
+            foreach (var oldPath in allAffectedPaths)
+            {
+                string newPath = oldPath.Replace(oldParentPath, newParentPath);
+                var item = _pathToTreeViewItem[oldPath];
+                tempMappings[newPath] = item;
+
+                // Update the TreeViewItem's ShellObject as well
+                if (item.Tag is ShellObject shellObj)
+                {
+                    try
+                    {
+                        var newShellObject = ShellObject.FromParsingName(newPath);
+                        item.Tag = newShellObject;
+                        item.Header = CreateModernShellObjectHeader(newShellObject);
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"Failed to update ShellObject for {newPath}: {ex.Message}");
+                    }
+                }
+            }
+
+            // Remove old mappings and add new ones
+            foreach (var oldPath in allAffectedPaths)
+            {
+                _pathToTreeViewItem.Remove(oldPath);
+            }
+
+            foreach (var kvp in tempMappings)
+            {
+                _pathToTreeViewItem[kvp.Key] = kvp.Value;
             }
         }
 
