@@ -31,7 +31,6 @@ namespace ImageFolderManager
         private bool _debugMonitorInitialized = false;
         #endregion
 
-
         // ADD this to track which instance we're using
         private string _mainViewModelInstanceInfo;
 

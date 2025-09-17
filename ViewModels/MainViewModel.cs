@@ -60,6 +60,9 @@ namespace ImageFolderManager.ViewModels
         private ShellTreeView _shellTreeView;
 
         private FolderInfo _selectedFolder;
+
+        private HierarchicalNodeManager _nodeManager;
+        private FolderOperationCoordinator _coordinator;
         public FolderInfo SelectedFolder
         {
             get => _selectedFolder;
@@ -122,6 +125,8 @@ namespace ImageFolderManager.ViewModels
             set => Search.SearchText = value;
         }
 
+        public Controls.ShellTreeView ShellTreeView { get; set; }
+
         public ObservableCollection<FolderInfo> SearchResultFolders => Search.SearchResultFolders;
 
         public bool IsRealTimeIndexingActive => _unifiedFolderService?.IsIndexing == false &&
@@ -170,24 +175,22 @@ namespace ImageFolderManager.ViewModels
         public MainViewModel()
         {
             _instanceId = ++_instanceCounter;
-            Debug.WriteLine($"=== MainViewModel Constructor Starting (Instance #{_instanceId}) ===");
             // Initialize shared category service
             var categoryService = new TagCategoryService();
             // Initialize services
-            _unifiedFolderService = new UnifiedFolderService();
+            _nodeManager = new HierarchicalNodeManager();
+            
+            _unifiedFolderService = new UnifiedFolderService(_nodeManager);
             _tagService = new FolderTagService(categoryService);
             _allLoadedFolders = new List<FolderInfo>();
-
+           
             // Initialize sub-ViewModels with enhanced TagCloudViewModel
             FolderOperations = new FolderOperationsViewModel(_unifiedFolderService);
-            Debug.WriteLine($"FolderOperations created: {FolderOperations != null}");
             Search = new SearchViewModel(_unifiedFolderService, _allLoadedFolders);
-            Debug.WriteLine($"Search created: {Search != null}");
             ImageLoading = new ImageLoadingViewModel(_unifiedFolderService);
-            Debug.WriteLine($"ImageLoading created: {ImageLoading != null}");
-            TagManagement = new TagManagementViewModel(_tagService, new TagCloudViewModel(categoryService));
-            Debug.WriteLine($"TagManagement created: {TagManagement != null}");
-
+            TagManagement = new TagManagementViewModel(_tagService, new TagCloudViewModel());
+            _coordinator = new FolderOperationCoordinator(_unifiedFolderService, _tagService, TagManagement.TagCloud, _nodeManager);
+            TagManagement = new TagManagementViewModel(_tagService, new TagCloudViewModel(categoryService), _coordinator);
 
             _cutCommand = new RelayCommand(ExecuteCutCommand, CanExecuteCutCommand);
             _copyCommand = new RelayCommand(ExecuteCopyCommand, CanExecuteCopyCommand);
@@ -205,10 +208,17 @@ namespace ImageFolderManager.ViewModels
 
             // Subscribe to unified service events
             SubscribeToServiceEvents();
-            Debug.WriteLine($"=== MainViewModel Constructor Completed (Instance #{_instanceId}) ===");
-            Debug.WriteLine($"Final FolderOperations state: {FolderOperations != null}");
-        }
 
+            
+            // Initialize coordinator in folder service
+            _unifiedFolderService.InitializeCoordinator(_coordinator);
+
+            // Initialize tree view services if available
+            if (ShellTreeView != null)
+            {
+                ShellTreeView.InitializeServices(_nodeManager, _coordinator);
+            }
+        }
 
         #region Event Subscriptions
 
@@ -1365,6 +1375,8 @@ namespace ImageFolderManager.ViewModels
                 _unifiedFolderService?.StopMonitoringAsync().Wait(2000);
                 _unifiedFolderService?.Dispose();
                 ImageLoading?.CancelCurrentLoading();
+                _nodeManager?.Dispose();
+                _coordinator?.Dispose();
             }
             catch (Exception ex)
             {

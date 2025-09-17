@@ -84,6 +84,7 @@ namespace ImageFolderManager.ViewModels
         public TagCloudViewModel TagCloud => _tagCloud;
 
         private TagCategoryService _categoryService;
+        private FolderOperationCoordinator _coordinator;
 
         private FolderInfo _currentFolder;
         public FolderInfo CurrentFolder
@@ -111,11 +112,11 @@ namespace ImageFolderManager.ViewModels
 
         #endregion
 
-        public TagManagementViewModel(FolderTagService tagService, TagCloudViewModel tagCloud)
+        public TagManagementViewModel(FolderTagService tagService, TagCloudViewModel tagCloud, FolderOperationCoordinator coordinator = null)
         {
             _tagService = tagService ?? throw new ArgumentNullException(nameof(tagService));
             _tagCloud = tagCloud ?? throw new ArgumentNullException(nameof(tagCloud));
-
+            _coordinator = coordinator;
             // Initialize commands
             SaveTagsCommand = new AsyncRelayCommand(SaveFolderTagsAsync);
             SetRatingCommand = new RelayCommand<int>(SaveRatingImmediately);
@@ -293,115 +294,77 @@ namespace ImageFolderManager.ViewModels
 
         #region Private Methods
 
-        public async Task SaveFolderTagsAsync()
+        private async Task SaveFolderTagsAsync()
         {
             if (CurrentFolder == null) return;
 
             try
             {
-                var oldTags = new List<TagWithCategory>();
-                foreach (var displayItem in TagDisplayItems)
-                {
-                    oldTags.Add(new TagWithCategory
-                    {
-                        TagName = displayItem.TagName,
-                        Category = displayItem.Category
-                    });
-                }
+                var oldTags = new List<string>(FolderTags);
 
                 bool isTagInputEmpty = string.IsNullOrWhiteSpace(TagInputText) ||
-                                       TagInputText.Replace("#", "").Trim().Length == 0;
+                                      TagInputText.Replace("#", "").Trim().Length == 0;
 
                 if (!isTagInputEmpty)
                 {
-                    // Parse tags from input
-                    var parsedTags = TagHelper.ParseTagsWithCategories(TagInputText).ToList();
+                    bool tagsChanged = TagHelper.UpdateObservableCollection(FolderTags, TagInputText);
 
-                    // Create a new list to store tags with correct categories
-                    var tagsWithCorrectCategories = new List<TagWithCategory>();
-
-                    // For each parsed tag, check if it already exists in the tag cloud
-                    foreach (var tag in parsedTags)
+                    if (tagsChanged)
                     {
-                        // If the tag already has a non-default category, keep it
-                        if (!string.IsNullOrEmpty(tag.Category) && tag.Category != "Uncategorized")
-                        {
-                            tagsWithCorrectCategories.Add(tag);
-                            continue;
-                        }
-
-                        // Otherwise, check if this tag exists in the tag cloud with a category
-                        string existingCategory = _categoryService.GetTagCategory(tag.TagName);
-
-                        // If it has a specific category in the tag cloud, use that
-                        if (!string.IsNullOrEmpty(existingCategory) && existingCategory != "Uncategorized")
-                        {
-                            tagsWithCorrectCategories.Add(new TagWithCategory
-                            {
-                                TagName = tag.TagName,
-                                Category = existingCategory
-                            });
-                        }
-                        else
-                        {
-                            // Otherwise, keep the original (which is likely "Uncategorized")
-                            tagsWithCorrectCategories.Add(tag);
-                        }
+                        System.Diagnostics.Debug.WriteLine(
+                            $"Tags changed from: {string.Join(", ", oldTags)} to: {string.Join(", ", FolderTags)}");
                     }
+                }
 
-                    // Update UI collections with the corrected tags
-                    await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
+                var tags = new List<string>(FolderTags);
+
+                if (_coordinator != null)
+                {
+                    // Use coordinated operation
+                    var result = await _coordinator.ExecuteTagUpdateAsync(CurrentFolder.FolderPath, tags, Rating);
+
+                    if (result.Success)
                     {
-                        // Update FolderTags (for backward compatibility)
-                        FolderTags.Clear();
-                        foreach (var tag in tagsWithCorrectCategories)
-                        {
-                            FolderTags.Add(tag.TagName);
-                        }
+                        // Clear input after successful save
+                        TagInputText = string.Empty;
 
-                        // Update TagDisplayItems
-                        TagDisplayItems.Clear();
-                        foreach (var tag in tagsWithCorrectCategories)
-                        {
-                            TagDisplayItems.Add(new TagDisplayInfo(tag.TagName, tag.Category));
-                        }
+                        // Notify UI of successful update
+                        var args = new TagsUpdatedEventArgs(CurrentFolder, FolderTags, Rating);
+                        TagsUpdated?.Invoke(this, args);
 
-                        OnPropertyChanged(nameof(TagDisplayItems));
-                        OnPropertyChanged(nameof(FolderTags));
-                        OnPropertyChanged(nameof(DisplayTagLine));
-                    });
-
-                    // Save tags with categories to file
-                    await _tagService.SetTagsAndRatingForFolderAsync(
-                        CurrentFolder.FolderPath,
-                        tagsWithCorrectCategories,
-                        Rating
-                    );
+                        UpdateStatus(isTagInputEmpty
+                            ? "No new tags provided. Existing tags preserved."
+                            : "Tags updated successfully.");
+                    }
+                    else
+                    {
+                        UpdateStatus($"Failed to save tags: {result.Message}");
+                    }
                 }
                 else
                 {
-                    // If input is empty, just preserve existing tags (if any)
-                    return;
+                    // Fallback to direct service call (backward compatibility)
+                    await _tagService.SetTagsAndRatingForFolderAsync(
+                        CurrentFolder.FolderPath,
+                        tags,
+                        Rating
+                    );
+
+                    TagInputText = string.Empty;
+                    _tagCloud.InvalidateCache();
+
+                    UpdateStatus(isTagInputEmpty
+                        ? "No new tags provided. Existing tags preserved."
+                        : "Tags updated successfully.");
+
+                    var args = new TagsUpdatedEventArgs(CurrentFolder, FolderTags, Rating);
+                    TagsUpdated?.Invoke(this, args);
                 }
-
-                // Clear input
-                TagInputText = string.Empty;
-
-                // Update tag cloud
-                _tagCloud.InvalidateCache();
-
-                UpdateStatus(isTagInputEmpty
-                    ? "No new tags provided. Existing tags preserved."
-                    : "Tags updated successfully.");
-
-                var args = new TagsUpdatedEventArgs(CurrentFolder, FolderTags, Rating);
-                TagsUpdated?.Invoke(this, args);
             }
             catch (Exception ex)
             {
                 UpdateStatus($"Error saving tags: {ex.Message}");
                 System.Diagnostics.Debug.WriteLine($"Error in SaveFolderTagsAsync: {ex.Message}");
-                System.Diagnostics.Debug.WriteLine(ex.StackTrace);
             }
         }
 
@@ -416,15 +379,31 @@ namespace ImageFolderManager.ViewModels
             {
                 try
                 {
-                    await _tagService.SetTagsAndRatingForFolderAsync(
-                        CurrentFolder.FolderPath,
-                        new List<string>(FolderTags),
-                        Rating
-                    );
+                    var tags = new List<string>(FolderTags);
 
-                    // Use the constructor instead of object initializer
-                    var args = new TagsUpdatedEventArgs(CurrentFolder, FolderTags, Rating);
-                    TagsUpdated?.Invoke(this, args);
+                    if (_coordinator != null)
+                    {
+                        // Use coordinated operation
+                        var result = await _coordinator.ExecuteTagUpdateAsync(CurrentFolder.FolderPath, tags, Rating);
+
+                        if (result.Success)
+                        {
+                            var args = new TagsUpdatedEventArgs(CurrentFolder, FolderTags, Rating);
+                            TagsUpdated?.Invoke(this, args);
+                        }
+                    }
+                    else
+                    {
+                        // Fallback to direct service call
+                        await _tagService.SetTagsAndRatingForFolderAsync(
+                            CurrentFolder.FolderPath,
+                            tags,
+                            Rating
+                        );
+
+                        var args = new TagsUpdatedEventArgs(CurrentFolder, FolderTags, Rating);
+                        TagsUpdated?.Invoke(this, args);
+                    }
                 }
                 catch (Exception ex)
                 {

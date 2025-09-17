@@ -77,9 +77,8 @@ namespace ImageFolderManager.Services
         private bool _isIndexing = false;
         private bool _isDisposed = false;
 
-        // Event throttling
-        private const int EVENT_THROTTLE_MS = 500;
-        private const int BATCH_PROCESSING_INTERVAL_MS = 1000;
+        private HierarchicalNodeManager _nodeManager;
+        private FolderOperationCoordinator _coordinator;
 
         #endregion
 
@@ -135,8 +134,9 @@ namespace ImageFolderManager.Services
 
         #region Constructor and Initialization
 
-        public UnifiedFolderService(bool enableCommandSystem = false)
+        public UnifiedFolderService(HierarchicalNodeManager nodeManager = null, bool enableCommandSystem = false)
         {
+            _nodeManager = nodeManager ?? new HierarchicalNodeManager();
             _commandSystemEnabled = enableCommandSystem;
 
             // Initialize command system if requested
@@ -548,6 +548,38 @@ namespace ImageFolderManager.Services
 
         #region Helper Methods
 
+        /// <summary>
+        /// Refresh a specific folder in the index
+        /// </summary>
+        public async Task RefreshFolderAsync(string folderPath)
+        {
+            var normalizedPath = PathNormalizationService.GetCanonicalPath(folderPath);
+
+            if (_folderIndex.TryGetValue(normalizedPath, out var existingEntry))
+            {
+                // Refresh existing entry
+                var refreshedFolder = await CreateFolderInfoSafe(normalizedPath);
+                if (refreshedFolder != null)
+                {
+                    existingEntry.FolderInfo = refreshedFolder;
+                    existingEntry.LastAccessed = DateTime.Now;
+                }
+            }
+            else
+            {
+                // Add new entry if not exists
+                await AddFolderToIndexSafe(normalizedPath);
+            }
+        }
+
+        /// <summary>
+        /// Initialize coordinator (called from MainViewModel)
+        /// </summary>
+        public void InitializeCoordinator(FolderOperationCoordinator coordinator)
+        {
+            _coordinator = coordinator;
+        }
+
         private void StartFileSystemWatcher()
         {
             if (string.IsNullOrEmpty(_rootDirectory)) return;
@@ -651,7 +683,15 @@ namespace ImageFolderManager.Services
 			RemoveFolderFromIndexSafe(normalizedOldPath);
 			await AddFolderToIndexSafe(normalizedNewPath);
 			FolderRenamed?.Invoke(normalizedOldPath, normalizedNewPath);
-		}
+            // ADD: Notify coordinator if available
+            if (_coordinator != null)
+            {
+                _ = Task.Run(async () =>
+                {
+                    await _coordinator.ExecuteFolderMoveAsync(normalizedOldPath, normalizedNewPath);
+                });
+            }
+        }
 
 		private async Task HandleChangeEventAsync(string path)
 		{
