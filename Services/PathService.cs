@@ -26,28 +26,7 @@ namespace ImageFolderManager.Services
             if (string.IsNullOrEmpty(path))
                 return path;
 
-            return path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        }
-
-        /// <summary>
-        /// Enhanced path normalization with proper canonicalization
-        /// </summary>
-        public static string CanonicalizePathForIndex(string path)
-        {
-            if (string.IsNullOrEmpty(path))
-                return path;
-
-            try
-            {
-                // Get full path and normalize separators
-                string fullPath = Path.GetFullPath(path);
-                return fullPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-            }
-            catch
-            {
-                // Fallback to simple normalization if full path fails
-                return NormalizePath(path);
-            }
+            return PathNormalizationService.GetCanonicalPath(path);
         }
 
         /// <summary>
@@ -58,19 +37,7 @@ namespace ImageFolderManager.Services
             if (string.IsNullOrEmpty(path1) || string.IsNullOrEmpty(path2))
                 return false;
 
-            try
-            {
-                // Normalize paths for comparison
-                string normalizedPath1 = Path.GetFullPath(path1).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-                string normalizedPath2 = Path.GetFullPath(path2).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-
-                return string.Equals(normalizedPath1, normalizedPath2, StringComparison.OrdinalIgnoreCase);
-            }
-            catch
-            {
-                // If path normalization fails, fall back to simple string comparison
-                return string.Equals(path1, path2, StringComparison.OrdinalIgnoreCase);
-            }
+            return PathNormalizationService.ArePathsEqual(path1, path2);
         }
 
         /// <summary>

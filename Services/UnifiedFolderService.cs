@@ -60,13 +60,12 @@ namespace ImageFolderManager.Services
             new ConcurrentDictionary<string, FolderIndexEntry>(StringComparer.OrdinalIgnoreCase);
 
         // Event processing
-        private readonly ConcurrentQueue<FileSystemEventData> _eventQueue = new ConcurrentQueue<FileSystemEventData>();
         private readonly ConcurrentDictionary<string, DateTime> _lastEventTime =
             new ConcurrentDictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
-        private readonly Timer _eventProcessingTimer;
         private readonly object _processingLock = new object();
+		private readonly FileSystemEventProcessor _eventProcessor;
 
-        private readonly ConcurrentDictionary<string, CancellationTokenSource> _activeOperations =
+		private readonly ConcurrentDictionary<string, CancellationTokenSource> _activeOperations =
                  new ConcurrentDictionary<string, CancellationTokenSource>();
         private readonly SemaphoreSlim _eventProcessingSemaphore = new SemaphoreSlim(1, 1);
 
@@ -146,10 +145,10 @@ namespace ImageFolderManager.Services
                 InitializeCommandSystem();
             }
 
-            // Initialize event processing timer
-            _eventProcessingTimer = new Timer(ProcessEventQueue, null,
-                BATCH_PROCESSING_INTERVAL_MS, BATCH_PROCESSING_INTERVAL_MS);
-        }
+			// Initialize event processing timer
+			_eventProcessor = new FileSystemEventProcessor();
+			_eventProcessor.EventsProcessed += HandleProcessedEventsAsync;
+		}
 
         /// <summary>
         /// Initialize the command system components (optional)
@@ -565,76 +564,110 @@ namespace ImageFolderManager.Services
             _rootWatcher.Renamed += OnFileSystemRenamed;
         }
 
-        private void OnFileSystemEvent(object sender, FileSystemEventArgs e)
+
+		private void OnFileSystemEvent(object sender, FileSystemEventArgs e)
+		{
+			if (Directory.Exists(e.FullPath) || e.ChangeType == WatcherChangeTypes.Deleted)
+			{
+				_eventProcessor.QueueEvent(e.FullPath, e.ChangeType);
+			}
+		}
+
+		private void OnFileSystemRenamed(object sender, RenamedEventArgs e)
+		{
+			if (Directory.Exists(e.FullPath) || Directory.Exists(e.OldFullPath))
+			{
+				_eventProcessor.QueueRenameEvent(e.OldFullPath, e.FullPath);
+			}
+		}
+
+		private async Task HandleProcessedEventsAsync(List<ProcessedFileSystemEvent> events)
+		{
+			foreach (var processedEvent in events)
+			{
+				try
+				{
+					await ProcessSingleEventAsync(processedEvent);
+				}
+				catch (Exception ex)
+				{
+					Debug.WriteLine($"Error processing event {processedEvent.EventType} for {processedEvent.NewPath}: {ex.Message}");
+				}
+			}
+		}
+
+		private async Task ProcessSingleEventAsync(ProcessedFileSystemEvent processedEvent)
+		{
+			switch (processedEvent.EventType)
+			{
+				case ProcessedEventType.Create:
+					await HandleCreateEventAsync(processedEvent.NewPath);
+					break;
+
+				case ProcessedEventType.Delete:
+					await HandleDeleteEventAsync(processedEvent.NewPath);
+					break;
+
+				case ProcessedEventType.Rename:
+					await HandleRenameEventAsync(processedEvent.OldPath, processedEvent.NewPath);
+					break;
+
+				case ProcessedEventType.Change:
+					await HandleChangeEventAsync(processedEvent.NewPath);
+					break;
+			}
+		}
+
+		private async Task HandleCreateEventAsync(string path)
+		{
+			var normalizedPath = PathNormalizationService.GetCanonicalPath(path);
+			await AddFolderToIndexSafe(normalizedPath);
+			FolderCreated?.Invoke(normalizedPath);
+
+			// Fire legacy event for backward compatibility
+			var folderInfo = GetFolderInfoFromIndex(normalizedPath);
+			var args = new FileSystemEventArgs(WatcherChangeTypes.Created,
+				Path.GetDirectoryName(normalizedPath), Path.GetFileName(normalizedPath));
+			FileSystemEvent?.Invoke(folderInfo, args, WatcherChangeTypes.Created);
+		}
+
+		private async Task HandleDeleteEventAsync(string path)
+		{
+			var normalizedPath = PathNormalizationService.GetCanonicalPath(path);
+			RemoveFolderFromIndexSafe(normalizedPath);
+			FolderDeleted?.Invoke(normalizedPath);
+
+			// Fire legacy event for backward compatibility
+			var args = new FileSystemEventArgs(WatcherChangeTypes.Deleted,
+				Path.GetDirectoryName(normalizedPath), Path.GetFileName(normalizedPath));
+			FileSystemEvent?.Invoke(null, args, WatcherChangeTypes.Deleted);
+		}
+
+		private async Task HandleRenameEventAsync(string oldPath, string newPath)
+		{
+			var normalizedOldPath = PathNormalizationService.GetCanonicalPath(oldPath);
+			var normalizedNewPath = PathNormalizationService.GetCanonicalPath(newPath);
+
+			RemoveFolderFromIndexSafe(normalizedOldPath);
+			await AddFolderToIndexSafe(normalizedNewPath);
+			FolderRenamed?.Invoke(normalizedOldPath, normalizedNewPath);
+		}
+
+		private async Task HandleChangeEventAsync(string path)
+		{
+			var normalizedPath = PathNormalizationService.GetCanonicalPath(path);
+			// For change events, just refresh the folder info if it exists
+			if (_folderIndex.ContainsKey(normalizedPath))
+			{
+				await AddFolderToIndexSafe(normalizedPath); // Refresh existing entry
+			}
+		}
+
+
+
+		private async Task ProcessSingleEventSafe(FileSystemEventData eventData)
         {
-            if (Directory.Exists(e.FullPath) || e.ChangeType == WatcherChangeTypes.Deleted)
-            {
-                QueueFileSystemEvent(e.FullPath, e.ChangeType);
-            }
-        }
-
-        private void OnFileSystemRenamed(object sender, RenamedEventArgs e)
-        {
-            if (Directory.Exists(e.FullPath) || Directory.Exists(e.OldFullPath))
-            {
-                QueueFileSystemEvent(e.OldFullPath, WatcherChangeTypes.Deleted);
-                QueueFileSystemEvent(e.FullPath, WatcherChangeTypes.Created);
-            }
-        }
-
-        private void QueueFileSystemEvent(string path, WatcherChangeTypes changeType)
-        {
-            var eventData = new FileSystemEventData
-            {
-                Path = PathService.NormalizePath(path),
-                ChangeType = changeType,
-                Timestamp = DateTime.Now
-            };
-
-            _eventQueue.Enqueue(eventData);
-        }
-
-        private async void ProcessEventQueue(object state)
-        {
-            if (!await _eventProcessingSemaphore.WaitAsync(100))
-                return; // Skip if already processing
-
-            try
-            {
-                var eventsToProcess = new List<FileSystemEventData>();
-                var eventsByPath = new Dictionary<string, FileSystemEventData>(StringComparer.OrdinalIgnoreCase);
-
-                // Dequeue and deduplicate events by path
-                while (_eventQueue.TryDequeue(out var eventData))
-                {
-                    var normalizedPath = PathService.CanonicalizePathForIndex(eventData.Path);
-                    var timeSinceLastEvent = DateTime.Now - (_lastEventTime.GetOrAdd(normalizedPath, DateTime.MinValue));
-
-                    if (timeSinceLastEvent.TotalMilliseconds >= EVENT_THROTTLE_MS)
-                    {
-                        // Keep only the most recent event per path
-                        eventsByPath[normalizedPath] = eventData;
-                        _lastEventTime[normalizedPath] = DateTime.Now;
-                    }
-                }
-
-                eventsToProcess.AddRange(eventsByPath.Values);
-
-                // Process events sequentially to avoid conflicts
-                foreach (var eventData in eventsToProcess.OrderBy(e => e.Timestamp))
-                {
-                    await ProcessSingleEventSafe(eventData);
-                }
-            }
-            finally
-            {
-                _eventProcessingSemaphore.Release();
-            }
-        }
-
-        private async Task ProcessSingleEventSafe(FileSystemEventData eventData)
-        {
-            var normalizedPath = PathService.CanonicalizePathForIndex(eventData.Path);
+            var normalizedPath = PathService.NormalizePath(eventData.Path);
 
             // Cancel any existing operation for this path
             if (_activeOperations.TryGetValue(normalizedPath, out var existingCts))
@@ -689,7 +722,7 @@ namespace ImageFolderManager.Services
             if (string.IsNullOrEmpty(folderPath) || !Directory.Exists(folderPath))
                 return;
 
-            var normalizedPath = PathService.CanonicalizePathForIndex(folderPath);
+            var normalizedPath = PathService.NormalizePath(folderPath);
 
             // Check if already loading
             if (!_loadingStates.TryAdd(normalizedPath, true))
@@ -724,7 +757,7 @@ namespace ImageFolderManager.Services
         {
             if (string.IsNullOrEmpty(folderPath)) return;
 
-            var normalizedPath = PathService.CanonicalizePathForIndex(folderPath);
+            var normalizedPath = PathService.NormalizePath(folderPath);
 
             // Cancel any loading operation
             if (_activeOperations.TryRemove(normalizedPath, out var cts))
@@ -821,7 +854,7 @@ namespace ImageFolderManager.Services
             if (string.IsNullOrEmpty(folderPath) || !Directory.Exists(folderPath))
                 return;
 
-            var normalizedPath = PathService.CanonicalizePathForIndex(folderPath);
+            var normalizedPath = PathService.NormalizePath(folderPath);
 
             // Add validation to prevent corruption
             if (string.IsNullOrEmpty(normalizedPath))
@@ -856,7 +889,7 @@ namespace ImageFolderManager.Services
         {
             if (string.IsNullOrEmpty(folderPath)) return;
 
-            var normalizedPath = PathService.CanonicalizePathForIndex(folderPath);
+            var normalizedPath = PathService.NormalizePath(folderPath);
 
             // Add validation to prevent corruption
             if (string.IsNullOrEmpty(normalizedPath))
@@ -868,7 +901,7 @@ namespace ImageFolderManager.Services
         {
             if (string.IsNullOrEmpty(folderPath)) return null;
 
-            var normalizedPath = PathService.CanonicalizePathForIndex(folderPath);
+            var normalizedPath = PathService.NormalizePath(folderPath);
                        
             return _folderIndex.TryGetValue(normalizedPath, out var indexEntry) ? indexEntry.FolderInfo : null;
         }
@@ -977,9 +1010,9 @@ namespace ImageFolderManager.Services
             // Clear loading states
             _loadingStates.Clear();
 
-            // Dispose resources
-            _eventProcessingTimer?.Dispose();
-            _rootWatcher?.Dispose();
+			// Dispose resources
+			_eventProcessor?.Dispose();
+			_rootWatcher?.Dispose();
             _commandSystem?.Dispose();
             _eventProcessingSemaphore?.Dispose();
 

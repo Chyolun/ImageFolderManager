@@ -139,7 +139,9 @@
     <Compile Include="Services\CommandSystemConfiguration.cs" />
     <Compile Include="Services\CommandSystemInitializer.cs" />
     <Compile Include="Services\ExceptionHandlingService.cs" />
+    <Compile Include="Services\FileSystemEventProcessor.cs" />
     <Compile Include="Services\PathLockManager.cs" />
+    <Compile Include="Services\PathNormalizationService.cs" />
     <Compile Include="Services\PathService.cs" />
     <Compile Include="Services\TagCategoryService.cs.cs" />
     <Compile Include="Services\TagHelper.cs" />

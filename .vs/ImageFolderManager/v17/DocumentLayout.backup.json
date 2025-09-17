@@ -3,24 +3,40 @@
   "WorkspaceRootPath": "D:\\ImageFolderManager\\",
   "Documents": [
     {
-      "AbsoluteMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|d:\\imagefoldermanager\\models\\folderinfo.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
-      "RelativeMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|solutionrelative:models\\folderinfo.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
-    },
-    {
       "AbsoluteMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|D:\\ImageFolderManager\\services\\unifiedfolderservice.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
       "RelativeMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|solutionrelative:services\\unifiedfolderservice.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     },
     {
-      "AbsoluteMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|d:\\imagefoldermanager\\services\\pathservice.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
-      "RelativeMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|solutionrelative:services\\pathservice.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|d:\\imagefoldermanager\\views\\mainwindow.xaml.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
-      "RelativeMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|solutionrelative:views\\mainwindow.xaml.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+      "AbsoluteMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|d:\\imagefoldermanager\\services\\filesystemeventprocessor.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|solutionrelative:services\\filesystemeventprocessor.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     },
     {
       "AbsoluteMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|D:\\ImageFolderManager\\controls\\shelltreeview.xaml.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
       "RelativeMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|solutionrelative:controls\\shelltreeview.xaml.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|d:\\imagefoldermanager\\services\\pathlockmanager.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|solutionrelative:services\\pathlockmanager.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|d:\\imagefoldermanager\\services\\pathnormalizationservice.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|solutionrelative:services\\pathnormalizationservice.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|D:\\ImageFolderManager\\services\\pathservice.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|solutionrelative:services\\pathservice.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|d:\\imagefoldermanager\\models\\imageinfo.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|solutionrelative:models\\imageinfo.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|d:\\imagefoldermanager\\models\\folderinfo.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|solutionrelative:models\\folderinfo.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|D:\\ImageFolderManager\\views\\mainwindow.xaml.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|solutionrelative:views\\mainwindow.xaml.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     },
     {
       "AbsoluteMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|D:\\ImageFolderManager\\viewmodels\\mainviewmodel.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
@@ -37,8 +53,8 @@
       "VerticalTabListWidth": 256,
       "DocumentGroups": [
         {
-          "DockedHeight": 988,
-          "SelectedChildIndex": 1,
+          "DockedHeight": 978,
+          "SelectedChildIndex": 9,
           "Children": [
             {
               "$type": "Bookmark",
@@ -46,28 +62,41 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 0,
-              "Title": "FolderInfo.cs",
-              "DocumentMoniker": "D:\\ImageFolderManager\\Models\\FolderInfo.cs",
-              "RelativeDocumentMoniker": "Models\\FolderInfo.cs",
-              "ToolTip": "D:\\ImageFolderManager\\Models\\FolderInfo.cs",
-              "RelativeToolTip": "Models\\FolderInfo.cs",
-              "ViewState": "AgIAABoAAAAAAAAAAAAAwB8AAAAAAAAAAAAAAA==",
+              "DocumentIndex": 1,
+              "Title": "FileSystemEventProcessor.cs",
+              "DocumentMoniker": "D:\\ImageFolderManager\\Services\\FileSystemEventProcessor.cs",
+              "RelativeDocumentMoniker": "Services\\FileSystemEventProcessor.cs",
+              "ToolTip": "D:\\ImageFolderManager\\Services\\FileSystemEventProcessor.cs",
+              "RelativeToolTip": "Services\\FileSystemEventProcessor.cs",
+              "ViewState": "AgIAAN4AAAAAAAAAAAAAADABAAABAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2025-09-16T09:12:00.203Z",
+              "WhenOpened": "2025-09-17T02:55:43.105Z",
               "EditorCaption": ""
             },
             {
               "$type": "Document",
-              "DocumentIndex": 2,
-              "Title": "PathService.cs",
-              "DocumentMoniker": "D:\\ImageFolderManager\\Services\\PathService.cs",
-              "RelativeDocumentMoniker": "Services\\PathService.cs",
-              "ToolTip": "D:\\ImageFolderManager\\Services\\PathService.cs",
-              "RelativeToolTip": "Services\\PathService.cs",
-              "ViewState": "AgIAAB8AAAAAAAAAAAAgwDMAAAAAAAAAAAAAAA==",
+              "DocumentIndex": 3,
+              "Title": "PathLockManager.cs",
+              "DocumentMoniker": "D:\\ImageFolderManager\\Services\\PathLockManager.cs",
+              "RelativeDocumentMoniker": "Services\\PathLockManager.cs",
+              "ToolTip": "D:\\ImageFolderManager\\Services\\PathLockManager.cs",
+              "RelativeToolTip": "Services\\PathLockManager.cs",
+              "ViewState": "AgIAACAAAAAAAAAAAAApwDAAAAAkAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2025-09-16T07:09:09.822Z",
+              "WhenOpened": "2025-09-17T02:00:21.956Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 4,
+              "Title": "PathNormalizationService.cs",
+              "DocumentMoniker": "D:\\ImageFolderManager\\Services\\PathNormalizationService.cs",
+              "RelativeDocumentMoniker": "Services\\PathNormalizationService.cs",
+              "ToolTip": "D:\\ImageFolderManager\\Services\\PathNormalizationService.cs",
+              "RelativeToolTip": "Services\\PathNormalizationService.cs",
+              "ViewState": "AgIAAD0AAAAAAAAAAAAgwEAAAAANAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2025-09-17T01:44:45.577Z",
               "EditorCaption": ""
             },
             {
@@ -76,59 +105,72 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 3,
+              "DocumentIndex": 5,
+              "Title": "PathService.cs",
+              "DocumentMoniker": "D:\\ImageFolderManager\\Services\\PathService.cs",
+              "RelativeDocumentMoniker": "Services\\PathService.cs",
+              "ToolTip": "D:\\ImageFolderManager\\Services\\PathService.cs",
+              "RelativeToolTip": "Services\\PathService.cs",
+              "ViewState": "AgIAABEAAAAAAAAAAAAAACcAAABIAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2025-09-16T07:09:09.822Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 8,
               "Title": "MainWindow.xaml.cs",
               "DocumentMoniker": "D:\\ImageFolderManager\\Views\\MainWindow.xaml.cs",
               "RelativeDocumentMoniker": "Views\\MainWindow.xaml.cs",
               "ToolTip": "D:\\ImageFolderManager\\Views\\MainWindow.xaml.cs",
               "RelativeToolTip": "Views\\MainWindow.xaml.cs",
-              "ViewState": "AgIAAKABAAAAAAAAAAAAAKABAAAUAAAAAAAAAA==",
+              "ViewState": "AgIAAIIBAAAAAAAAAAAgwKABAAAUAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
               "WhenOpened": "2025-09-11T03:25:04.149Z",
               "EditorCaption": ""
             },
             {
               "$type": "Document",
-              "DocumentIndex": 4,
+              "DocumentIndex": 2,
               "Title": "ShellTreeView.xaml.cs",
               "DocumentMoniker": "D:\\ImageFolderManager\\Controls\\ShellTreeView.xaml.cs",
               "RelativeDocumentMoniker": "Controls\\ShellTreeView.xaml.cs",
               "ToolTip": "D:\\ImageFolderManager\\Controls\\ShellTreeView.xaml.cs",
               "RelativeToolTip": "Controls\\ShellTreeView.xaml.cs",
-              "ViewState": "AgIAAAARAAAAAAAAAAAqwBMAAAAcAAAAAAAAAA==",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAFcOAAAJAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
               "WhenOpened": "2025-09-12T07:11:12.04Z",
               "EditorCaption": ""
             },
             {
               "$type": "Document",
-              "DocumentIndex": 5,
+              "DocumentIndex": 9,
               "Title": "MainViewModel.cs",
               "DocumentMoniker": "D:\\ImageFolderManager\\ViewModels\\MainViewModel.cs",
               "RelativeDocumentMoniker": "ViewModels\\MainViewModel.cs",
               "ToolTip": "D:\\ImageFolderManager\\ViewModels\\MainViewModel.cs",
               "RelativeToolTip": "ViewModels\\MainViewModel.cs",
-              "ViewState": "AgIAAP4GAAAAAAAAAAAAwEcHAAAVAAAAAAAAAA==",
+              "ViewState": "AgIAAEQHAAAAAAAAAABRwEcHAAAVAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
               "WhenOpened": "2025-09-04T09:21:14.078Z",
               "EditorCaption": ""
             },
             {
               "$type": "Document",
-              "DocumentIndex": 1,
+              "DocumentIndex": 0,
               "Title": "UnifiedFolderService.cs",
               "DocumentMoniker": "D:\\ImageFolderManager\\Services\\UnifiedFolderService.cs",
               "RelativeDocumentMoniker": "Services\\UnifiedFolderService.cs",
               "ToolTip": "D:\\ImageFolderManager\\Services\\UnifiedFolderService.cs",
               "RelativeToolTip": "Services\\UnifiedFolderService.cs",
-              "ViewState": "AgIAALEDAAAAAAAAAAAgwNoDAAAJAAAAAAAAAA==",
+              "ViewState": "AgIAAM0DAAAAAAAAAAAqwPUDAAAeAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
               "WhenOpened": "2025-09-10T06:33:51.733Z",
               "EditorCaption": ""
             },
             {
               "$type": "Document",
-              "DocumentIndex": 6,
+              "DocumentIndex": 10,
               "Title": "FolderOperationsViewModel.cs",
               "DocumentMoniker": "D:\\ImageFolderManager\\ViewModels\\FolderOperationsViewModel.cs",
               "RelativeDocumentMoniker": "ViewModels\\FolderOperationsViewModel.cs",
@@ -136,8 +178,43 @@
               "RelativeToolTip": "ViewModels\\FolderOperationsViewModel.cs",
               "ViewState": "AgIAALoCAAAAAAAAAAAowM8CAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2025-09-10T06:35:11.308Z",
+              "WhenOpened": "2025-09-10T06:35:11.308Z"
+            }
+          ]
+        },
+        {
+          "DockedHeight": 52,
+          "SelectedChildIndex": 0,
+          "Children": [
+            {
+              "$type": "Document",
+              "DocumentIndex": 6,
+              "Title": "ImageInfo.cs",
+              "DocumentMoniker": "D:\\ImageFolderManager\\Models\\ImageInfo.cs",
+              "RelativeDocumentMoniker": "Models\\ImageInfo.cs",
+              "ToolTip": "D:\\ImageFolderManager\\Models\\ImageInfo.cs",
+              "RelativeToolTip": "Models\\ImageInfo.cs",
+              "ViewState": "AgIAACkAAAAAAAAAAKiJwFYAAAA5AAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2025-09-17T01:51:19.552Z",
               "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 7,
+              "Title": "FolderInfo.cs",
+              "DocumentMoniker": "D:\\ImageFolderManager\\Models\\FolderInfo.cs",
+              "RelativeDocumentMoniker": "Models\\FolderInfo.cs",
+              "ToolTip": "D:\\ImageFolderManager\\Models\\FolderInfo.cs",
+              "RelativeToolTip": "Models\\FolderInfo.cs",
+              "ViewState": "AgIAALQAAAAAAAAAAOBvwMIAAABMAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2025-09-17T01:51:20.533Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Bookmark",
+              "Name": "ST:0:0:{004be353-6879-467c-9d1e-9ac23cdf6d49}"
             }
           ]
         }

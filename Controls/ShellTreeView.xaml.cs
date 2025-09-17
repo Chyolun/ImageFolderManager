@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -86,6 +87,8 @@ namespace ImageFolderManager.Controls
 
         // Modern visual effects
         private readonly Duration _animationDuration = new Duration(TimeSpan.FromMilliseconds(200));
+
+        private readonly ReaderWriterLockSlim _pathMappingLock = new ReaderWriterLockSlim();
 
         public ShellTreeView()
         {
@@ -3599,6 +3602,78 @@ namespace ImageFolderManager.Controls
         }
 
         /// <summary>
+        /// Atomically update path mapping to prevent corruption
+        /// </summary>
+        private bool TryUpdatePathMapping(string oldPath, string newPath, TreeViewItem item)
+        {
+            var normalizedOldPath = PathNormalizationService.GetCanonicalPath(oldPath);
+            var normalizedNewPath = PathNormalizationService.GetCanonicalPath(newPath);
+
+            _pathMappingLock.EnterWriteLock();
+            try
+            {
+                // Remove old mapping and add new one atomically
+                if (_pathToTreeViewItem.ContainsKey(normalizedOldPath))
+                {
+                    _pathToTreeViewItem.Remove(normalizedOldPath);
+                    _pathToTreeViewItem[normalizedNewPath] = item;
+                    return true;
+                }
+                return false;
+            }
+            finally
+            {
+                _pathMappingLock.ExitWriteLock();
+            }
+        }
+
+        /// <summary>
+        /// Safely add path mapping with conflict detection
+        /// </summary>
+        private bool TrySafeAddPathMapping(string path, TreeViewItem item)
+        {
+            var normalizedPath = PathNormalizationService.GetCanonicalPath(path);
+
+            _pathMappingLock.EnterWriteLock();
+            try
+            {
+                // Check for existing mapping before adding
+                if (_pathToTreeViewItem.ContainsKey(normalizedPath))
+                {
+                    Debug.WriteLine($"Warning: Duplicate path mapping attempted for {normalizedPath}");
+                    return false;
+                }
+
+                _pathToTreeViewItem[normalizedPath] = item;
+                return true;
+            }
+            finally
+            {
+                _pathMappingLock.ExitWriteLock();
+            }
+        }
+
+        /// <summary>
+        /// Safely remove path mapping
+        /// </summary>
+        private bool TrySafeRemovePathMapping(string path)
+        {
+            var normalizedPath = PathNormalizationService.GetCanonicalPath(path);
+
+            _pathMappingLock.EnterWriteLock();
+            try
+            {
+                return _pathToTreeViewItem.Remove(normalizedPath);
+            }
+            finally
+            {
+                _pathMappingLock.ExitWriteLock();
+            }
+        }
+
+
+
+        /// <summary>
         /// Enhanced folder move handling with complete cleanup and loading state management
         /// </summary>
         private async Task HandleFolderMove(string sourcePath, string destinationPath)
@@ -3674,7 +3749,7 @@ namespace ImageFolderManager.Controls
                 }
 
                 // Remove from path mapping
-                _pathToTreeViewItem.Remove(normalizedSourcePath);
+                TrySafeRemovePathMapping(normalizedSourcePath);
                 // ===== STEP 5: UPDATE SHELLOBJECT AND ADD TO DESTINATION =====
                 await Application.Current.Dispatcher.InvokeAsync(() =>
                 {
@@ -3773,8 +3848,12 @@ namespace ImageFolderManager.Controls
                             destParentItem.Items.Add(sourceItem);
                         }
 
-                        // Update path mapping with correct reference
-                        _pathToTreeViewItem[normalizedDestPath] = sourceItem;
+                        // Update path mapping atomically
+                        if (!TryUpdatePathMapping(normalizedSourcePath, normalizedDestPath, sourceItem))
+                        {
+                            // Fallback: try safe add if update failed
+                            TrySafeAddPathMapping(normalizedDestPath, sourceItem);
+                        }
                     }
                     catch (Exception ex)
                     {
