@@ -2096,87 +2096,136 @@ namespace ImageFolderManager.Controls
             var shellObject = treeViewItem.Tag as ShellObject;
             if (shellObject == null) return;
 
-            string path = shellObject.ParsingName;
-            if (string.IsNullOrEmpty(path)) return;
-
             // Add to expanded paths
-            _expandedPaths.Add(path);
-
-            // Check if this needs loading using node manager
-            if (_nodeManager != null)
+            if (!string.IsNullOrEmpty(shellObject.ParsingName))
             {
-                var currentState = _nodeManager.GetNodeState(path);
-                if (currentState == NodeLoadingState.NotLoaded)
-                {
-                    LoadNodeWithStateManagement(treeViewItem, shellObject);
-                    return;
-                }
+                _expandedPaths.Add(shellObject.ParsingName);
             }
 
-            // Fallback to original loading logic
+            // Check if needs loading
             if (treeViewItem.Items.Count == 1 &&
                 treeViewItem.Items[0] is TreeViewItem loadingItem &&
                 !loadingItem.IsEnabled)
             {
-                LoadNodeWithStateManagement(treeViewItem, shellObject);
+                ShowLoadingIndicator();
+                _loadingStartTime = DateTime.Now;
+                RemoveDummyNode(treeViewItem);
+
+                var shellFolder = shellObject as ShellFolder;
+                if (shellFolder != null)
+                {
+                    Task.Run(() =>
+                    {
+                        try
+                        {
+                            // Get child shell objects on background thread
+                            var childShellObjects = new List<ShellFolder>();
+
+                            foreach (ShellObject child in shellFolder)
+                            {
+                                if (child is ShellFolder childFolder)
+                                {
+                                    childShellObjects.Add(childFolder);
+                                }
+                            }
+
+                            // Sort by name
+                            var sortedChildren = childShellObjects
+                                .OrderBy(child => child.Name, WindowsNaturalStringComparer.Instance)
+                                .ToList();
+
+                            // Create UI elements on UI thread
+                            Application.Current.Dispatcher.Invoke(() =>
+                            {
+                                try
+                                {
+                                    foreach (var childFolder in sortedChildren)
+                                    {
+                                        var childItem = CreateShellTreeViewItem(childFolder);
+                                        treeViewItem.Items.Add(childItem);
+                                    }
+                                }
+                                catch (Exception ex)
+                                {
+                                    Debug.WriteLine($"Error adding child items: {ex.Message}");
+                                }
+                                finally
+                                {
+                                    HideLoadingIndicator();
+                                }
+                            });
+                        }
+                        catch (Exception ex)
+                        {
+                            Debug.WriteLine($"Error loading children: {ex.Message}");
+                            Application.Current.Dispatcher.Invoke(HideLoadingIndicator);
+                        }
+                    });
+                }
             }
+        }
+
+        private TreeViewItem CreateShellTreeViewItem(ShellFolder shellFolder)
+        {
+            var item = new TreeViewItem
+            {
+                Header = CreateModernShellObjectHeader(shellFolder),
+                Tag = shellFolder
+            };
+
+            // Add to path mapping
+            string path = PathNormalizationService.GetCanonicalPath(shellFolder.ParsingName);
+            TrySafeAddPathMapping(path, item);
+
+            // Add dummy child if folder has subfolders
+            if (ShouldHaveExpansionIndicator(shellFolder.ParsingName))
+            {
+                AddDummyNode(item);
+            }
+
+            return item;
         }
 
         private async void LoadNodeWithStateManagement(TreeViewItem treeViewItem, ShellObject shellObject)
         {
             string path = shellObject.ParsingName;
 
-            // Try to transition to loading state
-            if (_nodeManager != null && !await _nodeManager.TryTransitionToLoading(path))
+            if (!await _nodeManager.TryTransitionToLoading(path))
             {
-                Debug.WriteLine($"Cannot load node {path} - already loading or in error state");
+                Debug.WriteLine($"Cannot load node {path}");
                 return;
             }
 
             ShowLoadingIndicator();
-            _loadingStartTime = DateTime.Now;
-
             RemoveDummyNode(treeViewItem);
 
             var shellFolder = shellObject as ShellFolder;
             if (shellFolder != null)
             {
-                Task.Run(async () =>
+                Task.Run(() =>
                 {
                     bool success = false;
                     try
                     {
-                        // Load children using existing logic
-                        var childItems = new List<TreeViewItem>();
+                        var childShellObjects = new List<ShellFolder>();
 
-                        await Task.Run(() =>
+                        foreach (ShellObject child in shellFolder)
                         {
-                            try
+                            if (child is ShellFolder childFolder)
                             {
-                                foreach (ShellObject child in shellFolder)
-                                {
-                                    if (child is ShellFolder childFolder)
-                                    {
-                                        var childItem = CreateShellTreeViewItemAsync(childFolder).Result;
-                                        childItems.Add(childItem);
-                                    }
-                                }
+                                childShellObjects.Add(childFolder);
                             }
-                            catch (Exception ex)
-                            {
-                                Debug.WriteLine($"Error enumerating children: {ex.Message}");
-                            }
-                        });
+                        }
 
-                        // Sort children using natural sort
-                        var sortedItems = childItems
-                            .OrderBy(item => ((ShellObject)item.Tag).Name, WindowsNaturalStringComparer.Instance)
+                        var sortedChildren = childShellObjects
+                            .OrderBy(child => child.Name, WindowsNaturalStringComparer.Instance)
                             .ToList();
 
-                        await Application.Current.Dispatcher.InvokeAsync(() =>
+                        Application.Current.Dispatcher.Invoke(() =>
                         {
-                            foreach (var childItem in sortedItems)
+                            foreach (var childFolder in sortedChildren)
                             {
+                                var childItem = CreateShellTreeViewItem(childFolder);
                                 treeViewItem.Items.Add(childItem);
                             }
                         });
@@ -2185,21 +2234,12 @@ namespace ImageFolderManager.Controls
                     }
                     catch (Exception ex)
                     {
-                        Debug.WriteLine($"Error loading children for {path}: {ex.Message}");
-                        success = false;
+                        Debug.WriteLine($"Error: {ex.Message}");
                     }
                     finally
                     {
-                        // Complete loading state transition
-                        if (_nodeManager != null)
-                        {
-                            await _nodeManager.CompleteLoading(path, success);
-                        }
-
-                        Application.Current.Dispatcher.Invoke(() =>
-                        {
-                            HideLoadingIndicator();
-                        });
+                        _nodeManager.CompleteLoading(path, success);
+                        Application.Current.Dispatcher.Invoke(HideLoadingIndicator);
                     }
                 });
             }
