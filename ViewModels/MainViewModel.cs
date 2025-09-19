@@ -1800,7 +1800,7 @@ namespace ImageFolderManager.ViewModels
 
         #endregion
 
-        #region Service Event Handlers
+        #region Service Event HandlersIn ExecuteFolderOperationOnUIThread
 
         private async void OnIndexedFolderCreated(string folderPath)
         {
@@ -1825,16 +1825,26 @@ namespace ImageFolderManager.ViewModels
 
         private async void OnIndexedFolderRenamed(string oldPath, string newPath)
         {
-            foreach (var folder in _allLoadedFolders)
+            // Collect items to modify first
+            var itemsToUpdate = new List<(FolderInfo folder, string newPath)>();
+
+            for (int i = 0; i < _allLoadedFolders.Count; i++)
             {
+                var folder = _allLoadedFolders[i];
                 if (folder.FolderPath == oldPath)
                 {
-                    folder.FolderPath = newPath;
+                    itemsToUpdate.Add((folder, newPath));
                 }
                 else if (PathService.IsPathWithin(oldPath, folder.FolderPath))
                 {
-                    folder.FolderPath = newPath + folder.FolderPath.Substring(oldPath.Length);
+                    itemsToUpdate.Add((folder, newPath + folder.FolderPath.Substring(oldPath.Length)));
                 }
+            }
+
+            // Apply updates
+            foreach (var (folder, updatedPath) in itemsToUpdate)
+            {
+                folder.FolderPath = updatedPath;
             }
 
             await Search.PerformSilentSearchAsync();

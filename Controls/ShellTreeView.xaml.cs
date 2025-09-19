@@ -3326,7 +3326,7 @@ namespace ImageFolderManager.Controls
         /// <summary>
         /// Performs incremental updates for specific folder operations
         /// </summary>
-        public async Task RefreshTreeIncremental(FolderOperationType operationType, string sourcePath, string destinationPath = null)
+       public async Task RefreshTreeIncremental(FolderOperationType operationType, string sourcePath, string destinationPath = null)
         {
             try
             {
@@ -3382,7 +3382,7 @@ namespace ImageFolderManager.Controls
                 HandleException("Error during incremental refresh", ex);
             }
         }
-
+ 
         /// <summary>
         /// Emergency method to remove all duplicate children from TreeView
         /// </summary>

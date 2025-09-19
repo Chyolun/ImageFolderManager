@@ -143,6 +143,7 @@ namespace ImageFolderManager.ViewModels
                         "Operation Failed", MessageBoxButton.OK, MessageBoxImage.Error);
                     return false;
                 }
+
             }
             catch (Exception ex)
             {
@@ -199,6 +200,12 @@ namespace ImageFolderManager.ViewModels
                         {
                             overallSuccess = false;
                         }
+                        OnFolderOperationCompleted(FolderOperationEventArgs.CreateSuccess(
+                           FolderOperation.Delete,
+                           folder.FolderPath,
+                           null,
+                           false));
+
                     }
                     catch (Exception ex)
                     {
@@ -218,12 +225,6 @@ namespace ImageFolderManager.ViewModels
             UpdateStatus(overallSuccess
                 ? $"Successfully deleted {folderList.Count} folders."
                 : $"Deleted {processed} folders with some errors.");
-
-            OnFolderOperationCompleted(FolderOperationEventArgs.CreateSuccess(
-                FolderOperation.Delete,
-                folderList.First().FolderPath,
-                null,
-                false));
 
             return overallSuccess;
         }
@@ -358,6 +359,7 @@ namespace ImageFolderManager.ViewModels
             var folderList = sourceFolders.Where(f => f != null && Directory.Exists(f.FolderPath)).ToList();
             if (folderList.Count == 0) return false;
 
+
             // Single folder move
             if (folderList.Count == 1)
             {
@@ -398,6 +400,11 @@ namespace ImageFolderManager.ViewModels
 
                         var destinationPath = Path.Combine(targetFolder.FolderPath, sourceFolder.Name);
                         await CopyDirectoryAsync(sourceFolder.FolderPath, destinationPath);
+                        OnFolderOperationCompleted(FolderOperationEventArgs.CreateSuccess(
+                            FolderOperation.Copy,
+                            sourceFolder.FolderPath,
+                            targetFolder.FolderPath));
+
                     }
                     catch (Exception ex)
                     {
@@ -417,11 +424,6 @@ namespace ImageFolderManager.ViewModels
             UpdateStatus(overallSuccess
                 ? $"Successfully copied {folderList.Count} folders."
                 : $"Copied {processed} folders with some errors.");
-
-            OnFolderOperationCompleted(FolderOperationEventArgs.CreateSuccess(
-                FolderOperation.Copy,
-                folderList.First().FolderPath,
-                targetFolder.FolderPath));
 
             return overallSuccess;
         }
@@ -518,30 +520,6 @@ namespace ImageFolderManager.ViewModels
 
         #region Helper Methods
 
-        /// <summary>
-        /// Ensures folder operation completed event is properly raised
-        /// </summary>
-        private void RaiseFolderOperationCompleted(FolderOperation operation, string sourcePath, string destinationPath, bool success)
-        {
-            try
-            {
-                var eventArgs = success
-                    ? FolderOperationEventArgs.CreateSuccess(operation, sourcePath, destinationPath)
-                    : FolderOperationEventArgs.CreateFailure(operation, sourcePath, "Operation failed");
-
-                // Ensure event is raised on UI thread
-                Application.Current.Dispatcher.BeginInvoke(new Action(() =>
-                {
-                    FolderOperationCompleted?.Invoke(this, eventArgs);
-                }));
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"Error raising FolderOperationCompleted event: {ex.Message}");
-            }
-        }
-
-
         private async Task<bool> MoveSingleFolderAsync(FolderInfo sourceFolder, FolderInfo targetFolder)
         {
             try
@@ -573,9 +551,9 @@ namespace ImageFolderManager.ViewModels
                     UpdateStatus($"Moved folder '{sourceFolder.Name}' to '{targetFolder.Name}'.");
 
                     OnFolderOperationCompleted(FolderOperationEventArgs.CreateSuccess(
-                        FolderOperation.Move,
+                       FolderOperation.Move,
                         sourceFolder.FolderPath,
-                        destinationPath));
+                       destinationPath));
 
                     CommandManager.InvalidateRequerySuggested();
                     return true;
@@ -630,6 +608,7 @@ namespace ImageFolderManager.ViewModels
                         {
                             overallSuccess = false;
                         }
+
                     }
                     catch (Exception ex)
                     {
@@ -655,10 +634,16 @@ namespace ImageFolderManager.ViewModels
                 ? $"Successfully moved {folderList.Count} folders."
                 : $"Moved {processed} folders with some errors.");
 
-            OnFolderOperationCompleted(FolderOperationEventArgs.CreateSuccess(
-                FolderOperation.Move,
-                folderList.First().FolderPath,
-                targetFolder.FolderPath));
+            foreach (var folder in folderList)
+            {
+                string newPath = Path.Combine(targetFolder.FolderPath, Path.GetFileName(folder.FolderPath));
+
+                // Fire individual move events for proper TreeView refresh
+                OnFolderOperationCompleted(FolderOperationEventArgs.CreateSuccess(
+                    FolderOperation.Move,
+                    folder.FolderPath,  // source path
+                    newPath));          // destination path
+            }
 
             CommandManager.InvalidateRequerySuggested();
             return overallSuccess;
@@ -697,19 +682,8 @@ namespace ImageFolderManager.ViewModels
 
         private void OnFolderOperationCompleted(FolderOperationEventArgs e)
         {
-            Debug.WriteLine($"=== FolderOperationsViewModel.OnFolderOperationCompleted (Instance #{_instanceId}) ===");
-            Debug.WriteLine($"Instance #{_instanceId}: About to fire event for Operation: {e.Operation}");
-            Debug.WriteLine($"Instance #{_instanceId}: My hash: {this.GetHashCode()}");
 
             FolderOperationCompleted?.Invoke(this, e);
-
-            Debug.WriteLine($"Instance #{_instanceId}: Event fired completed");
-        }
-
-        // ADD method to get instance info
-        public string GetInstanceInfo()
-        {
-            return $"FolderOperationsViewModel Instance #{_instanceId}";
         }
 
         #endregion

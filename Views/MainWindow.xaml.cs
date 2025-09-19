@@ -28,7 +28,6 @@ namespace ImageFolderManager
         #region property 
         public MainViewModel ViewModel => DataContext as MainViewModel;
         private MenuItem _undoMenuItem;
-        private bool _debugMonitorInitialized = false;
         #endregion
 
         // ADD this to track which instance we're using
@@ -576,7 +575,6 @@ namespace ImageFolderManager
 
         private void About_Click(object sender, RoutedEventArgs e)
         {
-            var aboutDialog = new MahApps.Metro.Controls.Dialogs.MessageDialogResult();
             var metroWindow = this as MahApps.Metro.Controls.MetroWindow;
 
             metroWindow.ShowMessageAsync("About Image Folder Manager",
@@ -592,11 +590,7 @@ namespace ImageFolderManager
                 "Built with .NET Framework 4.8 and WPF\n"
                );
         }
-
-
-
     }
-
 
     public class EnhancedTagCloudButton : Button
     {
