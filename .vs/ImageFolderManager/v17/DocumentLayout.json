@@ -48,7 +48,7 @@
               "RelativeDocumentMoniker": "Views\\MainWindow.xaml.cs",
               "ToolTip": "D:\\ImageFolderManager\\Views\\MainWindow.xaml.cs",
               "RelativeToolTip": "Views\\MainWindow.xaml.cs",
-              "ViewState": "AgIAAJEBAAAAAAAAAAAmwJ0BAAARAAAAAAAAAA==",
+              "ViewState": "AgIAAIEBAAAAAAAAAADwv50BAAARAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
               "WhenOpened": "2025-09-11T03:25:04.149Z",
               "EditorCaption": ""
@@ -63,8 +63,7 @@
               "RelativeToolTip": "ViewModels\\SearchViewModel.cs",
               "ViewState": "AgIAAAAAAAAAAAAAAAAAAEMAAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2025-09-19T07:38:45.579Z",
-              "EditorCaption": ""
+              "WhenOpened": "2025-09-19T07:38:45.579Z"
             },
             {
               "$type": "Document",
@@ -76,8 +75,7 @@
               "RelativeToolTip": "App.xaml.cs",
               "ViewState": "AgIAAAkBAAAAAAAAAAAowBsBAAARAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2025-09-19T05:56:20.283Z",
-              "EditorCaption": ""
+              "WhenOpened": "2025-09-19T05:56:20.283Z"
             },
             {
               "$type": "Document",
@@ -89,8 +87,7 @@
               "RelativeToolTip": "ViewModels\\MainViewModel.cs",
               "ViewState": "AgIAAAoIAAAAAAAAAAAcwCAIAAAVAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2025-09-04T09:21:14.078Z",
-              "EditorCaption": ""
+              "WhenOpened": "2025-09-04T09:21:14.078Z"
             },
             {
               "$type": "Document",
@@ -102,8 +99,7 @@
               "RelativeToolTip": "ViewModels\\FolderOperationsViewModel.cs",
               "ViewState": "AgIAAIgCAAAAAAAAAAAiwJwCAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2025-09-10T06:35:11.308Z",
-              "EditorCaption": ""
+              "WhenOpened": "2025-09-10T06:35:11.308Z"
             }
           ]
         }
