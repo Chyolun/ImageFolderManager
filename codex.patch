@@ -1,0 +1,98 @@
+<<'EOF' 
+diff --git a/ViewModels/FolderOperationsViewModel.cs b/ViewModels/FolderOperationsViewModel.cs
+index 23f50e65674e7ba889f524498981329ad67c9c2d..c9ab1a091a6de5c99a47ac12864f8099cdb339ad 100644
+--- a/ViewModels/FolderOperationsViewModel.cs
++++ b/ViewModels/FolderOperationsViewModel.cs
+@@ -627,67 +627,69 @@ namespace ImageFolderManager.ViewModels
+ 
+             if (overallSuccess)
+             {
+                 _undoStack.Push(operation);
+             }
+ 
+             UpdateStatus(overallSuccess
+                 ? $"Successfully moved {folderList.Count} folders."
+                 : $"Moved {processed} folders with some errors.");
+ 
+             foreach (var folder in folderList)
+             {
+                 string newPath = Path.Combine(targetFolder.FolderPath, Path.GetFileName(folder.FolderPath));
+ 
+                 // Fire individual move events for proper TreeView refresh
+                 OnFolderOperationCompleted(FolderOperationEventArgs.CreateSuccess(
+                     FolderOperation.Move,
+                     folder.FolderPath,  // source path
+                     newPath));          // destination path
+             }
+ 
+             CommandManager.InvalidateRequerySuggested();
+             return overallSuccess;
+         }
+ 
+-        private async Task CopyDirectoryAsync(string sourceDir, string destinationDir)
++        private Task CopyDirectoryAsync(string sourceDir, string destinationDir)
+         {
+-            await Task.Run(() =>
+-            {
+-                var dir = new DirectoryInfo(sourceDir);
+-                if (!dir.Exists)
+-                    throw new DirectoryNotFoundException($"Source directory not found: {dir.FullName}");
++            return Task.Run(() => CopyDirectoryInternal(sourceDir, destinationDir));
++        }
+ 
+-                Directory.CreateDirectory(destinationDir);
++        private void CopyDirectoryInternal(string sourceDir, string destinationDir)
++        {
++            var dir = new DirectoryInfo(sourceDir);
++            if (!dir.Exists)
++                throw new DirectoryNotFoundException($"Source directory not found: {dir.FullName}");
+ 
+-                // Copy files
+-                foreach (FileInfo file in dir.GetFiles())
+-                {
+-                    string targetFilePath = Path.Combine(destinationDir, file.Name);
+-                    file.CopyTo(targetFilePath);
+-                }
++            Directory.CreateDirectory(destinationDir);
+ 
+-                // Copy subdirectories
+-                foreach (DirectoryInfo subDir in dir.GetDirectories())
+-                {
+-                    string newDestinationDir = Path.Combine(destinationDir, subDir.Name);
+-                    CopyDirectoryAsync(subDir.FullName, newDestinationDir).Wait();
+-                }
+-            });
++            // Copy files
++            foreach (FileInfo file in dir.GetFiles())
++            {
++                string targetFilePath = Path.Combine(destinationDir, file.Name);
++                file.CopyTo(targetFilePath);
++            }
++
++            // Copy subdirectories
++            foreach (DirectoryInfo subDir in dir.GetDirectories())
++            {
++                string newDestinationDir = Path.Combine(destinationDir, subDir.Name);
++                CopyDirectoryInternal(subDir.FullName, newDestinationDir);
++            }
+         }
+ 
+         private void UpdateStatus(string message)
+         {
+             StatusMessageChanged?.Invoke(this, message);
+         }
+ 
+         private void OnFolderOperationCompleted(FolderOperationEventArgs e)
+         {
+ 
+             FolderOperationCompleted?.Invoke(this, e);
+         }
+ 
+         #endregion
+ 
+ 
+     }
+ }
+ 
+EOF
+)

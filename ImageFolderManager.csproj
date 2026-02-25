@@ -145,7 +145,7 @@
     <Compile Include="Services\PathLockManager.cs" />
     <Compile Include="Services\PathNormalizationService.cs" />
     <Compile Include="Services\PathService.cs" />
-    <Compile Include="Services\TagCategoryService.cs.cs" />
+    <Compile Include="Services\TagCategoryService.cs" />
     <Compile Include="Services\TagHelper.cs" />
     <Compile Include="Services\UnifiedFolderService.cs" />
     <Compile Include="Services\WindowsNaturalStringComparer.cs" />
@@ -260,6 +260,7 @@
       <Generator>ResXFileCodeGenerator</Generator>
       <LastGenOutput>Resources.Designer.cs</LastGenOutput>
     </EmbeddedResource>
+    <None Include="codex.patch" />
     <None Include="packages.config" />
     <None Include="Properties\Settings.settings">
       <Generator>SettingsSingleFileGenerator</Generator>

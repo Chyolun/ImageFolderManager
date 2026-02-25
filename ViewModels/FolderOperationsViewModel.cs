@@ -649,30 +649,30 @@ namespace ImageFolderManager.ViewModels
             return overallSuccess;
         }
 
-        private async Task CopyDirectoryAsync(string sourceDir, string destinationDir)
+        private Task CopyDirectoryAsync(string sourceDir, string destinationDir)
         {
-            await Task.Run(() =>
+            return Task.Run(() => CopyDirectoryInternal(sourceDir, destinationDir));
+        }
+
+        private void CopyDirectoryInternal(string sourceDir, string destinationDir)
+        {
+            var dir = new DirectoryInfo(sourceDir);
+            if (!dir.Exists)
+                throw new DirectoryNotFoundException($"Source directory not found: {dir.FullName}");
+            Directory.CreateDirectory(destinationDir);
+            // Copy files
+            foreach (FileInfo file in dir.GetFiles())
             {
-                var dir = new DirectoryInfo(sourceDir);
-                if (!dir.Exists)
-                    throw new DirectoryNotFoundException($"Source directory not found: {dir.FullName}");
+                string targetFilePath = Path.Combine(destinationDir, file.Name);
+                file.CopyTo(targetFilePath);
+            }
 
-                Directory.CreateDirectory(destinationDir);
-
-                // Copy files
-                foreach (FileInfo file in dir.GetFiles())
-                {
-                    string targetFilePath = Path.Combine(destinationDir, file.Name);
-                    file.CopyTo(targetFilePath);
-                }
-
-                // Copy subdirectories
-                foreach (DirectoryInfo subDir in dir.GetDirectories())
-                {
-                    string newDestinationDir = Path.Combine(destinationDir, subDir.Name);
-                    CopyDirectoryAsync(subDir.FullName, newDestinationDir).Wait();
-                }
-            });
+            // Copy subdirectories
+            foreach (DirectoryInfo subDir in dir.GetDirectories())
+            {
+                string newDestinationDir = Path.Combine(destinationDir, subDir.Name);
+                CopyDirectoryInternal(subDir.FullName, newDestinationDir);
+            }
         }
 
         private void UpdateStatus(string message)

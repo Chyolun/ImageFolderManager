@@ -3236,7 +3236,7 @@ namespace ImageFolderManager.Controls
         /// <summary>
         /// Performs a full tree rebuild - used for manual refresh operations
         /// </summary>
-        public async void RefreshTreeFull(string pathToSelect = null, bool preserveExpanded = true)
+        public async Task RefreshTreeFull(string pathToSelect = null, bool preserveExpanded = true)
         {
             try
             {
@@ -3372,7 +3372,7 @@ namespace ImageFolderManager.Controls
                         await HandleFolderUndoMove(sourcePath, destinationPath);
                         break;
                     default:
-                        RefreshTreeFull();
+                        await RefreshTreeFull();
                         break;
                 }
 
@@ -4490,10 +4490,10 @@ namespace ImageFolderManager.Controls
         /// Legacy method for backward compatibility - now routes to appropriate refresh type
         /// </summary>
         [Obsolete("Use RefreshTreeFull() for manual refresh or RefreshTreeIncremental() for operation-based refresh")]
-        public async void RefreshTree(string pathToSelect = null, bool preserveExpanded = true)
+        public Task RefreshTree(string pathToSelect = null, bool preserveExpanded = true)
         {
             // Default to full refresh for backward compatibility
-            RefreshTreeFull(pathToSelect, preserveExpanded);
+            return RefreshTreeFull(pathToSelect, preserveExpanded);
         }
 
         #endregion

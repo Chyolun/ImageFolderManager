@@ -296,7 +296,7 @@ namespace ImageFolderManager
             if (ShellTreeViewControl != null)
             {
                 // Refresh and restore selection if possible
-                ShellTreeViewControl.RefreshTree();
+                await ShellTreeViewControl.RefreshTree();
 
                 // Reselect the previously selected folder if it still exists
                 if (!string.IsNullOrEmpty(currentPath) && Directory.Exists(currentPath))
@@ -412,7 +412,7 @@ namespace ImageFolderManager
                 // Refresh the tree view after deletion
                 if (ShellTreeViewControl != null)
                 {
-                    ShellTreeViewControl.RefreshTree();
+                    await ShellTreeViewControl.RefreshTree();
                 }
             };
             contextMenu.Items.Add(deleteItem);

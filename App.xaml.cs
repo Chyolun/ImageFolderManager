@@ -268,7 +268,7 @@ namespace ImageFolderManager
 
         #region Application Lifecycle
 
-        private void OnMainWindowClosed(object sender, EventArgs e)
+        private async void OnMainWindowClosed(object sender, EventArgs e)
         {
             try
             {
@@ -278,7 +278,10 @@ namespace ImageFolderManager
                 _mainViewModel?.Cleanup();
 
                 // Cleanup command system
-                CleanupCommandSystem();
+                if (_mainViewModel != null)
+                {
+                    await _mainViewModel.CleanupAsync();
+                }
 
                 Debug.WriteLine("Cleanup completed");
             }

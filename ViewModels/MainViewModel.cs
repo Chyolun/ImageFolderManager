@@ -1299,7 +1299,7 @@ namespace ImageFolderManager.ViewModels
                 // If we have a shell tree view, refresh it
                 if (_shellTreeView != null)
                 {
-                    _shellTreeView.RefreshTree();
+                    await _shellTreeView.RefreshTree();
                 }
 
                 // Select the first imported folder if available
@@ -1368,6 +1368,28 @@ namespace ImageFolderManager.ViewModels
                     "Error", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
+
+        public async Task CleanupAsync()
+        {
+            try
+            {
+                if (_unifiedFolderService != null)
+                {
+                    await _unifiedFolderService.StopMonitoringAsync();
+                    _unifiedFolderService.Dispose();
+                }
+
+                ImageLoading?.CancelCurrentLoading();
+                _nodeManager?.Dispose();
+                _coordinator?.Dispose();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error during cleanup: {ex.Message}");
+            }
+        }
+
+
         public void Cleanup()
         {
             try
@@ -1920,7 +1942,7 @@ namespace ImageFolderManager.ViewModels
                 if (_shellTreeView != null)
                 {
                     // Use full refresh for manual operations
-                    _shellTreeView.RefreshTreeFull();
+                    await _shellTreeView.RefreshTreeFull();
                     StatusMessage = "Tree refreshed successfully.";
                 }
                 else
@@ -2008,7 +2030,7 @@ namespace ImageFolderManager.ViewModels
                     if (!ValidateTreeViewState("folder operation"))
                     {
                         StatusMessage = "TreeView not ready, performing full refresh...";
-                        _shellTreeView.RefreshTreeFull();
+                        await _shellTreeView.RefreshTreeFull();
                         return;
                     }
 
@@ -2053,7 +2075,10 @@ namespace ImageFolderManager.ViewModels
                 // Fallback to full refresh on error
                 try
                 {
-                    _shellTreeView?.RefreshTreeFull();
+                    if (_shellTreeView != null)
+                    {
+                        await _shellTreeView.RefreshTreeFull();
+                    }
                 }
                 catch (Exception refreshEx)
                 {
