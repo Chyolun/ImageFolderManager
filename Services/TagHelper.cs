@@ -12,7 +12,7 @@ namespace ImageFolderManager.Services
     /// </summary>
     public static class TagHelper
     {
-        private static readonly Regex InvalidTagCharacters = new Regex(@"[\\/:*?""<>|]", RegexOptions.Compiled);
+        private static readonly Regex InvalidTagCharacters = new Regex(@"[\\/*?""<>|]", RegexOptions.Compiled);
         private const int MaxTagLength = 50;
         private const string CategorySeparator = "::";
 

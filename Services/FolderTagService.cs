@@ -305,11 +305,18 @@ namespace ImageFolderManager.Services
                 var parts = tagString.Split(new[] { CategorySeparator }, 2, StringSplitOptions.None);
                 if (parts.Length == 2)
                 {
-                    return new TagWithCategory
+                    var parsedTag = new TagWithCategory
                     {
                         TagName = parts[1].Trim(),
                         Category = parts[0].Trim()
                     };
+                    if (!string.IsNullOrWhiteSpace(parsedTag.TagName) &&
+                        !string.IsNullOrWhiteSpace(parsedTag.Category) &&
+                        !parsedTag.Category.Equals("Uncategorized", StringComparison.OrdinalIgnoreCase))
+                        {
+                              _categoryService.SetTagCategory(parsedTag.TagName, parsedTag.Category);
+                         }
+                         return parsedTag;
                 }
             }
 
@@ -366,11 +373,16 @@ namespace ImageFolderManager.Services
         /// </summary>
         public Task SetTagsAndRatingForFolderAsync(string folderPath, List<string> tags, int rating)
         {
-            var tagsWithCategories = tags.Select(tag => new TagWithCategory
-            {
-                TagName = tag,
-                Category = _categoryService.GetTagCategory(tag)
-            }).ToList();
+            var tagsWithCategories = tags
+               .Where(tag => !string.IsNullOrWhiteSpace(tag))
+                .Select(tag => TagHelper.ParseTagWithCategory(tag))
+                .Where(parsedTag => parsedTag != null && !string.IsNullOrWhiteSpace(parsedTag.TagName))
+                .Select(parsedTag => new TagWithCategory
+                {
+                TagName = parsedTag.TagName,
+                    Category = parsedTag.Category
+                })
+                .ToList();
 
             return SetTagsAndRatingForFolderAsync(folderPath, tagsWithCategories, rating);
         }
