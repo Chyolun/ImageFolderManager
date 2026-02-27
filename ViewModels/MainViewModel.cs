@@ -75,7 +75,6 @@ namespace ImageFolderManager.ViewModels
             }
         }
 
-
         private string _statusMessage = "Ready";
         public string StatusMessage
         {
@@ -109,7 +108,6 @@ namespace ImageFolderManager.ViewModels
             set => TagManagement.Rating = value;
         }
         public ObservableCollection<StarModel> Stars => TagManagement.Stars;
-
         public string TagInputText
         {
             get => TagManagement.TagInputText;
@@ -126,9 +124,7 @@ namespace ImageFolderManager.ViewModels
         }
 
         public Controls.ShellTreeView ShellTreeView { get; set; }
-
         public ObservableCollection<FolderInfo> SearchResultFolders => Search.SearchResultFolders;
-
         public bool IsRealTimeIndexingActive => _unifiedFolderService?.IsIndexing == false &&
                                                !string.IsNullOrEmpty(_unifiedFolderService?.RootDirectory);
         public int IndexedFolderCount => _unifiedFolderService?.IndexedFolderCount ?? 0;
@@ -143,6 +139,8 @@ namespace ImageFolderManager.ViewModels
         /// Gets the current root directory path
         public string CurrentRootDirectory => _unifiedFolderService?.RootDirectory ?? string.Empty;
 
+        public bool CanUndo => FolderOperations.CanUndo;
+        public string UndoDescription => FolderOperations.UndoDescription;
         #endregion
 
         #region Commands
@@ -168,8 +166,7 @@ namespace ImageFolderManager.ViewModels
         public ICommand CopyCommand => _copyCommand;
         public ICommand PasteCommand => _pasteCommand;
         public ICommand DeleteCommand => _deleteCommand;
-
-        public ICommand UndoFolderMovementCommand => FolderOperations.UndoFolderMovementCommand;
+        public IAsyncRelayCommand UndoCommand => FolderOperations.UndoCommand;
         #endregion
 
         public MainViewModel()
@@ -226,6 +223,11 @@ namespace ImageFolderManager.ViewModels
         {
             // Forward status messages
             FolderOperations.StatusMessageChanged += (s, message) => SetImportantStatusMessage(message);
+            FolderOperations.UndoManager.StateChanged += (_, __) =>
+            {
+                OnPropertyChanged(nameof(CanUndo));
+                OnPropertyChanged(nameof(UndoDescription));
+            };
             Search.StatusMessageChanged += (s, message) => StatusMessage = message;
             ImageLoading.StatusMessageChanged += (s, message) => StatusMessage = message;
             TagManagement.StatusMessageChanged += (s, message) => StatusMessage = message;
@@ -575,53 +577,6 @@ namespace ImageFolderManager.ViewModels
             }
         }
 
-        /// <summary>
-        /// Enhanced TreeView initialization completion check
-        /// </summary>
-        private async Task EnsureTreeViewInitializationComplete()
-        {
-            if (_isTreeViewInitialized)
-                return;
-
-            try
-            {
-                // Allow TreeView to complete its initialization process
-                await Task.Delay(500); // Reasonable delay for UI thread operations
-
-                // Verify that the root path is properly mapped
-                var currentRoot = AppSettings.Instance.DefaultRootDirectory;
-                if (!string.IsNullOrEmpty(currentRoot) && PathService.DirectoryExists(currentRoot))
-                {
-                    bool isReady = false;
-                    await Application.Current.Dispatcher.InvokeAsync(() =>
-                    {
-                        // Check if root is in tree view dictionary
-                        if (_shellTreeView?._pathToTreeViewItem?.ContainsKey(currentRoot) == true)
-                        {
-                            isReady = true;
-                            Debug.WriteLine($"TreeView initialization verified - root path mapped: {currentRoot}");
-                        }
-                    });
-
-                    if (!isReady)
-                    {
-                        Debug.WriteLine($"TreeView initialization may be incomplete - root not mapped: {currentRoot}");
-                        // Give additional time if needed
-                        await Task.Delay(300);
-                    }
-                    else
-                    {
-                        _isTreeViewInitialized = true;
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"Error in EnsureTreeViewInitializationComplete: {ex.Message}");
-            }
-        }
-
-      
         public void SetSelectedFolderWithoutLoading(FolderInfo folder)
         {
             SelectedFolder = folder;

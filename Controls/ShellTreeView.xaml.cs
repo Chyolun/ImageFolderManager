@@ -3027,8 +3027,12 @@ namespace ImageFolderManager.Controls
                         string sourceDir = ViewModel.GetClipboardSourceDirectory();
 
                         // Execute paste operation
-                        ViewModel.PasteFolders(folderInfo);
-                  
+                        _ = ViewModel.PasteFolders(folderInfo).ContinueWith(t =>
+                        {
+                            if (t.Exception != null) HandleException("Paste failed", t.Exception);
+                        });
+
+
                     }
                     else
                     {

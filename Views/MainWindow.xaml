@@ -22,7 +22,7 @@
         <local:MainViewModel />
     </mah:MetroWindow.DataContext>
     <Window.InputBindings>
-        <KeyBinding Key="Z" Modifiers="Control" Command="{Binding UndoFolderMovementCommand}" />
+        <KeyBinding Key="Z" Modifiers="Control" Command="{Binding UndoCommand}" />
         <KeyBinding Key="Left" Modifiers="Alt" Command="{Binding CollapseParentDirectoryCommand}" />
         <KeyBinding Key="T" Modifiers="Control" Command="{Binding TagsCloudCommand}" />
       
@@ -97,9 +97,10 @@
                     </MenuItem.Icon>
                 </MenuItem>
                 <Separator/>
-                <MenuItem Header="Undo Folder Movement" 
-              Command="{Binding UndoFolderMovementCommand}" 
-              InputGestureText="Ctrl+Z">
+                <MenuItem Header="{Binding UndoDescription, StringFormat='Undo: {0}', FallbackValue='Undo'}"
+          Command="{Binding UndoCommand}"
+          IsEnabled="{Binding CanUndo}"
+          InputGestureText="Ctrl+Z">
                     <MenuItem.Icon>
                         <TextBlock Text="↩" FontSize="14" VerticalAlignment="Center" />
                     </MenuItem.Icon>

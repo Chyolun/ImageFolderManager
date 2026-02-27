@@ -18,6 +18,7 @@ namespace ImageFolderManager.ViewModels
     {
         public List<string> SourcePaths { get; set; } = new List<string>();
         public string DestinationPath { get; set; }
+
         public bool IsMultipleMove { get; set; }
         public DateTime Timestamp { get; set; }
 

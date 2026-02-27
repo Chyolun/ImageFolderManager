@@ -156,6 +156,7 @@
     <Compile Include="ViewModels\ImageLoadingViewModel.cs" />
     <Compile Include="ViewModels\SearchViewModel.cs" />
     <Compile Include="ViewModels\TagManagementViewModel.cs" />
+    <Compile Include="ViewModels\UndoManager.cs" />
     <Compile Include="ViewModels\ViewModelBase.cs" />
     <Compile Include="ViewModels\ViewModelHelper.cs" />
     <Compile Include="Views\BatchTagsDialog.xaml.cs">

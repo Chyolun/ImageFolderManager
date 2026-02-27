@@ -348,18 +348,34 @@ namespace ImageFolderManager
         {
             base.OnKeyDown(e);
 
-            // Handle Ctrl+Z for undo
             if (e.Key == Key.Z && Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
             {
-                if (ViewModel != null && ViewModel.UndoFolderMovementCommand.CanExecute(null))
+                IAsyncRelayCommand cmd = ViewModel?.UndoCommand;
+                if (cmd != null && cmd.CanExecute(null))
                 {
-                    ViewModel.UndoFolderMovementCommand.Execute(null);
+                    ExecuteUndoSafeAsync(cmd);
                     e.Handled = true;
                 }
             }
-
         }
 
+        /// <summary>
+        /// Safely executes the undo command and surfaces any exception as a
+        /// MessageBox rather than crashing the UI thread.
+        /// </summary>
+        private async void ExecuteUndoSafeAsync(CommunityToolkit.Mvvm.Input.IAsyncRelayCommand cmd)
+        {
+            try
+            {
+                await cmd.ExecuteAsync(null);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[MainWindow] Undo failed: {ex.Message}");
+                MessageBox.Show($"Undo failed: {ex.Message}",
+                    "Undo Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
 
         private void SearchResultListBox_ContextMenuOpening(object sender, ContextMenuEventArgs e)
         {
