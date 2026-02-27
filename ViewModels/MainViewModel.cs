@@ -1332,11 +1332,11 @@ namespace ImageFolderManager.ViewModels
 
         public async Task UpdateTagCloudAsync()
         {
-            var freshFolders = await _unifiedFolderService.LoadFoldersRecursivelyAsync(
-                AppSettings.Instance.DefaultRootDirectory);
+            //var freshFolders = await _unifiedFolderService.LoadFoldersRecursivelyAsync(
+            //    AppSettings.Instance.DefaultRootDirectory);
 
-            _allLoadedFolders.Clear();
-            _allLoadedFolders.AddRange(freshFolders);
+            //_allLoadedFolders.Clear();
+            //_allLoadedFolders.AddRange(freshFolders);
 
             await TagManagement.UpdateTagCloudAsync(_allLoadedFolders);
         }

@@ -662,10 +662,12 @@ namespace ImageFolderManager.ViewModels
             return forceFullUpdate;
         }
 
+        /// <summary>
+        /// Invalidates the tag cloud cache to force a full refresh
+        /// </summary>
         public void InvalidateCache()
         {
             _isFullUpdateNeeded = true;
-            _cachedTagData.Clear();
         }
 
         private double CalculateFontSize(int count, int minCount, int maxCount)

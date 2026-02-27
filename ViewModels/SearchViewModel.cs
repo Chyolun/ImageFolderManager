@@ -145,8 +145,8 @@ namespace ImageFolderManager.ViewModels
             }
 
             return results.OrderByDescending(f => f.Rating)
-                         .ThenBy(f => f.Name)
-                         .ToList();
+              .ThenBy(f => f.Name)
+              .ToList();
         }
 
 

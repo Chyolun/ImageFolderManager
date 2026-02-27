@@ -296,12 +296,15 @@ namespace ImageFolderManager.Views
                 if (DataContext is TagCloudViewModel viewModel)
                 {
                     viewModel.InvalidateCache();
-                    _mainViewModel?.UpdateTagCloudAsync().ContinueWith(_ => {
-                        this.Dispatcher.Invoke(() => {
+                    _mainViewModel?.UpdateTagCloudAsync().ContinueWith(_ =>
+                    {
+                        this.Dispatcher.Invoke(() =>
+                        {
                             StatusText.Text = "Tag cloud refreshed";
                             UpdateWindowTitle();
                         });
                     });
+
                 }
             }
             catch (Exception ex)
