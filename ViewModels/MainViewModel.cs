@@ -1981,6 +1981,8 @@ namespace ImageFolderManager.ViewModels
             {
                 if (e.Success && _shellTreeView != null)
                 {
+                    
+
                     // Validate TreeView state before operation
                     if (!ValidateTreeViewState("folder operation"))
                     {

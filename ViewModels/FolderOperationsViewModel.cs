@@ -26,6 +26,7 @@ namespace ImageFolderManager.ViewModels
         private List<FolderInfo> _clipboardFolders = new List<FolderInfo>();
         private bool _isCutOperation;
 
+
         // ── Undo ─────────────────────────────────────────────────────────
         /// <summary>
         /// The single unified undo manager.  All operation methods push a record
@@ -556,6 +557,23 @@ namespace ImageFolderManager.ViewModels
 
             progressDialog.ShowDialog();
             await moveTask;
+
+            if (movedSources.Count > 0)
+            {
+                UndoManager.Push(UndoRecord.ForMultiMove(
+                    movedSources.Select(x => x.src), targetFolder.FolderPath));
+            }
+
+
+            if (movedSources.Count > 0)
+            {
+                OnFolderOperationCompleted(new FolderOperationEventArgs
+                {
+                    Operation = FolderOperation.Refresh,
+                    Success = true,
+                    Timestamp = DateTime.Now
+                });
+            }
 
             foreach (var (src, dest) in movedSources)
             {
