@@ -4007,8 +4007,17 @@ namespace ImageFolderManager.Controls
         /// </summary>
         private async Task HandleFolderUndoMove(string currentPath, string originalPath)
         {
-            // Undo move is essentially moving back to original location
-            await HandleFolderMove(currentPath, originalPath);
+            string currentParent = Path.GetDirectoryName(currentPath) ?? string.Empty;
+            string originalParent = Path.GetDirectoryName(originalPath) ?? string.Empty;
+
+            if (string.Equals(currentParent, originalParent, StringComparison.OrdinalIgnoreCase))
+            {
+                await HandleFolderRename(currentPath, originalPath);
+            }
+            else
+            { 
+                await HandleFolderMove(currentPath, originalPath);
+            }
         }
 
         /// <summary>

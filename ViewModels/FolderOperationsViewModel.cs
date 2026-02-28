@@ -94,17 +94,36 @@ namespace ImageFolderManager.ViewModels
 
             if (result.Success)
             {
-               
-                FolderOperation opType = MapUndoTypeToFolderOperation(result.OperationType);
-                OnFolderOperationCompleted(new FolderOperationEventArgs
+                if (result.OperationType == UndoOperationType.MultiMove
+                    && result.MultiPaths.Count > 0)
                 {
-                    Operation = opType,
-                    SourcePath = result.PreviousPath, 
-                    DestinationPath = result.RestoredPath,    
-                    Success = true,
-                    IsUndoOperation = true,
-                    Timestamp = DateTime.Now
-                });
+                    foreach (var (prev, restored) in result.MultiPaths)
+                    {
+                        OnFolderOperationCompleted(new FolderOperationEventArgs
+                        {
+                            Operation = FolderOperation.Move,
+                            SourcePath = prev,
+                            DestinationPath = restored,
+                            Success = true,
+                            IsUndoOperation = true,
+                            Timestamp = DateTime.Now
+                        });
+                        await Task.Delay(50);
+                    }
+                }
+                else
+                {
+                    FolderOperation opType = MapUndoTypeToFolderOperation(result.OperationType);
+                    OnFolderOperationCompleted(new FolderOperationEventArgs
+                    {
+                        Operation = opType,
+                        SourcePath = result.PreviousPath,
+                        DestinationPath = result.RestoredPath,
+                        Success = true,
+                        IsUndoOperation = true,
+                        Timestamp = DateTime.Now
+                    });
+                }
             }
 
             CommandManager.InvalidateRequerySuggested();
@@ -494,8 +513,8 @@ namespace ImageFolderManager.ViewModels
             bool overallSuccess = true;
             int  processed      = 0;
 
-            // Collect successful source paths for a single MultiMove undo record
-            var movedSources = new List<string>();
+            // Collect successful source paths for a single MultiMove undo record          
+            var movedSources = new List<(string src, string dest)>();
 
             var moveTask = Task.Run(async () =>
             {
@@ -516,20 +535,11 @@ namespace ImageFolderManager.ViewModels
                         }
                         else
                         {
-                            bool success = await _folderService.MoveFolderAsync(
-                                folder.FolderPath, destPath);
-
+                            bool success = await _folderService.MoveFolderAsync(folder.FolderPath, destPath);
                             if (success)
-                            {
-                                movedSources.Add(folder.FolderPath);
-                                Application.Current.Dispatcher.Invoke(() =>
-                                    OnFolderOperationCompleted(FolderOperationEventArgs.CreateSuccess(
-                                        FolderOperation.Move, folder.FolderPath, destPath)));
-                            }
+                                movedSources.Add((folder.FolderPath, destPath));  
                             else
-                            {
                                 overallSuccess = false;
-                            }
                         }
                     }
                     catch (Exception ex)
@@ -537,7 +547,6 @@ namespace ImageFolderManager.ViewModels
                         Debug.WriteLine($"Error moving {folder.FolderPath}: {ex.Message}");
                         overallSuccess = false;
                     }
-
                     processed++;
                 }
 
@@ -548,12 +557,12 @@ namespace ImageFolderManager.ViewModels
             progressDialog.ShowDialog();
             await moveTask;
 
-            // ── Record for undo (one MultiMove record for all successes) ──
-            if (movedSources.Count > 0)
+            foreach (var (src, dest) in movedSources)
             {
-                UndoManager.Push(UndoRecord.ForMultiMove(movedSources, targetFolder.FolderPath));
+                OnFolderOperationCompleted(FolderOperationEventArgs.CreateSuccess(
+                    FolderOperation.Move, src, dest));
+                await Task.Delay(50); 
             }
-
             UpdateStatus(overallSuccess
                 ? $"Moved {folderList.Count} folders."
                 : $"Moved {movedSources.Count} of {folderList.Count} folders (some errors).");

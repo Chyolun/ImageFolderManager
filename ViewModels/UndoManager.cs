@@ -30,18 +30,21 @@ namespace ImageFolderManager.ViewModels
     {
         public bool Success { get; }
         public string Message { get; }
-        public string RestoredPath { get; }   // 还原后文件夹所在路径（用于刷新树）
-        public string PreviousPath { get; }   // 还原前文件夹所在路径（用于从树中移除）
+        public string RestoredPath { get; }   
+        public string PreviousPath { get; }  
         public UndoOperationType OperationType { get; }
 
+        public IReadOnlyList<(string PreviousPath, string RestoredPath)> MultiPaths { get; }
         public UndoResult(bool success, string message, UndoOperationType type,
-                          string restoredPath = null, string previousPath = null)
+                      string restoredPath = null, string previousPath = null,
+                      IReadOnlyList<(string, string)> multiPaths = null)
         {
             Success = success;
             Message = message;
             OperationType = type;
             RestoredPath = restoredPath;
             PreviousPath = previousPath;
+            MultiPaths = multiPaths ?? Array.Empty<(string, string)>();
         }
     }
 
@@ -308,7 +311,7 @@ namespace ImageFolderManager.ViewModels
         private async Task<UndoResult> UndoMultiMoveAsync(UndoRecord record)
         {
             int success = 0, failed = 0;
-            string lastRestoredPath = null;
+            var restoredPairs = new List<(string PreviousPath, string RestoredPath)>();
 
             foreach (string originalSource in record.SourcePaths)
             {
@@ -318,12 +321,20 @@ namespace ImageFolderManager.ViewModels
                 if (!Directory.Exists(currentPath) || Directory.Exists(originalSource))
                 {
                     failed++;
+                    Debug.WriteLine($"[UndoManager] MultiMove undo skip: currentPath={currentPath}");
                     continue;
                 }
 
                 bool ok = await _folderService.MoveFolderAsync(currentPath, originalSource);
-                if (ok) { success++; lastRestoredPath = originalSource; }
-                else failed++;
+                if (ok)
+                {
+                    success++;
+                    restoredPairs.Add((currentPath, originalSource));
+                }
+                else
+                {
+                    failed++;
+                }
             }
 
             string msg = failed == 0
@@ -331,8 +342,7 @@ namespace ImageFolderManager.ViewModels
                 : $"Undo move: restored {success}, failed {failed}.";
 
             return new UndoResult(success > 0, msg, UndoOperationType.MultiMove,
-                restoredPath: lastRestoredPath,
-                previousPath: record.DestinationPath);
+                multiPaths: restoredPairs.AsReadOnly());
         }
 
         // Copy: delete the created copy
