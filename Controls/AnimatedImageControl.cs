@@ -72,7 +72,8 @@ namespace ImageFolderManager.Controls
             {
                 ctrl.StopAnimation();
                 ctrl._currentFrameIndex = 0;
-                ctrl.StartAnimation();
+                if (ctrl._imageElement != null)
+                    ctrl.StartAnimation();
             }
         }
 

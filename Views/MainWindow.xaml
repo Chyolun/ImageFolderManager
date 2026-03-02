@@ -334,18 +334,7 @@
                                         VerticalAlignment="Center"
                                         HorizontalAlignment="Center"
                                         Tag="{Binding FilePath}"
-                                        MouseLeftButtonDown="Image_MouseLeftButtonDown">
-                                        <controls:AnimatedImageControl.Style>
-                                            <Style TargetType="controls:AnimatedImageControl">
-                                                <Setter Property="Visibility" Value="Collapsed"/>
-                                                <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding IsAnimated}" Value="True">
-                                                        <Setter Property="Visibility" Value="Visible"/>
-                                                    </DataTrigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </controls:AnimatedImageControl.Style>
-                                    </controls:AnimatedImageControl>
+                                        MouseLeftButtonDown="Image_MouseLeftButtonDown"/>
                                     <Image Source="{Binding Thumbnail}"
                                        Width="{Binding DataContext.PreviewWidth, RelativeSource={RelativeSource AncestorType=Window}}"
                                        Height="{Binding DataContext.PreviewHeight, RelativeSource={RelativeSource AncestorType=Window}}"

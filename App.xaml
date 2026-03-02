@@ -142,6 +142,7 @@
             </Style>
 
             <Style TargetType="{x:Type controls:AnimatedImageControl}">
+                <Setter Property="Visibility" Value="Collapsed"/>
                 <Setter Property="Template">
                     <Setter.Value>
                         <ControlTemplate TargetType="{x:Type controls:AnimatedImageControl}">
@@ -152,6 +153,11 @@
                         </ControlTemplate>
                     </Setter.Value>
                 </Setter>
+                <Style.Triggers>
+                    <DataTrigger Binding="{Binding IsAnimated}" Value="True">
+                        <Setter Property="Visibility" Value="Visible"/>
+                    </DataTrigger>
+                </Style.Triggers>
             </Style>
 
             <!--
