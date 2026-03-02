@@ -350,11 +350,18 @@
                 <GroupBox Header="Folder Info" Grid.Row="2" Margin="0,10,0,0" Foreground="White">
                     <StackPanel>
                         <!-- Current Folder Path -->
-                        <TextBlock Text="{Binding SelectedFolder.FolderPath}" 
-                                   Foreground="LightGray" 
-                                   FontSize="11" 
-                                   TextWrapping="Wrap"
-                                   Margin="0,0,0,10"/>
+                        <TextBox Text="{Binding SelectedFolder.FolderPath, Mode=OneWay}"
+                             IsReadOnly="True"
+                             IsReadOnlyCaretVisible="True"
+                             Background="Transparent"
+                             BorderThickness="0"
+                             Padding="0"
+                             Foreground="LightGray"
+                             FontSize="13"
+                             TextWrapping="Wrap"
+                             Cursor="IBeam"
+                             Margin="0,0,0,10"
+                             ToolTip="Click to select · Ctrl+A to select all · Ctrl+C to copy"/>
 
                         <!-- Rating -->
                         <StackPanel Orientation="Horizontal" Margin="0,0,0,0">
@@ -443,7 +450,7 @@
 
                             <Button Content="Edit" 
                                Grid.Column="1"
-                               Width="60"
+                               MinWidth="80"
                                Height="24"
                                Margin="5,0,0,10"
                                HorizontalAlignment="Right"

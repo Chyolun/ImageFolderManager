@@ -196,18 +196,21 @@
                     Margin="0,0,20,0" 
                     MinWidth="120" 
                     Background="DarkOrange"/>
-
-            <Button Content="OK" 
-                    Click="OK_Click" 
-                    IsDefault="True" 
-                    Margin="0,0,10,0" 
-                    MinWidth="80" 
-                    Background="{DynamicResource MahApps.Brushes.Accent}"/>
-
             <Button Content="Cancel" 
+                    Margin="0,0,10,0" 
+                    Style="{StaticResource SecondaryButton}"
                     Click="Cancel_Click" 
                     IsCancel="True" 
                     MinWidth="80"/>
+            
+            <Button Content="OK" 
+                    Click="OK_Click" 
+                    IsDefault="True" 
+                    Style="{StaticResource PrimaryButton}"
+                    MinWidth="80" 
+                    Background="{DynamicResource MahApps.Brushes.Accent}"/>
+
+           
         </StackPanel>
     </Grid>
 </mah:MetroWindow>

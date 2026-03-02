@@ -33,7 +33,7 @@
 
         <!-- Preview Size Group -->
         <TextBlock Grid.Row="0" Grid.ColumnSpan="2" 
-                   Text="Preview  Size" 
+                   Text="Preview Size" 
                    FontSize="14" FontWeight="SemiBold"
                    Margin="0,0,0,10" Foreground="White"/>
 
@@ -79,8 +79,8 @@
 
         <!-- Buttons -->
         <StackPanel Grid.Row="11" Grid.ColumnSpan="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,20,0,0">
-            <Button Content="Cancel" Width="80" Margin="0,0,10,0" Click="Cancel_Click"/>
-            <Button Content="Apply" Width="80" Click="Apply_Click"/>
+            <Button Content="Cancel" MinWidth="80" Margin="0,0,10,0" Click="Cancel_Click"  Style="{StaticResource SecondaryButton}" IsCancel="True"/>
+            <Button Content="Apply" MinWidth="80" Click="Apply_Click" Style="{StaticResource PrimaryButton}" IsDefault="True"/>
         </StackPanel>
     </Grid>
 </mah:MetroWindow>

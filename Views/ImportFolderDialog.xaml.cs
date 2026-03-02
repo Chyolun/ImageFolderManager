@@ -10,6 +10,7 @@ using System.Windows.Forms;
 using ImageFolderManager.Models;
 using ImageFolderManager.Services;
 using MahApps.Metro.Controls;
+using Microsoft.WindowsAPICodePack.Dialogs;
 
 namespace ImageFolderManager.Views
 {
@@ -23,6 +24,12 @@ namespace ImageFolderManager.Views
 
         public string DestinationPath { get; private set; }
         public bool DialogConfirmed { get; private set; } = false;
+
+        // <summary>
+        /// Tracks whether the current author text was manually entered by the user
+        /// or auto-detected from the folder name.
+        /// </summary>
+        private bool _isAuthorManuallyEdited = false;
 
         // Property for tags input text binding
         private string _tagInputText = string.Empty;
@@ -168,16 +175,6 @@ namespace ImageFolderManager.Views
             }
         }
 
-        /// <summary>
-        /// Helper method to check if a folder name would cause duplication
-        /// </summary>
-        /// <param name="folderName">Folder name to check</param>
-        /// <returns>True if the folder name already exists</returns>
-        private bool CheckForDuplicateName(string folderName)
-        {
-            return _allLoadedFolders.Any(f =>
-                string.Equals(Path.GetFileName(f.FolderPath), folderName, StringComparison.OrdinalIgnoreCase));
-        }
 
         /// <summary>
         /// Method to manually trigger height recalculation when content changes
@@ -199,9 +196,6 @@ namespace ImageFolderManager.Views
                 this.Height = this.MaxHeight;
             }
         }
-
-
-
         private void AnalyzeFolderName()
         {
             // For multiple folders, analyze the first one for author detection
@@ -233,97 +227,170 @@ namespace ImageFolderManager.Views
             return string.Empty;
         }
 
+        /// <summary>
+        /// Searches for an existing author folder in the root directory.
+        /// When the user manually types an author name "xxx", this method first looks
+        /// for a folder named "[xxx]" (bracket format) at the root level.
+        /// Falls back to a broader substring search for auto-detected authors.
+        /// </summary>
+        /// <param name="author">The author name to search for</param>
+        /// <param name="isManualInput">
+        /// True if the author was manually typed by the user (searches strictly for "[author]" bracket folder);
+        /// false if it was auto-detected from the folder name (uses broader substring search).
+        /// </param>
+        /// <returns>The matched folder path, or null if not found</returns>
+        private string FindAuthorFolder(string author, bool isManualInput)
+        {
+            if (string.IsNullOrEmpty(author))
+                return null;
+
+            if (isManualInput)
+            {
+                string bracketFolderName = $"[{author}]";
+
+                // Search all loaded folders under root at any depth, match by folder name
+                var match = _allLoadedFolders.FirstOrDefault(f =>
+                {
+                    // Must be somewhere within the root directory (any depth)
+                    bool isUnderRoot = PathService.IsPathWithin(_rootDirectoryPath, f.FolderPath);
+                    // Folder name must exactly match [author] (case-insensitive)
+                    bool nameMatches = string.Equals(
+                        Path.GetFileName(f.FolderPath),
+                        bracketFolderName,
+                        StringComparison.OrdinalIgnoreCase);
+                    return isUnderRoot && nameMatches;
+                });
+
+                if (match != null)
+                    return match.FolderPath;
+
+                // Fallback: check filesystem directly at root level
+                // (covers the case where the folder exists but hasn't been loaded yet)
+                string directPath = Path.Combine(_rootDirectoryPath, bracketFolderName);
+                if (Directory.Exists(directPath))
+                    return directPath;
+
+                return null;
+            }
+            else
+            {
+                // For auto-detected authors, use the original broader substring search
+                var topLevelFolders = _allLoadedFolders
+                    .Where(f =>
+                    {
+                        string folderNameOnly = Path.GetFileName(f.FolderPath);
+                        string parentPath = Directory.GetParent(f.FolderPath)?.FullName;
+                        bool isTopLevel = parentPath != null &&
+                                         PathService.PathsEqual(parentPath, _rootDirectoryPath);
+                        bool containsAuthor = folderNameOnly.IndexOf(author, StringComparison.OrdinalIgnoreCase) >= 0;
+                        return isTopLevel && containsAuthor;
+                    })
+                    .OrderBy(f => f.FolderPath.Length) // Prefer shorter (more specific) paths
+                    .ToList();
+
+                return topLevelFolders.FirstOrDefault()?.FolderPath;
+            }
+        }
+
         private void RecommendDestinationPath()
         {
             string folderName = Path.GetFileName(_sourceFolderPaths[0]);
             string recommendedPath = _rootDirectoryPath;
             string author = AuthorTextBox.Text.Trim();
 
-            // Only try to find an author-based path if the author field is not empty
             if (!string.IsNullOrEmpty(author))
             {
-                // Find folders at the top level that contain the author name
-                var topLevelFolders = _allLoadedFolders
-                    .Where(f => {
-                        // Get folder name
-                        string folderNameOnly = Path.GetFileName(f.FolderPath);
+                string existingFolder = FindAuthorFolder(author, _isAuthorManuallyEdited);
 
-                        // Check if this is a direct child of the root directory
-                        string parentPath = Directory.GetParent(f.FolderPath)?.FullName;
-                        bool isTopLevel = parentPath != null &&
-                                         PathService.PathsEqual(parentPath, _rootDirectoryPath);
-
-                        // Check if folder name contains the author
-                        bool containsAuthor = folderNameOnly.IndexOf(author, StringComparison.OrdinalIgnoreCase) >= 0;
-
-                        return isTopLevel && containsAuthor;
-                    })
-                    .OrderBy(f => f.FolderPath.Length) // Prefer shorter paths
-                    .ToList();
-
-                if (topLevelFolders.Count > 0)
+                if (existingFolder != null)
                 {
-                    // Use the first matching top-level folder as destination
-                    recommendedPath = topLevelFolders.First().FolderPath;
-
-                    // Update status text with info about the match
+                    recommendedPath = existingFolder;
                     StatusText.Text = $"Found author folder: {Path.GetFileName(recommendedPath)}";
                 }
                 else
                 {
-                    // If no existing author folder, suggest creating one
-                    string authorFolderName = $"[{author}]";
+                    // No existing folder found — suggest creating a bracketed one
+                    string authorFolderName = _isAuthorManuallyEdited
+                        ? $"[{author}]"                 // Manual input always uses [author] format
+                        : $"[{author}]";                // Auto-detected also defaults to bracket format
                     recommendedPath = Path.Combine(_rootDirectoryPath, authorFolderName);
 
-                    // Check if this directory already exists
-                    if (!Directory.Exists(recommendedPath))
-                    {
-                        StatusText.Text = $"No existing author folder found. A new folder '{authorFolderName}' will be created.";
-                    }
+                    StatusText.Text = Directory.Exists(recommendedPath)
+                        ? $"Found author folder: {authorFolderName}"
+                        : $"No existing author folder found. '{authorFolderName}' will be created automatically.";
                 }
             }
 
-            // For multiple folders, we just use the destination directory without folder name
+            // For multiple folders, use the destination directory without appending a folder name
             if (_sourceFolderPaths.Count > 1)
             {
                 DestinationPathTextBox.Text = recommendedPath;
             }
             else
             {
-                // For single folder import, include the folder name in the path
+                // For single folder import, append the source folder name to the destination
                 string finalPath = Path.Combine(recommendedPath, folderName);
 
-                // Check if the destination already exists, if so, create a unique name
+                // If destination already exists, generate a unique name
                 if (Directory.Exists(finalPath))
                 {
                     finalPath = PathService.GetUniqueDirectoryPath(recommendedPath, folderName);
-                    StatusText.Text += " A folder with the same name already exists, a unique name will be created.";
+                    StatusText.Text += " A folder with the same name already exists; a unique name will be used.";
                 }
 
                 DestinationPathTextBox.Text = finalPath;
             }
         }
 
+
         private void AuthorTextBox_TextChanged(object sender, TextChangedEventArgs e)
         {
             // When author is changed by user, update the recommended path
+            _isAuthorManuallyEdited = true;
             RecommendDestinationPath();
         }
 
+        /// <summary>
+        /// Opens a folder browser dialog starting from the currently recommended destination path.
+        /// If the recommended path or its parent doesn't exist yet (e.g. a planned [author] folder),
+        /// the browser falls back to the root directory.
+        /// </summary>
         private void ExploreButton_Click(object sender, RoutedEventArgs e)
         {
-            // Show folder browser dialog to select destination
-            var dialog = new FolderBrowserDialog
-            {
-                Description = "Select destination folder",
-                SelectedPath = DestinationPathTextBox.Text
-            };
+            // Determine the browse start directory:
+            // Use the parent of the recommended path if it exists; otherwise fall back to root.
+            string currentText = DestinationPathTextBox.Text?.Trim() ?? string.Empty;
+            string startPath = _rootDirectoryPath;
 
-            if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
+            if (!string.IsNullOrEmpty(currentText))
             {
-                string selectedPath = dialog.SelectedPath;
+                string parent = Path.GetDirectoryName(currentText);
+                if (!string.IsNullOrEmpty(parent) && Directory.Exists(parent))
+                    startPath = parent;
+            }
 
-                // Ensure the selected path is within the root directory
+            // Use CommonOpenFileDialog for native Explorer-style browsing with proper scroll positioning
+            if (!CommonOpenFileDialog.IsPlatformSupported)
+            {
+                // Fallback to FolderBrowserDialog on unsupported platforms
+                ExploreButton_LegacyFallback(startPath);
+                return;
+            }
+
+            using (var dialog = new CommonOpenFileDialog())
+            {
+                dialog.Title = "Select destination folder";
+                dialog.IsFolderPicker = true;
+                dialog.Multiselect = false;
+                dialog.AllowNonFileSystemItems = false;
+                dialog.EnsurePathExists = false; // Allow navigating to not-yet-created folders' parents
+                dialog.InitialDirectory = startPath; // Explorer scrolls to this location automatically
+
+                if (dialog.ShowDialog(this) != CommonFileDialogResult.Ok)
+                    return;
+
+                string selectedPath = dialog.FileName;
+
                 if (!PathService.IsPathWithin(_rootDirectoryPath, selectedPath))
                 {
                     System.Windows.MessageBox.Show(
@@ -334,28 +401,64 @@ namespace ImageFolderManager.Views
                     return;
                 }
 
-                // For single folder, append the folder name
                 if (_sourceFolderPaths.Count == 1)
                 {
                     string folderName = Path.GetFileName(_sourceFolderPaths[0]);
                     string finalPath = Path.Combine(selectedPath, folderName);
-
-                    // Check for uniqueness
                     if (Directory.Exists(finalPath))
-                    {
                         finalPath = PathService.GetUniqueDirectoryPath(selectedPath, folderName);
-                    }
-
                     DestinationPathTextBox.Text = finalPath;
                 }
                 else
                 {
-                    // For multiple folders, just use the directory path
                     DestinationPathTextBox.Text = selectedPath;
                 }
 
                 StatusText.Text = "Custom destination selected.";
             }
+        }
+
+        /// <summary>
+        /// Legacy fallback for ExploreButton when CommonOpenFileDialog is not available.
+        /// FolderBrowserDialog does not support scroll positioning.
+        /// </summary>
+        private void ExploreButton_LegacyFallback(string startPath)
+        {
+            var dialog = new FolderBrowserDialog
+            {
+                Description = "Select destination folder",
+                SelectedPath = startPath
+            };
+
+            if (dialog.ShowDialog() != System.Windows.Forms.DialogResult.OK)
+                return;
+
+            string selectedPath = dialog.SelectedPath;
+
+            if (!PathService.IsPathWithin(_rootDirectoryPath, selectedPath))
+            {
+                System.Windows.MessageBox.Show(
+                    "Please select a folder within the root directory.",
+                    "Invalid Selection",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+                return;
+            }
+
+            if (_sourceFolderPaths.Count == 1)
+            {
+                string folderName = Path.GetFileName(_sourceFolderPaths[0]);
+                string finalPath = Path.Combine(selectedPath, folderName);
+                if (Directory.Exists(finalPath))
+                    finalPath = PathService.GetUniqueDirectoryPath(selectedPath, folderName);
+                DestinationPathTextBox.Text = finalPath;
+            }
+            else
+            {
+                DestinationPathTextBox.Text = selectedPath;
+            }
+
+            StatusText.Text = "Custom destination selected.";
         }
 
         private async void Import_Click(object sender, RoutedEventArgs e)

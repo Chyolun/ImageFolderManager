@@ -96,11 +96,15 @@
                     Orientation="Horizontal" 
                     HorizontalAlignment="Right">
             <Button Content="Cancel" 
-                    Width="80" 
+                    MinWidth="80" 
                     Margin="0,0,10,0" 
+                    Style="{StaticResource SecondaryButton}" 
+                    IsCancel="True"
                     Click="Cancel_Click"/>
             <Button Content="Apply" 
-                    Width="80" 
+                    MinWidth="80" 
+                    Style="{StaticResource PrimaryButton}" 
+                    IsDefault="True"
                     Click="Apply_Click"/>
         </StackPanel>
     </Grid>

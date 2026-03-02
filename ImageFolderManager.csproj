@@ -163,6 +163,12 @@
       <DependentUpon>BatchTagsDialog.xaml</DependentUpon>
     </Compile>
     <Compile Include="Converters\Converter.cs" />
+    <Compile Include="Views\CreateFolderDialog.xaml.cs">
+      <DependentUpon>CreateFolderDialog.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="Views\DeleteConfirmDialog.xaml.cs">
+      <DependentUpon>DeleteConfirmDialog.xaml</DependentUpon>
+    </Compile>
     <Compile Include="Views\DuplicateFilterSettingsDialog.xaml.cs">
       <DependentUpon>DuplicateFilterSettingsDialog.xaml</DependentUpon>
     </Compile>
@@ -178,6 +184,9 @@
     <Compile Include="Views\ProgressDialog.xaml.cs">
       <DependentUpon>ProgressDialog.xaml</DependentUpon>
     </Compile>
+    <Compile Include="Views\RenameFolderDialog.xaml.cs">
+      <DependentUpon>RenameFolderDialog.xaml</DependentUpon>
+    </Compile>
     <Compile Include="Views\RenameTagDialog.xaml.cs">
       <DependentUpon>RenameTagDialog.xaml</DependentUpon>
     </Compile>
@@ -190,6 +199,14 @@
     <Page Include="Views\BatchTagsDialog.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="Views\CreateFolderDialog.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+    <Page Include="Views\DeleteConfirmDialog.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
     </Page>
     <Page Include="Views\DuplicateFilterSettingsDialog.xaml">
       <SubType>Designer</SubType>
@@ -229,6 +246,10 @@
     <Page Include="Views\ProgressDialog.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="Views\RenameFolderDialog.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
     </Page>
     <Page Include="Views\RenameTagDialog.xaml">
       <SubType>Designer</SubType>

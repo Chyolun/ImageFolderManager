@@ -1062,6 +1062,19 @@ namespace ImageFolderManager.ViewModels
                                 // Update progress to show completion of this folder
                                 var progressEnd = (double)(processed + 1) / total;
                                 progressDialog.UpdateProgress(progressEnd, $"Completed: {result.FolderName}");
+
+                                // Delete the source folder after successful copy (move semantics)
+                                try
+                                {
+                                    Directory.Delete(sourceFolderPath, recursive: true);
+                                }
+                                catch (Exception deleteEx)
+                                {
+                                    // Non-fatal: log the failure but keep the import result as success
+                                    System.Diagnostics.Debug.WriteLine(
+                                        $"[Import] Failed to delete source '{sourceFolderPath}': {deleteEx.Message}");
+                                    result.Message = "Imported successfully (source folder could not be removed automatically).";
+                                }
                             }
                             else
                             {
@@ -1982,7 +1995,6 @@ namespace ImageFolderManager.ViewModels
                 if (e.Success && _shellTreeView != null)
                 {
                     
-
                     // Validate TreeView state before operation
                     if (!ValidateTreeViewState("folder operation"))
                     {
@@ -1996,6 +2008,15 @@ namespace ImageFolderManager.ViewModels
                     if (e.IsUndoOperation)
                     {
                         operationType = FolderOperationType.UndoMove;
+                    }
+
+                    if (e.Operation == FolderOperation.Refresh)
+                    {
+                        await _shellTreeView.RefreshTreeFull();
+                        StatusMessage = e.IsUndoOperation
+                            ? "Undo completed successfully."
+                            : "Refresh completed.";
+                        return;
                     }
 
                     // SPECIAL HANDLING FOR MOVE OPERATIONS

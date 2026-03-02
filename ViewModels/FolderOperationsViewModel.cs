@@ -98,19 +98,14 @@ namespace ImageFolderManager.ViewModels
                 if (result.OperationType == UndoOperationType.MultiMove
                     && result.MultiPaths.Count > 0)
                 {
-                    foreach (var (prev, restored) in result.MultiPaths)
+                    OnFolderOperationCompleted(new FolderOperationEventArgs
                     {
-                        OnFolderOperationCompleted(new FolderOperationEventArgs
-                        {
-                            Operation = FolderOperation.Move,
-                            SourcePath = prev,
-                            DestinationPath = restored,
-                            Success = true,
-                            IsUndoOperation = true,
-                            Timestamp = DateTime.Now
-                        });
-                        await Task.Delay(50);
-                    }
+                        Operation = FolderOperation.Refresh,
+                        SourcePath = result.MultiPaths[0].RestoredPath,   // representative path for status
+                        Success = true,
+                        IsUndoOperation = true,
+                        Timestamp = DateTime.Now
+                    });
                 }
                 else
                 {
@@ -163,8 +158,15 @@ namespace ImageFolderManager.ViewModels
 
             try
             {
-                string folderName = Microsoft.VisualBasic.Interaction.InputBox(
-                    "Enter folder name:", "Create New Folder", "New Folder");
+                var dialog = new Views.CreateFolderDialog(parentFolder.FolderPath)
+                {
+                    Owner = Application.Current.MainWindow
+                };
+
+                if (dialog.ShowDialog() != true)
+                    return;
+
+                string folderName = dialog.FolderName;
 
                 if (string.IsNullOrWhiteSpace(folderName))
                     return;
@@ -209,11 +211,10 @@ namespace ImageFolderManager.ViewModels
 
             try
             {
-                var result = MessageBox.Show(
-                    $"Are you sure you want to delete:\n\n{folder.FolderPath}\n\nThis will move it to the Recycle Bin.",
-                    "Confirm Delete", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+                var confirm = Views.DeleteConfirmDialog.ForSingle(folder.FolderPath);
+                confirm.Owner = Application.Current.MainWindow;
 
-                if (result != MessageBoxResult.Yes)
+                if (confirm.ShowDialog() != true)
                     return false;
 
                 // Note: Delete is intentionally NOT added to the undo stack.
@@ -259,11 +260,12 @@ namespace ImageFolderManager.ViewModels
             if (folderList.Count == 1)
                 return await DeleteFolderAsync(folderList[0]);
 
-            var result = MessageBox.Show(
-                $"Are you sure you want to delete {folderList.Count} folders?\nThey will be moved to the Recycle Bin.",
-                "Confirm Delete Multiple", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+            var confirm = Views.DeleteConfirmDialog.ForMultiple(
+                folderList.Select(f => f.FolderPath));
+            confirm.Owner = Application.Current.MainWindow;
 
-            if (result != MessageBoxResult.Yes) return false;
+            if (confirm.ShowDialog() != true)
+                return false;
 
             var progressDialog = new ProgressDialog(
                 "Deleting Folders",
@@ -328,8 +330,15 @@ namespace ImageFolderManager.ViewModels
 
             try
             {
-                string newName = Microsoft.VisualBasic.Interaction.InputBox(
-                    "Enter new folder name:", "Rename Folder", folder.Name);
+                var dialog = new Views.RenameFolderDialog(folder.Name)
+                {
+                    Owner = Application.Current.MainWindow
+                };
+
+                if (dialog.ShowDialog() != true)
+                    return false;
+
+                string newName = dialog.NewName;
 
                 if (string.IsNullOrWhiteSpace(newName) || newName == folder.Name)
                     return false;

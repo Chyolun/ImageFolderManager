@@ -1,0 +1,103 @@
+﻿<mah:MetroWindow x:Class="ImageFolderManager.Views.RenameFolderDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:mah="http://metro.mahapps.com/winfx/xaml/controls"
+        mc:Ignorable="d"
+        Title="Rename Folder"
+        Height="210"
+        Width="420"
+        ResizeMode="NoResize"
+        WindowStartupLocation="CenterOwner"
+        GlowBrush="{DynamicResource MahApps.Brushes.Accent}"
+        BorderBrush="{DynamicResource MahApps.Brushes.Accent}"
+        Background="{DynamicResource MahApps.Brushes.Control.Background}">
+
+    <Grid Margin="20,16,20,20">
+        <Grid.RowDefinitions>
+            <!-- Description -->
+            <RowDefinition Height="Auto"/>
+            <!-- Current name row -->
+            <RowDefinition Height="Auto"/>
+            <!-- New name input row -->
+            <RowDefinition Height="Auto"/>
+            <!-- Spacer -->
+            <RowDefinition Height="*"/>
+            <!-- Button footer -->
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Description -->
+        <TextBlock Grid.Row="0"
+                   Text="Enter a new name for the selected folder."
+                   TextWrapping="Wrap"
+                   FontSize="12"
+                   Foreground="{StaticResource StatusMutedBrush}"
+                   Margin="0,0,0,16"/>
+
+        <!-- Current folder name (read-only, selectable) -->
+        <Grid Grid.Row="1" Margin="0,0,0,10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="100"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <TextBlock Grid.Column="0"
+                       Text="Current name:"
+                       VerticalAlignment="Center"
+                       Foreground="{DynamicResource MahApps.Brushes.ThemeForeground}"/>
+
+            <!--
+                IsReadOnly + IsReadOnlyCaretVisible: visually matches a label
+                but allows the user to select and copy the old name if needed.
+            -->
+            <TextBox Grid.Column="1"
+                     x:Name="CurrentNameText"
+                     IsReadOnly="True"
+                     IsReadOnlyCaretVisible="True"
+                     Background="Transparent"
+                     BorderThickness="0"
+                     Padding="0"
+                     Cursor="IBeam"
+                     FontWeight="SemiBold"
+                     Foreground="{StaticResource StatusSuccessBrush}"
+                     VerticalAlignment="Center"/>
+        </Grid>
+
+        <!-- New name input -->
+        <Grid Grid.Row="2">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="100"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <TextBlock Grid.Column="0"
+                       Text="New name:"
+                       VerticalAlignment="Center"
+                       Foreground="{DynamicResource MahApps.Brushes.ThemeForeground}"/>
+
+            <TextBox Grid.Column="1"
+                     x:Name="NewNameTextBox"
+                     mah:TextBoxHelper.ClearTextButton="True"
+                     mah:TextBoxHelper.Watermark="Enter new folder name…"
+                     VerticalAlignment="Center"/>
+        </Grid>
+
+        <!-- Footer: Cancel (secondary) + Rename (primary) -->
+        <StackPanel Grid.Row="4"
+                    Style="{StaticResource DialogFooterPanel}">
+
+            <Button Content="Cancel"
+                    Style="{StaticResource SecondaryButton}"
+                    Margin="{StaticResource DialogButtonSpacing}"
+                    IsCancel="True"
+                    Click="Cancel_Click"/>
+
+            <Button Content="Rename"
+                    Style="{StaticResource PrimaryButton}"
+                    IsDefault="True"
+                    Click="Rename_Click"/>
+        </StackPanel>
+    </Grid>
+</mah:MetroWindow>

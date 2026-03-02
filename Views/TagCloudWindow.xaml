@@ -134,7 +134,7 @@
             <Button Grid.Column="1"
                     Name="AddCategoryButton"
                     Content="Add Category"
-                    Width="100"
+                    MinWidth="100"
                     Height="30"
                     Click="AddCategoryButton_Click"
                     Margin="0,0,10,0"/>
@@ -142,7 +142,7 @@
             <Button Grid.Column="2"
                     Name="RefreshButton"
                     Content="Refresh"
-                    Width="80"
+                    MinWidth="80"
                     Height="30"
                     Click="RefreshButton_Click"
                     Margin="0,0,10,0"/>
