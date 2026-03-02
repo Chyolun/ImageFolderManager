@@ -92,6 +92,11 @@ namespace ImageFolderManager.Controls
 
         private HierarchicalNodeManager _nodeManager;
         private FolderOperationCoordinator _coordinator;
+
+        private CancellationTokenSource _expansionCts = new CancellationTokenSource();
+        private const int BATCH_SIZE = 30; 
+        private const int BATCH_DELAY_MS = 8; 
+
         public ShellTreeView()
         {
             InitializeComponent();
@@ -601,8 +606,7 @@ namespace ImageFolderManager.Controls
                     {
                         ShellTreeViewControl.Items.Add(rootItem);
 
-                        // Auto expand the root with animation
-                        await ExpandItemWithAnimationAsync(rootItem);
+                        rootItem.IsExpanded = true;
                         _expandedPaths.Add(rootShellObject.ParsingName);
                     }
                 }
@@ -614,13 +618,7 @@ namespace ImageFolderManager.Controls
 
                     // Only add if not already present (extra safety check)
                     if (ShellTreeViewControl.Items.Count == 0)
-                    {
-                        ShellTreeViewControl.Items.Add(rootItem);
-
-                        // Auto expand "This PC" with animation
-                        await ExpandItemWithAnimationAsync(rootItem);
-                        _expandedPaths.Add(desktop.ParsingName);
-                    }
+                         ShellTreeViewControl.Items.Add(rootItem);
                 }
             }
             catch (Exception ex)
@@ -1871,24 +1869,20 @@ namespace ImageFolderManager.Controls
 
         private List<TreeViewItem> GetAllVisibleTreeViewItems()
         {
-            var items = new List<TreeViewItem>();
-            CollectVisibleTreeViewItems(ShellTreeViewControl, items);
-            return items;
+            var result = new List<TreeViewItem>();
+            CollectVisibleItems(ShellTreeViewControl.Items, result);
+            return result;
         }
 
-        private void CollectVisibleTreeViewItems(ItemsControl container, List<TreeViewItem> items)
+        private void CollectVisibleItems(ItemCollection items, List<TreeViewItem> result)
         {
-            foreach (var item in container.Items)
+            foreach (var item in items)
             {
-                var treeViewItem = container.ItemContainerGenerator.ContainerFromItem(item) as TreeViewItem;
-                if (treeViewItem != null)
+                if (item is TreeViewItem tvi)
                 {
-                    items.Add(treeViewItem);
-
-                    if (treeViewItem.IsExpanded)
-                    {
-                        CollectVisibleTreeViewItems(treeViewItem, items);
-                    }
+                    result.Add(tvi);
+                    if (tvi.IsExpanded && tvi.Items.Count > 0)
+                        CollectVisibleItems(tvi.Items, result);
                 }
             }
         }
@@ -2015,21 +2009,20 @@ namespace ImageFolderManager.Controls
 
         private void SelectAllVisibleItems()
         {
-            // Clear current selection
+            const int MAX_SELECT = 200; 
+            var allVisible = GetAllVisibleTreeViewItems();
             ClearSelectedItems();
 
-            // Get all visible items and select them
-            var allVisibleItems = GetAllVisibleTreeViewItems();
-            foreach (var item in allVisibleItems)
+            int count = 0;
+            foreach (var item in allVisible)
             {
+                if (count++ >= MAX_SELECT) break;
                 SelectItem(item);
             }
 
-            // Set the last selected item
-            if (allVisibleItems.Count > 0)
-            {
-                _lastSelectedItem = allVisibleItems.Last();
-            }
+            if (allVisible.Count > MAX_SELECT)
+                Debug.WriteLine($"SelectAll limited to {MAX_SELECT} of {allVisible.Count} items");
+       
         }
 
         #endregion
@@ -2186,6 +2179,7 @@ namespace ImageFolderManager.Controls
             return item;
         }
 
+
         private async void LoadNodeWithStateManagement(TreeViewItem treeViewItem, ShellObject shellObject)
         {
             string path = shellObject.ParsingName;
@@ -2198,50 +2192,73 @@ namespace ImageFolderManager.Controls
 
             ShowLoadingIndicator();
             RemoveDummyNode(treeViewItem);
+            _expansionCts.Cancel();
+            _expansionCts = new CancellationTokenSource();
+            var token = _expansionCts.Token;
 
             var shellFolder = shellObject as ShellFolder;
-            if (shellFolder != null)
+            if (shellFolder == null) { HideLoadingIndicator(); return; }
+
+            bool success = false;
+            try
             {
-                Task.Run(() =>
+                var sortedChildren = await Task.Run(() =>
                 {
-                    bool success = false;
+                    var childShellObjects = new List<ShellFolder>();
                     try
                     {
-                        var childShellObjects = new List<ShellFolder>();
-
                         foreach (ShellObject child in shellFolder)
                         {
+                            if (token.IsCancellationRequested) break;
                             if (child is ShellFolder childFolder)
-                            {
                                 childShellObjects.Add(childFolder);
-                            }
                         }
-
-                        var sortedChildren = childShellObjects
-                            .OrderBy(child => child.Name, WindowsNaturalStringComparer.Instance)
-                            .ToList();
-
-                        Application.Current.Dispatcher.Invoke(() =>
-                        {
-                            foreach (var childFolder in sortedChildren)
-                            {
-                                var childItem = CreateShellTreeViewItem(childFolder);
-                                treeViewItem.Items.Add(childItem);
-                            }
-                        });
-
-                        success = true;
                     }
                     catch (Exception ex)
                     {
-                        Debug.WriteLine($"Error: {ex.Message}");
+                        Debug.WriteLine($"Error enumerating children: {ex.Message}");
                     }
-                    finally
+                    return childShellObjects
+                        .OrderBy(c => c.Name, WindowsNaturalStringComparer.Instance)
+                        .ToList();
+                }, token);
+
+                if (token.IsCancellationRequested) return;
+                for (int i = 0; i < sortedChildren.Count; i += BATCH_SIZE)
+                {
+                    if (token.IsCancellationRequested) break;
+
+                    var batch = sortedChildren.Skip(i).Take(BATCH_SIZE).ToList();
+
+                    await Application.Current.Dispatcher.InvokeAsync(() =>
                     {
-                        _nodeManager.CompleteLoading(path, success);
-                        Application.Current.Dispatcher.Invoke(HideLoadingIndicator);
-                    }
-                });
+                        if (token.IsCancellationRequested) return;
+                        foreach (var childFolder in batch)
+                        {
+                            var childItem = CreateShellTreeViewItem(childFolder);
+                            treeViewItem.Items.Add(childItem);
+                            string childPath = PathNormalizationService.GetCanonicalPath(childFolder.ParsingName);
+                            TrySafeAddPathMapping(childPath, childItem);
+                        }
+                    }, System.Windows.Threading.DispatcherPriority.Background);
+                    if (i + BATCH_SIZE < sortedChildren.Count)
+                        await Task.Delay(BATCH_DELAY_MS, token).ContinueWith(_ => { }); // swallow cancel
+                }
+
+                success = !token.IsCancellationRequested;
+            }
+            catch (OperationCanceledException)
+            {
+                Debug.WriteLine($"Node loading cancelled: {path}");
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error loading children: {ex.Message}");
+            }
+            finally
+            {
+                await _nodeManager.CompleteLoading(path, success);
+                Application.Current.Dispatcher.Invoke(HideLoadingIndicator);
             }
         }
 
@@ -4225,8 +4242,11 @@ namespace ImageFolderManager.Controls
             {
                 if (!Directory.Exists(directoryPath))
                     return false;
-
-                return Directory.GetDirectories(directoryPath, "*", SearchOption.TopDirectoryOnly).Length > 0;
+                using (var enumerator = Directory.EnumerateDirectories(
+                    directoryPath, "*", SearchOption.TopDirectoryOnly).GetEnumerator())
+                {
+                    return enumerator.MoveNext();
+                }
             }
             catch
             {

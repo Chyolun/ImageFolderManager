@@ -512,6 +512,11 @@
                   PreviewMouseLeftButtonUp="TreeView_PreviewMouseLeftButtonUp"
                   VirtualizingPanel.IsVirtualizing="True"
                   VirtualizingPanel.VirtualizationMode="Recycling">
+                <TreeView.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <VirtualizingStackPanel/>
+                    </ItemsPanelTemplate>
+                </TreeView.ItemsPanel>
             </TreeView>
         </Grid>
     </Border>

@@ -1,5 +1,6 @@
 ﻿using ImageFolderManager.Models;
 using ImageFolderManager.Services;
+using ImageFolderManager.Controls;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
@@ -7,6 +8,7 @@ using System.Threading;
 using System.Windows.Media.Imaging;
 using System;
 using System.IO;
+using System.Collections.Generic;
 
 public class ImageInfo : INotifyPropertyChanged, IDisposable
 {
@@ -76,6 +78,20 @@ public class ImageInfo : INotifyPropertyChanged, IDisposable
     private bool _isDisposed;
     private CancellationTokenSource _loadingCts;
 
+    private bool _isAnimated;
+    public bool IsAnimated
+    {
+        get => _isAnimated;
+        private set { if (_isAnimated != value) { _isAnimated = value; OnPropertyChanged(); } }
+    }
+
+    private List<AnimatedFrame> _animatedFrames;
+    public List<AnimatedFrame> AnimatedFrames
+    {
+        get => _animatedFrames;
+        private set { if (_animatedFrames != value) { _animatedFrames = value; OnPropertyChanged(); } }
+    }
+
     /// <summary>
     /// Loads the thumbnail for this image
     /// </summary>
@@ -109,6 +125,21 @@ public class ImageInfo : INotifyPropertyChanged, IDisposable
                 Thumbnail = null;
             }
 
+           // Check if it's a GIF
+            string ext = Path.GetExtension(normalizedPath).ToLowerInvariant();
+            if (ext == ".gif" || ext == ".webp")
+            {
+                var frames = await AnimatedImageLoader.LoadFramesAsync(normalizedPath, token);
+                if (frames != null && frames.Count > 1)
+                {
+                    AnimatedFrames = frames;
+                    IsAnimated = true;
+                    IsLoaded = true;
+                    IsLoading = false;
+                    return true;
+                }
+            }
+        
             // Load thumbnail through ImageCache
             var thumbnail = await ImageCache.LoadThumbnailAsync(FilePath, token, progress);
 

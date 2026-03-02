@@ -134,7 +134,9 @@
     <Compile Include="Commands\IFolderCommand.cs" />
     <Compile Include="Commands\MoveFolderCommand.cs" />
     <Compile Include="Commands\RenameFolderCommand.cs" />
+    <Compile Include="Controls\AnimatedImageControl.cs" />
     <Compile Include="Models\TagDisplayInfo.cs" />
+    <Compile Include="Services\AnimatedImageLoader.cs" />
     <Compile Include="Services\AppSettings.cs" />
     <Compile Include="Services\CommandSystemConfiguration.cs" />
     <Compile Include="Services\CommandSystemInitializer.cs" />
