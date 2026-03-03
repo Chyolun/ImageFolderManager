@@ -17,6 +17,7 @@ using MahApps.Metro.Controls.Dialogs;
 using Microsoft.Web.WebView2.Wpf;
 using CommunityToolkit.Mvvm.Input;
 using System.Web;
+using System.Linq;
 
 
 
@@ -435,6 +436,108 @@ namespace ImageFolderManager
 
             item.ContextMenu = contextMenu;
         }
+
+        /// <summary>
+        /// Handles Tools > Compression click.
+        /// Prompts the user with ImageCompressionDialog, then compresses
+        /// all images in the currently selected folder to WebP.
+        /// </summary>
+        private async void Compression_Click(object sender, RoutedEventArgs e)
+        {
+            var folder = ViewModel?.SelectedFolder;
+            if (folder == null)
+            {
+                MessageBox.Show(
+                    "Please select a folder first.",
+                    "No Folder Selected",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
+                return;
+            }
+
+
+            var dialog = new ImageCompressionDialog(folder.FolderPath, folder.Name) { Owner = this };
+            if (dialog.ShowDialog() != true)
+                return;
+
+            int quality = dialog.Quality;
+            bool deleteOrig = dialog.DeleteSourceFiles;
+
+            var menuItem = sender as MenuItem;
+            if (menuItem != null) menuItem.IsEnabled = false;
+            ViewModel.StatusMessage = $"Compressing images in '{folder.Name}'...";
+
+            var metroWindow = this as MahApps.Metro.Controls.MetroWindow;
+            var progressCtrl = await metroWindow.ShowProgressAsync(
+                "Compressing Images",
+                $"Converting images in '{folder.Name}' to WebP...",
+                isCancelable: true);
+            progressCtrl.SetIndeterminate();
+
+            try
+            {
+                var service = new ImageCompressionService();
+                var cts = new System.Threading.CancellationTokenSource();
+                progressCtrl.Canceled += (s, args) => cts.Cancel();
+
+                var progressReporter = new Progress<double>(v =>
+                {
+                    progressCtrl.SetProgress(v);
+                    progressCtrl.SetMessage(
+                        $"Converting images in '{folder.Name}' to WebP... {(int)(v * 100)}%");
+                });
+
+                var result = await service.CompressImagesAsync(
+                    folder.FolderPath, quality, deleteOrig, progressReporter, cts.Token);
+
+                await progressCtrl.CloseAsync();
+
+                if (result.TotalFiles == 0)
+                {
+                    ViewModel.StatusMessage = "No supported images found in the selected folder.";
+                    MessageBox.Show(
+                        "No supported image files were found in the selected folder.",
+                        "Compression", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
+
+                ViewModel.StatusMessage = result.Summary;
+
+                string msg = result.Summary;
+                if (result.FailedFiles > 0)
+                {
+                    msg += $"\n\nFailed files ({result.FailedFiles}):\n"
+                         + string.Join("\n", result.Errors.Take(10));
+                    if (result.Errors.Count > 10)
+                        msg += $"\n...and {result.Errors.Count - 10} more.";
+                }
+
+                MessageBox.Show(msg, "Compression Complete", MessageBoxButton.OK,
+                    result.FailedFiles > 0 ? MessageBoxImage.Warning : MessageBoxImage.Information);
+
+                // Refresh thumbnails so new .webp files appear in the preview panel
+                await ViewModel.LoadImagesForSelectedFolderAsync();
+            }
+            catch (OperationCanceledException)
+            {
+                await progressCtrl.CloseAsync();
+                ViewModel.StatusMessage = "Compression cancelled.";
+            }
+            catch (Exception ex)
+            {
+                await progressCtrl.CloseAsync();
+                ViewModel.StatusMessage = $"Compression failed: {ex.Message}";
+                MessageBox.Show($"An error occurred during compression:\n\n{ex.Message}",
+                    "Compression Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            finally
+            {
+                if (menuItem != null) menuItem.IsEnabled = true;
+            }
+        }
+
+
+
 
         private void TagsCloud_Click(object sender, RoutedEventArgs e)
         {

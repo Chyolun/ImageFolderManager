@@ -146,6 +146,7 @@
     <Compile Include="Services\FileSystemEventProcessor.cs" />
     <Compile Include="Services\FolderOperationCoordinator.cs" />
     <Compile Include="Services\HierarchicalNodeManager.cs" />
+    <Compile Include="Services\ImageCompressionService.cs" />
     <Compile Include="Services\PathLockManager.cs" />
     <Compile Include="Services\PathNormalizationService.cs" />
     <Compile Include="Services\PathService.cs" />
@@ -178,6 +179,9 @@
     </Compile>
     <Compile Include="Views\DuplicateFoldersDialog.xaml.cs">
       <DependentUpon>DuplicateFoldersDialog.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="Views\ImageCompressionDialog.xaml.cs">
+      <DependentUpon>ImageCompressionDialog.xaml</DependentUpon>
     </Compile>
     <Compile Include="Views\ImportFolderDialog.xaml.cs">
       <DependentUpon>ImportFolderDialog.xaml</DependentUpon>
@@ -217,6 +221,10 @@
       <Generator>MSBuild:Compile</Generator>
     </Page>
     <Page Include="Views\DuplicateFoldersDialog.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="Views\ImageCompressionDialog.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>

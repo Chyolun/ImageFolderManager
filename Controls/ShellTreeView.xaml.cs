@@ -3200,9 +3200,6 @@ namespace ImageFolderManager.Controls
                             var newFolderNode = new FolderNode(newPath);
                             renamedItem.Tag = newFolderNode;
                             renamedItem.Header = FolderTreeItemFactory.CreateHeader(newFolderNode.Name);
-                            renamedItem.RenderTransform = new ScaleTransform(1.0, 1.0);
-                            renamedItem.RenderTransformOrigin = new Point(0.5, 0.5);
-
                             // Update path mapping
                             _pathToTreeViewItem.Remove(oldPath);
                             _pathToTreeViewItem[newPath] = renamedItem;
@@ -3401,7 +3398,7 @@ namespace ImageFolderManager.Controls
                         // *** CRITICAL FIX: Update the TreeViewItem's  FolderNode to point to new path ***
                         var newFolderNode = new FolderNode(normalizedDestPath);
                         sourceItem.Tag = newFolderNode;
-                        sourceItem.Header = FolderTreeItemFactory.CreateItem(newFolderNode);
+                        sourceItem.Header = FolderTreeItemFactory.CreateHeader(newFolderNode.Name);
                         // Handle based on destination parent loading state
                         if (destParentWasNotLoaded)
                         {

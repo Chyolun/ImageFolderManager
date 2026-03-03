@@ -54,6 +54,7 @@ D:\ImageFolderManager\obj\Debug\Views\BatchTagsDialog.baml
 D:\ImageFolderManager\obj\Debug\Views\CreateFolderDialog.baml
 D:\ImageFolderManager\obj\Debug\Views\DeleteConfirmDialog.baml
 D:\ImageFolderManager\obj\Debug\Views\DuplicateFilterSettingsDialog.baml
+D:\ImageFolderManager\obj\Debug\Views\ImageCompressionDialog.baml
 D:\ImageFolderManager\obj\Debug\Views\ImportFolderDialog.baml
 D:\ImageFolderManager\obj\Debug\Views\PreviewSizeDialog.baml
 D:\ImageFolderManager\obj\Debug\Views\ProgressDialog.baml
@@ -64,6 +65,7 @@ D:\ImageFolderManager\obj\Debug\Views\CreateFolderDialog.g.cs
 D:\ImageFolderManager\obj\Debug\Views\DeleteConfirmDialog.g.cs
 D:\ImageFolderManager\obj\Debug\Views\DuplicateFilterSettingsDialog.g.cs
 D:\ImageFolderManager\obj\Debug\Views\DuplicateFoldersDialog.g.cs
+D:\ImageFolderManager\obj\Debug\Views\ImageCompressionDialog.g.cs
 D:\ImageFolderManager\obj\Debug\Views\ImportFolderDialog.g.cs
 D:\ImageFolderManager\obj\Debug\Views\MainWindow.g.cs
 D:\ImageFolderManager\obj\Debug\Views\PreviewSizeDialog.g.cs
