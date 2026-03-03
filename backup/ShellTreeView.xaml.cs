@@ -50,7 +50,7 @@ namespace ImageFolderManager.Controls
         private Point _startPoint;
         private bool _isDragging;
         private TreeViewItem _draggedItem;
-        private FolderNode _draggedFolderNode;
+        private ShellObject _draggedShellObject;
 
         // Track expanded paths
         private HashSet<string> _expandedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -84,7 +84,6 @@ namespace ImageFolderManager.Controls
         private TreeViewItem _currentDropTarget;
         private Storyboard _dropTargetAnimation;
         private Border _dropTargetOverlay;
-        private FolderNode _rootNode;
 
         // Modern visual effects
         private readonly Duration _animationDuration = new Duration(TimeSpan.FromMilliseconds(200));
@@ -94,8 +93,7 @@ namespace ImageFolderManager.Controls
         private HierarchicalNodeManager _nodeManager;
         private FolderOperationCoordinator _coordinator;
 
-        private readonly Dictionary<TreeViewItem, CancellationTokenSource> _expansionCts
-                 = new Dictionary<TreeViewItem, CancellationTokenSource>();
+        private CancellationTokenSource _expansionCts = new CancellationTokenSource();
         private const int BATCH_SIZE = 30; 
         private const int BATCH_DELAY_MS = 8; 
 
@@ -250,7 +248,7 @@ namespace ImageFolderManager.Controls
 
                 // Reset any drag/drop state
                 _draggedItem = null;
-                _draggedFolderNode = null;
+                _draggedShellObject = null;
                 _lastSelectedItem = null;
 
                 Debug.WriteLine("TreeView core state cleared");
@@ -590,32 +588,43 @@ namespace ImageFolderManager.Controls
 
         private async Task InitializeShellTreeAsync()
         {
-            // Clear all existing state
-            ShellTreeViewControl.Items.Clear();
-            _pathToTreeViewItem.Clear();
-            _expansionCts.Clear();
-
-            if (!Directory.Exists(_rootDirectory))
+            try
             {
-                Debug.WriteLine($"InitializeShellTreeAsync: path does not exist: {_rootDirectory}");
-                return;
+                // IMPORTANT: Always clear existing items first to prevent duplication
+                ShellTreeViewControl.Items.Clear();
+                _pathToTreeViewItem.Clear();
+                _expandedPaths.Clear();
+
+                if (PathService.DirectoryExists(_rootDirectory))
+                {
+                    // Use the specified root directory
+                    var rootShellObject = ShellObject.FromParsingName(_rootDirectory);
+                    var rootItem = await CreateShellTreeViewItemAsync(rootShellObject);
+
+                    // Only add if not already present (extra safety check)
+                    if (ShellTreeViewControl.Items.Count == 0)
+                    {
+                        ShellTreeViewControl.Items.Add(rootItem);
+
+                        rootItem.IsExpanded = true;
+                        _expandedPaths.Add(rootShellObject.ParsingName);
+                    }
+                }
+                else
+                {
+                    // Fall back to "This PC" if no root directory is specified
+                    var desktop = ShellObject.FromParsingName("::{20D04FE0-3AEA-1069-A2D8-08002B30309D}");
+                    var rootItem = await CreateShellTreeViewItemAsync(desktop);
+
+                    // Only add if not already present (extra safety check)
+                    if (ShellTreeViewControl.Items.Count == 0)
+                         ShellTreeViewControl.Items.Add(rootItem);
+                }
             }
-
-            // Build the root node (pure filesystem object — no COM)
-            _rootNode = new FolderNode(_rootDirectory);
-
-            // Create the root TreeViewItem on the UI thread
-            var rootItem = FolderTreeItemFactory.CreateItem(_rootNode);
-            ShellTreeViewControl.Items.Add(rootItem);
-            _pathToTreeViewItem[_rootDirectory] = rootItem;
-
-            // Expand the root immediately so the first level is visible.
-            // ExpandAsync inserts children in background-priority batches,
-            // so the window stays responsive even with hundreds of sub-folders.
-            rootItem.IsExpanded = true;
-            await ExpandNodeAsync(rootItem, _rootNode);
-
-            Debug.WriteLine($"InitializeShellTreeAsync complete: {_rootDirectory}");
+            catch (Exception ex)
+            {
+                HandleException("Error initializing shell tree", ex);
+            }
         }
 
         public async void ChangeRootDirectory(string newRootDirectory)
@@ -665,6 +674,255 @@ namespace ImageFolderManager.Controls
                 HideLoadingIndicator();
                 HandleException("Error changing root directory", ex);
             }
+        }
+
+        #endregion
+
+
+        #region Modern Tree Item Creation and Management
+        /// <summary>
+        /// Creates a TreeViewItem for ShellObject with improved handling for newly created folders
+        /// </summary>
+        private async Task<TreeViewItem> CreateShellTreeViewItemAsync(ShellObject shellObject)
+        {
+            return await Task.Run(() =>
+            {
+                return Application.Current.Dispatcher.Invoke(() =>
+                {
+                    // Create the tree item
+                    var item = new TreeViewItem
+                    {
+                        Tag = shellObject,
+                        IsExpanded = false,
+                        RenderTransform = new ScaleTransform(1.0, 1.0), // Initialize ScaleTransform
+                        RenderTransformOrigin = new Point(0.5, 0.5),
+                         HorizontalContentAlignment = HorizontalAlignment.Left,
+                        VerticalContentAlignment = VerticalAlignment.Center
+                    };
+
+                    // This ensures the folder name is displayed correctly
+                    item.Header = CreateModernShellObjectHeader(shellObject);
+
+                    // Only add dummy nodes for existing folders with subfolders
+                    try
+                    {
+                        // Only process if this is a folder (not a file)
+                        if (shellObject is ShellFolder)
+                        {
+                            string path = PathService.GetPathFromShellObject(shellObject);
+
+                            // Only check for subfolders if we have a valid file system path
+                            if (!string.IsNullOrEmpty(path) && Directory.Exists(path))
+                            {
+                                // Check directly with the file system - don't use cached information
+                                bool hasSubfolders = false;
+                                try
+                                {
+                                    // Use a more robust check for subdirectories
+                                    string[] subdirectories = Directory.GetDirectories(path, "*", SearchOption.TopDirectoryOnly);
+                                    hasSubfolders = subdirectories.Length > 0;
+
+                                    // Additional validation: ensure subdirectories actually exist
+                                    if (hasSubfolders)
+                                    {
+                                        hasSubfolders = subdirectories.Any(dir => Directory.Exists(dir));
+                                    }
+                                }
+                                catch (UnauthorizedAccessException)
+                                {
+                                    // For unauthorized directories, assume they might have subdirectories
+                                    hasSubfolders = true;
+                                }
+                                catch (Exception ex)
+                                {
+                                    Debug.WriteLine($"Error checking for subdirectories: {ex.Message}");
+                                    hasSubfolders = false;
+                                }
+
+                                // CRITICAL FIX: Only add loading dummy if there are ACTUALLY subdirectories
+                                // AND the folder is not newly created (empty)
+                                if (hasSubfolders)
+                                {
+                                    // Double-check: make sure this isn't a newly created empty folder
+                                    // by checking if it actually contains any subdirectories
+                                    try
+                                    {
+                                        var actualSubDirs = Directory.GetDirectories(path);
+                                        if (actualSubDirs.Length > 0)
+                                        {
+                                            // Only add the dummy node if there are actually subdirectories
+                                            var loadingItem = new TreeViewItem
+                                            {
+                                                Header = CreateLoadingHeader(),
+                                                IsEnabled = false
+                                            };
+                                            item.Items.Add(loadingItem);
+                                        }
+                                    }
+                                    catch
+                                    {
+                                        // If we can't verify subdirectories, don't add dummy node
+                                        // This prevents the loading issue for new folders
+                                        Debug.WriteLine($"Could not verify subdirectories for: {path}");
+                                    }
+                                }
+                            }
+                            else
+                            {
+                                // For special shell folders (like This PC, etc.), add dummy node as before
+                                var loadingItem = new TreeViewItem
+                                {
+                                    Header = CreateLoadingHeader(),
+                                    IsEnabled = false
+                                };
+                                item.Items.Add(loadingItem);
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"Error checking for subfolders: {ex.Message}");
+                        // If there's an error, don't add dummy node to be safe
+                        // This ensures the folder name is still visible
+                    }
+
+                    // Store in dictionary for quick lookups
+                    if (!string.IsNullOrEmpty(shellObject.ParsingName))
+                    {
+                        string path = PathService.GetPathFromShellObject(shellObject);
+                        if (!string.IsNullOrEmpty(path))
+                        {
+                            _pathToTreeViewItem[path] = item;
+                        }
+                    }
+
+                    return item;
+                });
+            });
+        }
+
+        private StackPanel CreateModernShellObjectHeader(ShellObject shellObject)
+        {
+            var panel = new StackPanel { Orientation = Orientation.Horizontal };
+
+            try
+            {
+                // Create modern folder icon
+                var iconContainer = new Border
+                {
+                    Width = 20,
+                    Height = 20,
+                    Margin = new Thickness(0, 0, 8, 0),
+                    Background = new SolidColorBrush(Color.FromArgb(40, 0, 120, 212)),
+                    CornerRadius = new CornerRadius(4),
+                    Child = new System.Windows.Shapes.Path
+                    {
+                        Width = 12,
+                        Height = 12,
+                        Fill = new SolidColorBrush(Color.FromRgb(0, 120, 212)),
+                        Data = Geometry.Parse("M4 4h16v12H4V4zm2 2v8h12V6H6z M2 6h2v10h16v2H2V6z"),
+                        HorizontalAlignment = HorizontalAlignment.Center,
+                        VerticalAlignment = VerticalAlignment.Center
+                    }
+                };
+
+                // Try to get shell icon as fallback
+                try
+                {
+                    var smallIcon = shellObject.Thumbnail.SmallBitmapSource;
+                    if (smallIcon != null)
+                    {
+                        iconContainer.Child = new Image
+                        {
+                            Source = smallIcon,
+                            Width = 16,
+                            Height = 16,
+                            HorizontalAlignment = HorizontalAlignment.Center,
+                            VerticalAlignment = VerticalAlignment.Center
+                        };
+                    }
+                }
+                catch
+                {
+                    // Use default folder icon if shell icon fails
+                }
+
+                panel.Children.Add(iconContainer);
+
+                // Add the text with modern styling
+                var textBlock = new TextBlock
+                {
+                    Text = shellObject.Name,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Foreground = Brushes.White,
+                    FontWeight = FontWeights.Normal,
+                    FontSize = 13
+                };
+                panel.Children.Add(textBlock);
+            }
+            catch
+            {
+                // Fallback if anything fails
+                var textBlock = new TextBlock
+                {
+                    Text = shellObject.Name,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Foreground = Brushes.White,
+                    FontWeight = FontWeights.Normal,
+                    FontSize = 13,
+                    Margin = new Thickness(24, 0, 0, 0) // Account for missing icon space
+                };
+                panel.Children.Add(textBlock);
+            }
+
+            return panel;
+        }
+
+        private StackPanel CreateLoadingHeader()
+        {
+            var panel = new StackPanel { Orientation = Orientation.Horizontal };
+
+            // Loading spinner
+            var spinner = new Border
+            {
+                Width = 16,
+                Height = 16,
+                Margin = new Thickness(0, 0, 8, 0),
+                Child = new Ellipse
+                {
+                    Width = 12,
+                    Height = 12,
+                    Stroke = new SolidColorBrush(Color.FromArgb(128, 255, 255, 255)),
+                    StrokeThickness = 2,
+                    StrokeDashArray = new DoubleCollection { 8, 4 },
+                    RenderTransformOrigin = new Point(0.5, 0.5),
+                    RenderTransform = new RotateTransform()
+                }
+            };
+
+            // Animate the spinner
+            var animation = new DoubleAnimation
+            {
+                From = 0,
+                To = 360,
+                Duration = TimeSpan.FromSeconds(1),
+                RepeatBehavior = RepeatBehavior.Forever
+            };
+            ((RotateTransform)((Ellipse)spinner.Child).RenderTransform).BeginAnimation(RotateTransform.AngleProperty, animation);
+
+            panel.Children.Add(spinner);
+
+            var textBlock = new TextBlock
+            {
+                Text = "Loading...",
+                VerticalAlignment = VerticalAlignment.Center,
+                Foreground = new SolidColorBrush(Color.FromArgb(128, 255, 255, 255)),
+                FontStyle = FontStyles.Italic,
+                FontSize = 12
+            };
+            panel.Children.Add(textBlock);
+
+            return panel;
         }
 
         #endregion
@@ -999,8 +1257,8 @@ namespace ImageFolderManager.Controls
                 return;
             }
 
-            var targetNode = targetItem.Tag as FolderNode;
-            if (targetNode == null)
+            var targetShellObject = targetItem.Tag as ShellObject;
+            if (targetShellObject == null)
             {
                 e.Effects = DragDropEffects.None;
                 ClearDropTargetHighlight();
@@ -1008,7 +1266,7 @@ namespace ImageFolderManager.Controls
                 return;
             }
 
-            string targetPath = targetNode.FullPath;
+            string targetPath = PathService.GetPathFromShellObject(targetShellObject);
             if (!PathService.DirectoryExists(targetPath))
             {
                 e.Effects = DragDropEffects.None;
@@ -1199,10 +1457,10 @@ namespace ImageFolderManager.Controls
             // Get the drop target
             if (targetItem == null) return;
 
-            var targetNode = targetItem.Tag as FolderNode;
-            if (targetNode == null) return;
+            var targetShellObject = targetItem.Tag as ShellObject;
+            if (targetShellObject == null) return;
 
-            string targetPath = targetNode.FullPath;
+            string targetPath = PathService.GetPathFromShellObject(targetShellObject);
             if (!PathService.DirectoryExists(targetPath))
                 return;
 
@@ -1399,8 +1657,11 @@ namespace ImageFolderManager.Controls
                     }
                 }
 
+                // Create a shell object from the path
+                var shellObject = ShellObject.FromParsingName(path);
+
                 // Expand all parent folders
-                ExpandPathToFolder(path);
+                ExpandPathToShellObject(shellObject);
 
                 // If we already have a TreeViewItem for this path, select it
                 if (_pathToTreeViewItem.TryGetValue(path, out var treeViewItem))
@@ -1430,18 +1691,23 @@ namespace ImageFolderManager.Controls
             return PathService.IsPathWithin(_rootDirectory, path);
         }
 
-        private void ExpandPathToFolder(string path)
+        private void ExpandPathToShellObject(ShellObject shellObject)
         {
-            if (string.IsNullOrEmpty(path)) return;
+            if (shellObject == null) return;
 
             try
             {
-                // Build list of parent directories that need to be expanded
+                // Get the full path using PathService
+                string path = PathService.GetPathFromShellObject(shellObject);
+                if (string.IsNullOrEmpty(path)) return;
+
+                // Build a list of parent directories that need to be expanded
                 var directoriesToExpand = new List<string>();
                 var currentDir = new DirectoryInfo(path).Parent;
 
                 while (currentDir != null)
                 {
+                    // Stop when we reach the root directory level
                     if (!string.IsNullOrEmpty(_rootDirectory) &&
                         PathService.PathsEqual(currentDir.FullName, _rootDirectory))
                         break;
@@ -1450,32 +1716,38 @@ namespace ImageFolderManager.Controls
                     currentDir = currentDir.Parent;
                 }
 
-                // Expand from root down
-                if (ShellTreeViewControl.Items.Count == 0) return;
-
-                var rootItem = ShellTreeViewControl.Items[0] as TreeViewItem;
-                if (rootItem == null) return;
-
-                _ = rootItem.IsExpanded = true;
-
-                Task.Run(async () =>
+                // Expand the root item first
+                if (ShellTreeViewControl.Items.Count > 0)
                 {
-                    foreach (var dir in directoriesToExpand)
+                    var rootItem = ShellTreeViewControl.Items[0] as TreeViewItem;
+                    if (rootItem != null)
                     {
-                        try
+                        _ = ExpandItemWithAnimationAsync(rootItem);
+
+                        // Now find and expand each parent directory with delay for smooth animation
+                        Task.Run(async () =>
                         {
-                            if (_pathToTreeViewItem.TryGetValue(dir, out var tvi))
+                            foreach (var dir in directoriesToExpand)
                             {
-                                await Application.Current.Dispatcher.InvokeAsync(() =>
+                                try
                                 {
-                                    tvi.IsExpanded = true;
-                                });
-                                await Task.Delay(50); // Allow expansion to complete
+                                    if (_pathToTreeViewItem.TryGetValue(dir, out var treeViewItem))
+                                    {
+                                        await Application.Current.Dispatcher.InvokeAsync(async () =>
+                                        {
+                                            await ExpandItemWithAnimationAsync(treeViewItem);
+                                        });
+                                        await Task.Delay(100); // Smooth animation timing
+                                    }
+                                }
+                                catch
+                                {
+                                    // Skip if we can't find this folder
+                                }
                             }
-                        }
-                        catch { }
+                        });
                     }
-                });
+                }
             }
             catch (Exception ex)
             {
@@ -1489,10 +1761,10 @@ namespace ImageFolderManager.Controls
 
             foreach (var item in _selectedItems)
             {
-                var folderNode = item.Tag as FolderNode;
-                if (folderNode != null)
+                var shellObject = item.Tag as ShellObject;
+                if (shellObject != null)
                 {
-                    string path = folderNode.FullPath;
+                    string path = PathService.GetPathFromShellObject(shellObject);
                     if (PathService.DirectoryExists(path))
                     {
                         selectedFolders.Add(new FolderInfo(path));
@@ -1594,23 +1866,12 @@ namespace ImageFolderManager.Controls
             _lastSelectedItem = end;
         }
 
+
         private List<TreeViewItem> GetAllVisibleTreeViewItems()
         {
-            var result = new List<TreeViewItem>(256);
-            CollectExpanded(ShellTreeViewControl.Items, result);
+            var result = new List<TreeViewItem>();
+            CollectVisibleItems(ShellTreeViewControl.Items, result);
             return result;
-        }
-
-        private static void CollectExpanded(ItemCollection items, List<TreeViewItem> result)
-        {
-            foreach (var obj in items)
-            {
-                if (!(obj is TreeViewItem item)) continue;
-                if (item.Tag as string == "__PLACEHOLDER__") continue;
-                result.Add(item);
-                if (item.IsExpanded && item.Items.Count > 0)
-                    CollectExpanded(item.Items, result);
-            }
         }
 
         private void CollectVisibleItems(ItemCollection items, List<TreeViewItem> result)
@@ -1714,9 +1975,9 @@ namespace ImageFolderManager.Controls
         private TreeViewItem FindTreeViewItemByPathRecursive(TreeViewItem parentItem, string path)
         {
             // Check if this is the item we're looking for
-            if (parentItem.Tag is FolderNode folderNode)
+            if (parentItem.Tag is ShellObject shellObject)
             {
-                string itemPath = folderNode.FullPath;
+                string itemPath = PathService.GetPathFromShellObject(shellObject);
                 if (PathService.PathsEqual(itemPath, path))
                 {
                     return parentItem;
@@ -1822,71 +2083,182 @@ namespace ImageFolderManager.Controls
 
         private void TreeViewItem_Expanded(object sender, RoutedEventArgs e)
         {
-            if (!(sender is TreeViewItem item)) return;
-            if (!(item.Tag is FolderNode node)) return;
+            var treeViewItem = sender as TreeViewItem;
+            if (treeViewItem == null) return;
 
-            // Record for state restoration
-            _expandedPaths.Add(node.FullPath);
+            var shellObject = treeViewItem.Tag as ShellObject;
+            if (shellObject == null) return;
 
-            // Only trigger a load if the item still contains just the placeholder
-            if (!FolderTreeItemFactory.HasOnlyPlaceholder(item)) return;
-
-            e.Handled = true; // Don't bubble to parent items
-
-            // Fire and forget — any exceptions are caught inside ExpandNodeAsync
-            _ = ExpandNodeAsync(item, node);
-        }
-
-        // ── TreeViewItem_Collapsed (new — wire to Collapsed event in XAML) ────
-        // Cancels any in-flight load when the user collapses a node quickly.
-
-        private void TreeViewItem_Collapsed(object sender, RoutedEventArgs e)
-        {
-            if (!(sender is TreeViewItem item)) return;
-
-            if (_expansionCts.TryGetValue(item, out var cts))
+            // Add to expanded paths
+            if (!string.IsNullOrEmpty(shellObject.ParsingName))
             {
-                cts.Cancel();
-                cts.Dispose();
-                _expansionCts.Remove(item);
+                _expandedPaths.Add(shellObject.ParsingName);
+            }
+
+            // Check if needs loading
+            if (treeViewItem.Items.Count == 1 &&
+                treeViewItem.Items[0] is TreeViewItem loadingItem &&
+                !loadingItem.IsEnabled)
+            {
+                ShowLoadingIndicator();
+                _loadingStartTime = DateTime.Now;
+                RemoveDummyNode(treeViewItem);
+
+                var shellFolder = shellObject as ShellFolder;
+                if (shellFolder != null)
+                {
+                    Task.Run(() =>
+                    {
+                        try
+                        {
+                            // Get child shell objects on background thread
+                            var childShellObjects = new List<ShellFolder>();
+
+                            foreach (ShellObject child in shellFolder)
+                            {
+                                if (child is ShellFolder childFolder)
+                                {
+                                    childShellObjects.Add(childFolder);
+                                }
+                            }
+
+                            // Sort by name
+                            var sortedChildren = childShellObjects
+                                .OrderBy(child => child.Name, WindowsNaturalStringComparer.Instance)
+                                .ToList();
+
+                            // Create UI elements on UI thread
+                            Application.Current.Dispatcher.Invoke(() =>
+                            {
+                                try
+                                {
+                                    foreach (var childFolder in sortedChildren)
+                                    {
+                                        var childItem = CreateShellTreeViewItem(childFolder);
+                                        treeViewItem.Items.Add(childItem);
+                                    }
+                                }
+                                catch (Exception ex)
+                                {
+                                    Debug.WriteLine($"Error adding child items: {ex.Message}");
+                                }
+                                finally
+                                {
+                                    HideLoadingIndicator();
+                                }
+                            });
+                        }
+                        catch (Exception ex)
+                        {
+                            Debug.WriteLine($"Error loading children: {ex.Message}");
+                            Application.Current.Dispatcher.Invoke(HideLoadingIndicator);
+                        }
+                    });
+                }
             }
         }
 
-        // ── Core expansion logic ──────────────────────────────────────────────
-
-        private async Task ExpandNodeAsync(TreeViewItem parentItem, FolderNode parentNode)
+        private TreeViewItem CreateShellTreeViewItem(ShellFolder shellFolder)
         {
-            // Cancel any previous in-flight expansion of this exact item
-            if (_expansionCts.TryGetValue(parentItem, out var old))
+            var item = new TreeViewItem
             {
-                old.Cancel();
-                old.Dispose();
+                Header = CreateModernShellObjectHeader(shellFolder),
+                Tag = shellFolder
+            };
+
+            // Add to path mapping
+            string path = PathNormalizationService.GetCanonicalPath(shellFolder.ParsingName);
+            TrySafeAddPathMapping(path, item);
+
+            // Add dummy child if folder has subfolders
+            if (ShouldHaveExpansionIndicator(shellFolder.ParsingName))
+            {
+                AddDummyNode(item);
             }
-            var cts = new CancellationTokenSource();
-            _expansionCts[parentItem] = cts;
+
+            return item;
+        }
+
+
+        private async void LoadNodeWithStateManagement(TreeViewItem treeViewItem, ShellObject shellObject)
+        {
+            string path = shellObject.ParsingName;
+
+            if (!await _nodeManager.TryTransitionToLoading(path))
+            {
+                Debug.WriteLine($"Cannot load node {path}");
+                return;
+            }
 
             ShowLoadingIndicator();
+            RemoveDummyNode(treeViewItem);
+            _expansionCts.Cancel();
+            _expansionCts = new CancellationTokenSource();
+            var token = _expansionCts.Token;
+
+            var shellFolder = shellObject as ShellFolder;
+            if (shellFolder == null) { HideLoadingIndicator(); return; }
+
+            bool success = false;
             try
             {
-                await FolderTreeItemFactory.ExpandAsync(
-                    parentItem, parentNode, _pathToTreeViewItem, cts.Token);
+                var sortedChildren = await Task.Run(() =>
+                {
+                    var childShellObjects = new List<ShellFolder>();
+                    try
+                    {
+                        foreach (ShellObject child in shellFolder)
+                        {
+                            if (token.IsCancellationRequested) break;
+                            if (child is ShellFolder childFolder)
+                                childShellObjects.Add(childFolder);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"Error enumerating children: {ex.Message}");
+                    }
+                    return childShellObjects
+                        .OrderBy(c => c.Name, WindowsNaturalStringComparer.Instance)
+                        .ToList();
+                }, token);
+
+                if (token.IsCancellationRequested) return;
+                for (int i = 0; i < sortedChildren.Count; i += BATCH_SIZE)
+                {
+                    if (token.IsCancellationRequested) break;
+
+                    var batch = sortedChildren.Skip(i).Take(BATCH_SIZE).ToList();
+
+                    await Application.Current.Dispatcher.InvokeAsync(() =>
+                    {
+                        if (token.IsCancellationRequested) return;
+                        foreach (var childFolder in batch)
+                        {
+                            var childItem = CreateShellTreeViewItem(childFolder);
+                            treeViewItem.Items.Add(childItem);
+                            string childPath = PathNormalizationService.GetCanonicalPath(childFolder.ParsingName);
+                            TrySafeAddPathMapping(childPath, childItem);
+                        }
+                    }, System.Windows.Threading.DispatcherPriority.Background);
+                    if (i + BATCH_SIZE < sortedChildren.Count)
+                        await Task.Delay(BATCH_DELAY_MS, token).ContinueWith(_ => { }); // swallow cancel
+                }
+
+                success = !token.IsCancellationRequested;
             }
             catch (OperationCanceledException)
             {
-                Debug.WriteLine($"Expansion cancelled: {parentNode.FullPath}");
+                Debug.WriteLine($"Node loading cancelled: {path}");
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"ExpandNodeAsync error: {ex.Message}");
+                Debug.WriteLine($"Error loading children: {ex.Message}");
             }
             finally
             {
-                HideLoadingIndicator();
-                if (_expansionCts.ContainsKey(parentItem))
-                {
-                    _expansionCts.Remove(parentItem);
-                    cts.Dispose();
-                }
+                await _nodeManager.CompleteLoading(path, success);
+                Application.Current.Dispatcher.Invoke(HideLoadingIndicator);
             }
         }
 
@@ -2019,10 +2391,10 @@ namespace ImageFolderManager.Controls
         {
             try
             {
-                var folderNode = treeViewItem.Tag as FolderNode;
-                if (folderNode == null) return;
+                var shellObject = treeViewItem.Tag as ShellObject;
+                if (shellObject == null) return;
 
-                string path = folderNode.FullPath;
+                string path = PathService.GetPathFromShellObject(shellObject);
                 if (string.IsNullOrEmpty(path)) return;
 
                 // Make sure the item is selected
@@ -2047,10 +2419,10 @@ namespace ImageFolderManager.Controls
         {
             try
             {
-                var folderNode = treeViewItem.Tag as FolderNode;
-                if (folderNode == null) return;
+                var shellObject = treeViewItem.Tag as ShellObject;
+                if (shellObject == null) return;
 
-                string path = folderNode.FullPath;
+                string path = PathService.GetPathFromShellObject(shellObject);
                 if (!PathService.DirectoryExists(path)) return;
 
                 _selectedPath = path;
@@ -2084,10 +2456,10 @@ namespace ImageFolderManager.Controls
         {
             try
             {
-                var folderNode = treeViewItem.Tag as FolderNode;
-                if (folderNode == null) return;
+                var shellObject = treeViewItem.Tag as ShellObject;
+                if (shellObject == null) return;
 
-                string path = folderNode.FullPath;
+                string path = PathService.GetPathFromShellObject(shellObject);
                 if (string.IsNullOrEmpty(path)) return;
 
                 _selectedPath = path;
@@ -2133,11 +2505,11 @@ namespace ImageFolderManager.Controls
                 {
                     // Multiple items selected - update status message with the new format
                     var lastSelectedItem = _selectedItems.Last();
-                    var folderNode = lastSelectedItem.Tag as FolderNode;
+                    var shellObject = lastSelectedItem.Tag as ShellObject;
 
-                    if (folderNode != null)
+                    if (shellObject != null)
                     {
-                        string path = folderNode.FullPath;
+                        string path = PathService.GetPathFromShellObject(shellObject);
                         string lastFolderName = Path.GetFileName(path);
 
                         // First clear the selected folder in ViewModel (this will trigger image clearing)
@@ -2337,10 +2709,10 @@ namespace ImageFolderManager.Controls
 
             foreach (var item in _selectedItems)
             {
-                var folderNode = item.Tag as FolderNode;
-                if (folderNode != null)
+                var shellObject = item.Tag as ShellObject;
+                if (shellObject != null)
                 {
-                    string path = folderNode.FullPath;
+                    string path = PathService.GetPathFromShellObject(shellObject);
                     if (PathService.DirectoryExists(path))
                     {
                         // Don't allow dragging the root directory
@@ -2361,7 +2733,7 @@ namespace ImageFolderManager.Controls
                 if (_selectedItems.Count > 0)
                 {
                     _draggedItem = _selectedItems[0];
-                    _draggedFolderNode = _draggedItem.Tag as FolderNode;
+                    _draggedShellObject = _draggedItem.Tag as ShellObject;
                 }
 
                 // Create drag data with all selected paths
@@ -2458,7 +2830,7 @@ namespace ImageFolderManager.Controls
                     {
                         // Make sure we're actually over a draggable item
                         var item = GetTreeViewItemUnderMouse(position);
-                        if (item != null && item.Tag is FolderNode)
+                        if (item != null && item.Tag is ShellObject)
                         {
                             StartDrag(e);
                         }
@@ -2520,14 +2892,14 @@ namespace ImageFolderManager.Controls
                     return;
                 }
 
-                var folderNode = treeViewItem.Tag as FolderNode;
-                if (folderNode == null)
+                var shellObject = treeViewItem.Tag as ShellObject;
+                if (shellObject == null)
                 {
-                    Debug.WriteLine("Selected item has no FolderNode");
+                    Debug.WriteLine("Selected item has no ShellObject");
                     return;
                 }
 
-                string path = folderNode.FullPath;
+                string path = PathService.GetPathFromShellObject(shellObject);
                 if (!PathService.DirectoryExists(path))
                 {
                     Debug.WriteLine($"Invalid path: {path}");
@@ -2639,19 +3011,19 @@ namespace ImageFolderManager.Controls
                 var treeViewItem = GetSelectedTreeViewItem();
                 if (treeViewItem == null) return;
 
-                var folderNode = treeViewItem.Tag as FolderNode;
-                if (folderNode == null) return;
+                var shellObject = treeViewItem.Tag as ShellObject;
+                if (shellObject == null) return;
 
-                string path = folderNode.FullPath;
+                string path = PathService.GetPathFromShellObject(shellObject);
                 if (!PathService.DirectoryExists(path)) return;
 
                 // Store expanded state
                 var expandedItems = new HashSet<string>();
                 foreach (var item in FindVisualChildren<TreeViewItem>(ShellTreeViewControl))
                 {
-                    if (item.IsExpanded && item.Tag is FolderNode so)
+                    if (item.IsExpanded && item.Tag is ShellObject so)
                     {
-                        string expandedPath = so.FullPath;
+                        string expandedPath = PathService.GetPathFromShellObject(so);
                         if (!string.IsNullOrEmpty(expandedPath))
                         {
                             expandedItems.Add(expandedPath);
@@ -2708,10 +3080,10 @@ namespace ImageFolderManager.Controls
                 var treeViewItem = GetSelectedTreeViewItem();
                 if (treeViewItem == null) return;
 
-                var folderNode = treeViewItem.Tag as FolderNode;
-                if (folderNode == null) return;
+                var shellObject = treeViewItem.Tag as ShellObject;
+                if (shellObject == null) return;
 
-                string path = folderNode.FullPath;
+                string path = PathService.GetPathFromShellObject(shellObject);
                 if (!PathService.DirectoryExists(path)) return;
 
                 // Don't allow renaming root directory
@@ -2762,10 +3134,10 @@ namespace ImageFolderManager.Controls
                 var treeViewItem = GetSelectedTreeViewItem();
                 if (treeViewItem == null) return;
 
-                var folderNode = treeViewItem.Tag as FolderNode;
-                if (folderNode == null) return;
+                var shellObject = treeViewItem.Tag as ShellObject;
+                if (shellObject == null) return;
 
-                string path = folderNode.FullPath;
+                string path = PathService.GetPathFromShellObject(shellObject);
                 if (!PathService.DirectoryExists(path)) return;
 
                 if (!string.IsNullOrEmpty(_rootDirectory) &&
@@ -2842,10 +3214,10 @@ namespace ImageFolderManager.Controls
                 var treeViewItem = GetSelectedTreeViewItem();
                 if (treeViewItem == null) return;
 
-                var folderNode = treeViewItem.Tag as FolderNode;
-                if (folderNode == null) return;
+                var shellObject = treeViewItem.Tag as ShellObject;
+                if (shellObject == null) return;
 
-                string path = folderNode.FullPath;
+                string path = PathService.GetPathFromShellObject(shellObject);
                 if (!PathService.DirectoryExists(path)) return;
 
                 // Create FolderInfo and call ViewModel
@@ -2897,9 +3269,9 @@ namespace ImageFolderManager.Controls
                 if (string.IsNullOrEmpty(pathToSelect))
                 {
                     var treeViewItem = GetSelectedTreeViewItem();
-                    if (treeViewItem != null && treeViewItem.Tag is FolderNode folderNode)
+                    if (treeViewItem != null && treeViewItem.Tag is ShellObject shellObject)
                     {
-                        pathToSelect = folderNode.FullPath;
+                        pathToSelect = PathService.GetPathFromShellObject(shellObject);
                     }
                 }
 
@@ -2909,9 +3281,9 @@ namespace ImageFolderManager.Controls
                 {
                     foreach (var item in FindVisualChildren<TreeViewItem>(ShellTreeViewControl))
                     {
-                        if (item.IsExpanded && item.Tag is FolderNode so)
+                        if (item.IsExpanded && item.Tag is ShellObject so)
                         {
-                            string path = so.FullPath;
+                            string path = PathService.GetPathFromShellObject(so);
                             if (!string.IsNullOrEmpty(path))
                             {
                                 expandedPaths.Add(path);
@@ -2975,36 +3347,63 @@ namespace ImageFolderManager.Controls
         /// <summary>
         /// Performs incremental updates for specific folder operations
         /// </summary>
-        public async Task RefreshTreeIncremental(
-             FolderOperationType operationType,
-             string sourcePath,
-             string destinationPath = null)
+       public async Task RefreshTreeIncremental(FolderOperationType operationType, string sourcePath, string destinationPath = null)
         {
-            if (IsRecentOperation(operationType, sourcePath, destinationPath))
-                return;
-
-            switch (operationType)
+            try
             {
-                case FolderOperationType.Create:
-                    await HandleFolderCreate(sourcePath);
-                    break;
+              
+                // Check for duplicate operations
+                if (IsRecentOperation(operationType, sourcePath, destinationPath))
+                {
+                    return;
+                }
+                switch (operationType)
+                {
+                    case FolderOperationType.Create:
+                      
+                        await HandleFolderCreate(sourcePath);
+                        break;
+                    case FolderOperationType.Delete:
 
-                case FolderOperationType.Delete:
-                    await HandleFolderDelete(sourcePath);
-                    break;
-
-                case FolderOperationType.Rename:
-                    await HandleFolderRename(sourcePath, destinationPath);
-                    break;
-
-                case FolderOperationType.Move:
-                    if (!_pathToTreeViewItem.ContainsKey(
-                            PathService.NormalizePath(destinationPath ?? "")))
+                        await HandleFolderDelete(sourcePath);
+                        break;
+                    case FolderOperationType.Rename:
+                        await HandleFolderRename(sourcePath, destinationPath);
+                        break;
+                    case FolderOperationType.Move:
+                        // Pre-check
+                        string normalizedDest = PathService.NormalizePath(destinationPath);
+                        if (_pathToTreeViewItem.ContainsKey(normalizedDest))
+                        {
+                            break;
+                        }
                         await HandleFolderMove(sourcePath, destinationPath);
-                    break;
+                        // Emergency cleanup
+                        EmergencyRemoveDuplicates();
+                        // Final verification
+                        string normalizedSrc = PathService.NormalizePath(sourcePath);
+                        if (_pathToTreeViewItem.ContainsKey(normalizedSrc))
+                        {
+                            _pathToTreeViewItem.Remove(normalizedSrc);
+                        }
+                        break;
+
+                    case FolderOperationType.UndoMove:
+
+                        await HandleFolderUndoMove(sourcePath, destinationPath);
+                        break;
+                    default:
+                        await RefreshTreeFull();
+                        break;
+                }
+
+            }
+            catch (Exception ex)
+            {
+                HandleException("Error during incremental refresh", ex);
             }
         }
-
+ 
         /// <summary>
         /// Emergency method to remove all duplicate children from TreeView
         /// </summary>
@@ -3086,96 +3485,149 @@ namespace ImageFolderManager.Controls
         /// <summary>
         /// Handles folder creation by adding new tree item
         /// </summary>
-        private async Task HandleFolderCreate(string newFolderPath)
+        private async Task HandleFolderCreate(string folderPath)
         {
-            if (string.IsNullOrEmpty(newFolderPath)) return;
-
-            string parentPath = Path.GetDirectoryName(newFolderPath);
-            if (parentPath == null) return;
-
-            string normalizedParent = PathService.NormalizePath(parentPath);
-            string normalizedNew = PathService.NormalizePath(newFolderPath);
-
-            if (_pathToTreeViewItem.ContainsKey(normalizedNew)) return;
-
-            if (!_pathToTreeViewItem.TryGetValue(normalizedParent, out var parentItem))
-                return;
-
-            // If the parent has only a placeholder (not yet expanded), just ensure
-            // the placeholder exists so the arrow stays visible.
-            if (!parentItem.IsExpanded)
+         
+            try
             {
-                if (!HasExpansionIndicator(parentItem))
-                    AddDummyNode(parentItem);
-                return;
-            }
-
-            // Parent is expanded — insert the new node in sorted position
-            var newNode = new FolderNode(newFolderPath);
-            var newItem = FolderTreeItemFactory.CreateItem(newNode);
-
-            await Application.Current.Dispatcher.InvokeAsync(() =>
-            {
-                // Probe sub-dirs before touching parent (small I/O, stays off UI pump)
-                // Already done inside CreateItem → HasSubDirectories
-
-                // Find sorted insertion index
-                int insertAt = 0;
-                for (int i = 0; i < parentItem.Items.Count; i++)
+                if (string.IsNullOrEmpty(folderPath))
                 {
-                    if (!(parentItem.Items[i] is TreeViewItem sibling)) continue;
-                    if (!(sibling.Tag is FolderNode sibNode)) continue;
-                    if (NaturalStringComparer.Compare(sibNode.Name, newNode.Name) > 0)
-                        break;
-                    insertAt = i + 1;
+                    return;
                 }
-                parentItem.Items.Insert(insertAt, newItem);
-                _pathToTreeViewItem[normalizedNew] = newItem;
 
-                // Invalidate parent's cached children so the next expansion is fresh
-                if (parentItem.Tag is FolderNode parentNode)
-                    parentNode.InvalidateChildren();
-            }, DispatcherPriority.Normal);
-        }
+                // Normalize the path
+                string normalizedPath = PathService.NormalizePath(folderPath);
 
-
-        /// <summary>
-        /// Handles folder deletion - removes item from tree
-        /// </summary>
-        private async Task HandleFolderDelete(string deletedPath)
-        {
-            if (string.IsNullOrEmpty(deletedPath)) return;
-            string normalized = PathService.NormalizePath(deletedPath);
-
-            await Application.Current.Dispatcher.InvokeAsync(() =>
-            {
-                if (!_pathToTreeViewItem.TryGetValue(normalized, out var item)) return;
-
-                var parentTvi = FindParentTreeViewItem(item);
-                if (parentTvi != null)
+                // Check if directory actually exists
+                if (!PathService.DirectoryExists(normalizedPath))
                 {
-                    parentTvi.Items.Remove(item);
-                    if (parentTvi.Tag is FolderNode pn) pn.InvalidateChildren();
-                    // Hide expand arrow if no children remain
-                    if (parentTvi.Items.Count == 0)
-                    {
-                        // No placeholder needed — folder is now empty
-                    }
+                    return;
+                }
+
+                // Get parent directory
+                string parentPath = Path.GetDirectoryName(normalizedPath);
+                string normalizedParentPath = PathService.NormalizePath(parentPath);
+              
+                // Check if parent exists in our tree
+                if (!_pathToTreeViewItem.TryGetValue(normalizedParentPath, out TreeViewItem parentItem))
+                {
+                    // Try to find a close match
+                    var closeMatches = _pathToTreeViewItem.Keys
+                        .Where(path => normalizedParentPath.StartsWith(path, StringComparison.OrdinalIgnoreCase) ||
+                                      path.StartsWith(normalizedParentPath, StringComparison.OrdinalIgnoreCase))
+                        .Take(5);
+                    return;
+                }
+    
+                // Check if the new folder already exists in the tree
+                if (_pathToTreeViewItem.ContainsKey(normalizedPath))
+                {
+                    return;
+                }
+
+                // Ensure parent is expanded (without this, new items won't be visible)
+                if (!parentItem.IsExpanded)
+                {
+                    parentItem.IsExpanded = true;
+
+                    // Wait for expansion to complete
+                    await Task.Delay(100);
                 }
                 else
                 {
-                    ShellTreeViewControl.Items.Remove(item);
+                    Debug.WriteLine("Parent item is already expanded");
                 }
 
-                // Remove this path and all descendants from the map
-                var toRemove = _pathToTreeViewItem.Keys
-                    .Where(k => k.StartsWith(normalized, StringComparison.OrdinalIgnoreCase))
-                    .ToList();
-                foreach (var k in toRemove)
-                    _pathToTreeViewItem.Remove(k);
+                // Create shell object for the new folder
+                 ShellObject shellObject;
+                try
+                {
+                    shellObject = ShellObject.FromParsingName(normalizedPath);
+                }
+                catch (Exception ex)
+                {
+                     return;
+                }
 
-                _nodeManager?.RemoveNodeState(normalized);
-            }, DispatcherPriority.Normal);
+                // Create new TreeViewItem
+                var newItem = await CreateShellTreeViewItemAsync(shellObject);
+               
+                // Add to parent's children             
+                parentItem.Items.Add(newItem);
+                // Add to path mapping
+                _pathToTreeViewItem[normalizedPath] = newItem;
+              
+                // Sort children alphabetically
+                var sortedItems = parentItem.Items.Cast<TreeViewItem>()
+                    .OrderBy(item => item.Header.ToString())
+                    .ToList();
+
+                // Clear and re-add in sorted order
+                parentItem.Items.Clear();
+                foreach (var item in sortedItems)
+                {
+                    parentItem.Items.Add(item);
+                }
+
+                // Force UI update
+                parentItem.UpdateLayout();
+                ShellTreeViewControl.UpdateLayout();
+
+                // Try to make the new item visible
+                newItem.BringIntoView();
+            }
+            catch (Exception ex)
+            {
+                throw;
+            }
+        }
+
+     
+        /// <summary>
+        /// Handles folder deletion - removes item from tree
+        /// </summary>
+        private async Task HandleFolderDelete(string deletedFolderPath)
+        {
+          
+
+            if (string.IsNullOrEmpty(deletedFolderPath))
+            {              
+                return;
+            }
+
+            // Remove from path mapping
+            if (_pathToTreeViewItem.TryGetValue(deletedFolderPath, out var itemToRemove))
+            {
+                _pathToTreeViewItem.Remove(deletedFolderPath);
+
+                // Remove from parent's children
+                var parent = itemToRemove.Parent as TreeViewItem;
+                if (parent != null)
+                {
+                    await Application.Current.Dispatcher.InvokeAsync(() =>
+                    {
+                        parent.Items.Remove(itemToRemove);
+                      
+                        // Update parent expansion indicator
+                        UpdateParentExpansionIndicator(parent);
+                    });
+                }
+               
+            }
+          
+            // Invalidate cache for parent directory
+            string parentPath = Path.GetDirectoryName(deletedFolderPath);
+            if (!string.IsNullOrEmpty(parentPath))
+            {
+                PathService.InvalidatePathCache(parentPath, false);
+            }
+
+            // Remove any child paths from mapping (for nested deletions)
+            var childPaths = _pathToTreeViewItem.Keys.Where(p => p.StartsWith(deletedFolderPath + Path.DirectorySeparatorChar)).ToList();
+            foreach (var childPath in childPaths)
+            {
+                _pathToTreeViewItem.Remove(childPath);
+            }
         }
 
         /// <summary>
@@ -3192,16 +3644,14 @@ namespace ImageFolderManager.Controls
                 // Update the TreeViewItem's tag and header
                 await Application.Current.Dispatcher.InvokeAsync(() =>
                 {
-                    if (renamedItem.Tag is FolderNode oldFolderNode)
+                    if (renamedItem.Tag is ShellObject oldShellObject)
                     {
                         try
                         {
-                            // Create new folderNode for the renamed folder
-                            var newFolderNode = new FolderNode(newPath);
-                            renamedItem.Tag = newFolderNode;
-                            renamedItem.Header = FolderTreeItemFactory.CreateHeader(newFolderNode.Name);
-                            renamedItem.RenderTransform = new ScaleTransform(1.0, 1.0);
-                            renamedItem.RenderTransformOrigin = new Point(0.5, 0.5);
+                            // Create new ShellObject for the renamed folder
+                            var newShellObject = ShellObject.FromParsingName(newPath);
+                            renamedItem.Tag = newShellObject;
+                            renamedItem.Header = CreateModernShellObjectHeader(newShellObject);
 
                             // Update path mapping
                             _pathToTreeViewItem.Remove(oldPath);
@@ -3393,15 +3843,15 @@ namespace ImageFolderManager.Controls
 
                 // Remove from path mapping
                 TrySafeRemovePathMapping(normalizedSourcePath);
-                // ===== STEP 5: UPDATE FOLDERNODE AND ADD TO DESTINATION =====
+                // ===== STEP 5: UPDATE SHELLOBJECT AND ADD TO DESTINATION =====
                 await Application.Current.Dispatcher.InvokeAsync(() =>
                 {
                     try
                     {
-                        // *** CRITICAL FIX: Update the TreeViewItem's  FolderNode to point to new path ***
-                        var newFolderNode = new FolderNode(normalizedDestPath);
-                        sourceItem.Tag = newFolderNode;
-                        sourceItem.Header = FolderTreeItemFactory.CreateItem(newFolderNode);
+                        // *** CRITICAL FIX: Update the TreeViewItem's ShellObject to point to new path ***
+                        var newShellObject = ShellObject.FromParsingName(normalizedDestPath);
+                        sourceItem.Tag = newShellObject;
+                        sourceItem.Header = CreateModernShellObjectHeader(newShellObject);
                         // Handle based on destination parent loading state
                         if (destParentWasNotLoaded)
                         {
@@ -3413,7 +3863,7 @@ namespace ImageFolderManager.Controls
                             destParentItem.Items.Add(sourceItem);
 
                             // CRITICAL FIX: 
-                            string destParentActualPath = (destParentItem.Tag as FolderNode)?.FullPath;
+                            string destParentActualPath = PathService.GetPathFromShellObject((ShellObject)destParentItem.Tag);
                             if (!string.IsNullOrEmpty(destParentActualPath))
                             {
                                 Task.Run(async () =>
@@ -3428,9 +3878,9 @@ namespace ImageFolderManager.Controls
                                         {
                                             foreach (TreeViewItem child in destParentItem.Items)
                                             {
-                                                if (child.Tag is FolderNode folderNode)
+                                                if (child.Tag is ShellObject shellObj)
                                                 {
-                                                    existingNames.Add(folderNode.Name);
+                                                    existingNames.Add(shellObj.Name);
                                                 }
                                             }
                                         });
@@ -3441,8 +3891,8 @@ namespace ImageFolderManager.Controls
                                             {
                                                 try
                                                 {
-                                                    var folderNode = new FolderNode(subdir);
-                                                    var newItem = FolderTreeItemFactory.CreateItem(folderNode);
+                                                    var shellObj = ShellObject.FromParsingName(subdir);
+                                                    var newItem = await CreateShellTreeViewItemAsync(shellObj);
                                                     newItems.Add(newItem);
                                                                                                   }
                                                 catch (Exception ex)
@@ -3460,9 +3910,9 @@ namespace ImageFolderManager.Controls
                                                 {
                                                     destParentItem.Items.Add(item);
 
-                                                    if (item.Tag is FolderNode folderNode)
+                                                    if (item.Tag is ShellObject shellObj)
                                                     {
-                                                        string itemPath = folderNode.FullPath;
+                                                        string itemPath = PathService.GetPathFromShellObject(shellObj);
                                                         if (!string.IsNullOrEmpty(itemPath))
                                                         {
                                                             _pathToTreeViewItem[itemPath] = item;
@@ -3504,14 +3954,14 @@ namespace ImageFolderManager.Controls
                         // Fallback: create new item
                         try
                         {
-                            var fallbackFolderNode = new FolderNode(normalizedDestPath);
-                            var fallbackItem = FolderTreeItemFactory.CreateItem(fallbackFolderNode); 
+                            var fallbackShellObject = ShellObject.FromParsingName(normalizedDestPath);
+                            var fallbackItem = CreateShellTreeViewItemAsync(fallbackShellObject).Result;
 
                             if (destParentWasNotLoaded)
                             {
                                 RemoveDummyNode(destParentItem);
                                 destParentItem.Items.Add(fallbackItem);
-                                string destParentActualPath = (destParentItem.Tag as FolderNode)?.FullPath;
+                                string destParentActualPath = PathService.GetPathFromShellObject((ShellObject)destParentItem.Tag);
                                 if (!string.IsNullOrEmpty(destParentActualPath) && ShouldHaveExpansionIndicator(destParentActualPath))
                                 {
                                     AddDummyNode(destParentItem);
@@ -3545,12 +3995,12 @@ namespace ImageFolderManager.Controls
                 }
 
                 // ===== STEP 7: FINAL VERIFICATION =====
-                // Verify the moved item's FolderNode points to correct path
+                // Verify the moved item's ShellObject points to correct path
                 if (_pathToTreeViewItem.TryGetValue(normalizedDestPath, out var verifyItem))
                 {
-                    if (verifyItem.Tag is FolderNode folderNode)
+                    if (verifyItem.Tag is ShellObject shellObj)
                     {
-                        string itemPath = folderNode.FullPath;
+                        string itemPath = PathService.GetPathFromShellObject(shellObj);
                     }
                 }
 
@@ -3570,14 +4020,65 @@ namespace ImageFolderManager.Controls
 
 
         /// <summary>
+        /// Handles undo move operation - essentially a move back to original location
+        /// </summary>
+        private async Task HandleFolderUndoMove(string currentPath, string originalPath)
+        {
+            string currentParent = Path.GetDirectoryName(currentPath) ?? string.Empty;
+            string originalParent = Path.GetDirectoryName(originalPath) ?? string.Empty;
+
+            if (string.Equals(currentParent, originalParent, StringComparison.OrdinalIgnoreCase))
+            {
+                await HandleFolderRename(currentPath, originalPath);
+            }
+            else
+            { 
+                await HandleFolderMove(currentPath, originalPath);
+            }
+        }
+
+        /// <summary>
+        /// Enhanced AddNewFolderToParent method with natural sorting logic
+        /// </summary>
+        private async Task AddNewFolderToParent(TreeViewItem parentItem, string newFolderPath)
+        {
+            try
+            {
+                var newShellObject = ShellObject.FromParsingName(newFolderPath);
+                var newTreeItem = await CreateShellTreeViewItemAsync(newShellObject);
+
+                await Application.Current.Dispatcher.InvokeAsync(() =>
+                {
+                    // Find correct insertion position using natural ordering (Windows Explorer style)
+                    int insertIndex = FindNaturalInsertionIndex(parentItem, newTreeItem);
+
+                    parentItem.Items.Insert(insertIndex, newTreeItem);
+
+                    // Update path mapping
+                    _pathToTreeViewItem[newFolderPath] = newTreeItem;
+
+                    // Add entrance animation
+                    AnimateItemEntrance(newTreeItem);
+                });
+
+                // Ensure proper natural sorting after insertion (as a safety measure)
+                await EnsureNaturalSorting(parentItem);
+            }
+            catch (Exception ex)
+            {
+                HandleException("Error adding new folder to parent", ex);
+            }
+        }
+
+        /// <summary>
         /// Finds the correct natural insertion index for a new item using Windows file system ordering
         /// </summary>
         private int FindNaturalInsertionIndex(TreeViewItem parentItem, TreeViewItem newItem)
         {
-            if (!(newItem.Tag is FolderNode newFolderNode ))
+            if (!(newItem.Tag is ShellObject newShellObject))
                 return GetRealChildrenCount(parentItem);
 
-            string newName = newFolderNode.Name;
+            string newName = newShellObject.Name;
             int insertIndex = 0;
 
             // Iterate through all children to find the correct natural position
@@ -3585,11 +4086,11 @@ namespace ImageFolderManager.Controls
             {
                 if (parentItem.Items[i] is TreeViewItem existingItem)
                 {
-                    // Skip dummy nodes (loading indicators) - they don't have proper folderNode tags
-                    if (existingItem.Tag is FolderNode existingFolderNode )
+                    // Skip dummy nodes (loading indicators) - they don't have proper ShellObject tags
+                    if (existingItem.Tag is ShellObject existingShellObject)
                     {
                         // Compare names using Windows natural comparison (handles numeric sequences properly)
-                        if (WindowsNaturalStringComparer.Instance.Compare(newName, existingFolderNode.Name) < 0)
+                        if (WindowsNaturalStringComparer.Instance.Compare(newName, existingShellObject.Name) < 0)
                         {
                             return insertIndex;
                         }
@@ -3611,7 +4112,7 @@ namespace ImageFolderManager.Controls
             int count = 0;
             foreach (var item in parentItem.Items)
             {
-                if (item is TreeViewItem treeItem && treeItem.Tag is FolderNode)
+                if (item is TreeViewItem treeItem && treeItem.Tag is ShellObject)
                 {
                     count++;
                 }
@@ -3637,9 +4138,9 @@ namespace ImageFolderManager.Controls
 
                     foreach (TreeViewItem child in parentItem.Items.OfType<TreeViewItem>())
                     {
-                        if (child.Tag is FolderNode folderNode)
+                        if (child.Tag is ShellObject shellObject)
                         {
-                            folderItems.Add((child, folderNode.Name));
+                            folderItems.Add((child, shellObject.Name));
                         }
                         else
                         {
@@ -3678,9 +4179,9 @@ namespace ImageFolderManager.Controls
         /// </summary>
         private async Task EnsureParentHasExpansionIndicator(TreeViewItem parentItem)
         {
-            if (parentItem.Tag is FolderNode folderNode)
+            if (parentItem.Tag is ShellObject shellObject)
             {
-                string parentPath = folderNode.FullPath;
+                string parentPath = PathService.GetPathFromShellObject(shellObject);
                 if (!string.IsNullOrEmpty(parentPath))
                 {
                     await Application.Current.Dispatcher.InvokeAsync(() =>
@@ -3700,9 +4201,9 @@ namespace ImageFolderManager.Controls
         /// </summary>
        private void UpdateParentExpansionIndicator(TreeViewItem parentItem)
 {
-    if (parentItem.Tag is FolderNode folderNode)
+    if (parentItem.Tag is ShellObject shellObject)
     {
-        string parentPath = folderNode.FullPath;
+        string parentPath = PathService.GetPathFromShellObject(shellObject);
         if (!string.IsNullOrEmpty(parentPath))
         {
             bool shouldHaveIndicator = ShouldHaveExpansionIndicator(parentPath);
@@ -3737,28 +4238,43 @@ namespace ImageFolderManager.Controls
         /// </summary>
         private bool ShouldHaveExpansionIndicator(string directoryPath)
         {
-            if (!Directory.Exists(directoryPath)) return false;
             try
             {
-                foreach (var dir in Directory.EnumerateDirectories(
-                    directoryPath, "*", SearchOption.TopDirectoryOnly))
+                if (!Directory.Exists(directoryPath))
+                    return false;
+                using (var enumerator = Directory.EnumerateDirectories(
+                    directoryPath, "*", SearchOption.TopDirectoryOnly).GetEnumerator())
                 {
-                    var attrs = File.GetAttributes(dir);
-                    if ((attrs & FileAttributes.Hidden) != 0 ||
-                        (attrs & FileAttributes.System) != 0)
-                        continue;
-                    return true; // Found one — stop immediately
+                    return enumerator.MoveNext();
                 }
             }
-            catch { }
-            return false;
+            catch
+            {
+                return false;
+            }
         }
 
         /// <summary>
         /// Checks if TreeViewItem currently has expansion indicator (dummy node)
         /// </summary>
-        private bool HasExpansionIndicator(TreeViewItem item) =>
-            FolderTreeItemFactory.HasOnlyPlaceholder(item);
+        private bool HasExpansionIndicator(TreeViewItem item)
+        {
+            if (item.Items.Count == 0) return false;
+            foreach (var child in item.Items)
+            {
+                if (child is TreeViewItem treeItem &&
+                    treeItem.Tag as string == "DUMMY_NODE")
+                {
+                    return true;
+                }
+                if (child is string str && str == "Loading...")
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
 
         /// <summary>
         /// Adds dummy node for expansion indicator
@@ -3766,9 +4282,17 @@ namespace ImageFolderManager.Controls
         private void AddDummyNode(TreeViewItem item)
         {
             if (!HasExpansionIndicator(item))
-                item.Items.Add(FolderTreeItemFactory.MakePlaceholder());
+            {
+                // Create proper TreeViewItem instead of string to maintain consistency
+                var loadingItem = new TreeViewItem
+                {
+                    Header = CreateLoadingHeader(),
+                    IsEnabled = false,
+                    Tag = "DUMMY_NODE" // Mark as dummy node for identification
+                };
+                item.Items.Add(loadingItem);
+            }
         }
-
 
         /// <summary>
         /// Helper method to identify loading headers
@@ -3840,18 +4364,18 @@ namespace ImageFolderManager.Controls
                 var item = _pathToTreeViewItem[oldPath];
                 tempMappings[newPath] = item;
 
-                // Update the TreeViewItem's folderNode as well
-                if (item.Tag is FolderNode folderNode)
+                // Update the TreeViewItem's ShellObject as well
+                if (item.Tag is ShellObject shellObj)
                 {
                     try
                     {
-                        var newFolderNode = new  FolderNode(newPath);
-                        item.Tag = newFolderNode;
-                        item.Header = FolderTreeItemFactory.CreateItem(newFolderNode);
+                        var newShellObject = ShellObject.FromParsingName(newPath);
+                        item.Tag = newShellObject;
+                        item.Header = CreateModernShellObjectHeader(newShellObject);
                     }
                     catch (Exception ex)
                     {
-                        Debug.WriteLine($"Failed to update FolderNode for {newPath}: {ex.Message}");
+                        Debug.WriteLine($"Failed to update ShellObject for {newPath}: {ex.Message}");
                     }
                 }
             }
@@ -3891,10 +4415,10 @@ namespace ImageFolderManager.Controls
         /// </summary>
         private async Task RefreshTreeViewItemChildren(TreeViewItem parentItem)
         {
-            if (!(parentItem.Tag is FolderNode folderNode))
+            if (!(parentItem.Tag is ShellObject shellObject))
                 return;
 
-            string parentPath = folderNode.FullPath;
+            string parentPath = PathService.GetPathFromShellObject(shellObject);
             if (string.IsNullOrEmpty(parentPath) || !Directory.Exists(parentPath))
                 return;
 
@@ -3906,9 +4430,9 @@ namespace ImageFolderManager.Controls
 
                 foreach (TreeViewItem child in parentItem.Items.OfType<TreeViewItem>())
                 {
-                    if (child.Tag is FolderNode childFolderNode)
+                    if (child.Tag is ShellObject childShellObject)
                     {
-                        string childPath = childFolderNode.FullPath;
+                        string childPath = PathService.GetPathFromShellObject(childShellObject);
                         if (!string.IsNullOrEmpty(childPath))
                         {
                             currentChildren[childPath] = child;
@@ -3943,8 +4467,8 @@ namespace ImageFolderManager.Controls
                     {
                         try
                         {
-                            var newFolderNode = new FolderNode(subdirPath);
-                            var newTreeItem = FolderTreeItemFactory.CreateItem(newFolderNode);
+                            var newShellObject = ShellObject.FromParsingName(subdirPath);
+                            var newTreeItem = await CreateShellTreeViewItemAsync(newShellObject);
 
                             int insertIndex = FindNaturalInsertionIndex(parentItem, newTreeItem);
                             parentItem.Items.Insert(insertIndex, newTreeItem);

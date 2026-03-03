@@ -225,9 +225,15 @@
                             <!-- Expand/Collapse Animation -->
                             <Trigger Property="IsExpanded" Value="True">
                                 <Setter TargetName="ItemsContainer" Property="Visibility" Value="Visible"/>
-                            </Trigger>
-                            <Trigger Property="IsExpanded" Value="False">
-                                <Setter TargetName="ItemsContainer" Property="Visibility" Value="Collapsed"/>
+                                <Trigger.EnterActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <DoubleAnimation Storyboard.TargetName="ItemsContainer" 
+                                                           Storyboard.TargetProperty="Opacity" 
+                                                           From="0" To="1" Duration="0:0:0.2"/>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </Trigger.EnterActions>
                             </Trigger>
 
                             <!-- Hide expander for items without children -->
@@ -241,8 +247,8 @@
                                     <BeginStoryboard>
                                         <Storyboard>
                                             <ColorAnimation Storyboard.TargetName="ContentBorder" 
-                                                Storyboard.TargetProperty="(Border.Background).(SolidColorBrush.Color)" 
-                                                To="#2D2D2D" Duration="0:0:0.05"/>
+                              Storyboard.TargetProperty="(Border.Background).(SolidColorBrush.Color)" 
+                              To="#2D2D2D" Duration="0:0:0.15"/>
                                         </Storyboard>
                                     </BeginStoryboard>
                                 </Trigger.EnterActions>
@@ -250,8 +256,8 @@
                                     <BeginStoryboard>
                                         <Storyboard>
                                             <ColorAnimation Storyboard.TargetName="ContentBorder" 
-                                                Storyboard.TargetProperty="(Border.Background).(SolidColorBrush.Color)" 
-                                                To="#2D2D2D" Duration="0:0:0.05"/>
+                              Storyboard.TargetProperty="(Border.Background).(SolidColorBrush.Color)" 
+                              To="Transparent" Duration="0:0:0.15"/>
                                         </Storyboard>
                                     </BeginStoryboard>
                                 </Trigger.ExitActions>
@@ -505,11 +511,7 @@
                   PreviewMouseMove="TreeView_PreviewMouseMove"
                   PreviewMouseLeftButtonUp="TreeView_PreviewMouseLeftButtonUp"
                   VirtualizingPanel.IsVirtualizing="True"
-                  VirtualizingPanel.VirtualizationMode="Recycling"
-                  VirtualizingPanel.ScrollUnit="Pixel"
-                  VirtualizingPanel.CacheLength="3,3"
-                  VirtualizingPanel.CacheLengthUnit="Page"
-                  TreeViewItem.Collapsed="TreeViewItem_Collapsed">  
+                  VirtualizingPanel.VirtualizationMode="Recycling">
                 <TreeView.ItemsPanel>
                     <ItemsPanelTemplate>
                         <VirtualizingStackPanel/>

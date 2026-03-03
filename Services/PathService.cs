@@ -109,31 +109,6 @@ namespace ImageFolderManager.Services
 
         #endregion
 
-        #region Shell Object Handling
-
-        /// <summary>
-        /// Gets a file system path from a Shell object
-        /// </summary>
-        public static string GetPathFromShellObject(ShellObject shellObject)
-        {
-            if (shellObject == null)
-                return null;
-
-            try
-            {
-                if (shellObject.IsFileSystemObject)
-                {
-                    return NormalizePath(shellObject.ParsingName);
-                }
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"Error getting path from ShellObject: {ex.Message}");
-            }
-            return null;
-        }
-
-        #endregion
 
         #region Path Generation and Management
 
