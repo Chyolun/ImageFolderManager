@@ -51,6 +51,7 @@ D:\ImageFolderManager\bin\Debug\System.Threading.Tasks.Extensions.xml
 D:\ImageFolderManager\bin\Debug\de\MahApps.Metro.resources.dll
 D:\ImageFolderManager\obj\Debug\ImageFolderManager.csproj.AssemblyReference.cache
 D:\ImageFolderManager\obj\Debug\Views\BatchTagsDialog.baml
+D:\ImageFolderManager\obj\Debug\Views\CopyConflictDialog.baml
 D:\ImageFolderManager\obj\Debug\Views\CreateFolderDialog.baml
 D:\ImageFolderManager\obj\Debug\Views\DeleteConfirmDialog.baml
 D:\ImageFolderManager\obj\Debug\Views\DuplicateFilterSettingsDialog.baml
@@ -61,6 +62,7 @@ D:\ImageFolderManager\obj\Debug\Views\ProgressDialog.baml
 D:\ImageFolderManager\obj\Debug\Views\RenameFolderDialog.baml
 D:\ImageFolderManager\obj\Debug\Views\RenameTagDialog.baml
 D:\ImageFolderManager\obj\Debug\Views\BatchTagsDialog.g.cs
+D:\ImageFolderManager\obj\Debug\Views\CopyConflictDialog.g.cs
 D:\ImageFolderManager\obj\Debug\Views\CreateFolderDialog.g.cs
 D:\ImageFolderManager\obj\Debug\Views\DeleteConfirmDialog.g.cs
 D:\ImageFolderManager\obj\Debug\Views\DuplicateFilterSettingsDialog.g.cs

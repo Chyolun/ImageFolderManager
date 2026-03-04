@@ -2032,9 +2032,38 @@ namespace ImageFolderManager.ViewModels
                         }
                     }
 
-            
+                    string refreshSourcePath = e.SourcePath;
+                    string refreshDestPath = e.DestinationPath;
+
+                    if (e.Operation == FolderOperation.Copy && !e.IsUndoOperation)
+                    {
+                        // For Copy → Create, the "new path" argument to HandleFolderCreate
+                        // must be the destination (the newly created copy).
+                        refreshSourcePath = e.DestinationPath;   // pass destPath as the "new" node path
+                        refreshDestPath = null;
+                        operationType = FolderOperationType.Create;
+                    }
+
+
+                    if (operationType == FolderOperationType.Move
+                    && e.IsBatchMove
+                    && e.AdditionalDestinationPaths?.Count > 1)
+                    {
+                        // Batch move — use dedicated method that centers all moved items
+                        var sources = e.AdditionalDestinationPaths
+                            .Select((dest, i) => i == 0 ? e.SourcePath : dest)   
+                            .ToList();
+                        await _shellTreeView.RefreshTreeIncrementalBatchMove(
+                              e.AdditionalSourcePaths,
+                              e.AdditionalDestinationPaths);
+
+                        string opName = e.IsUndoOperation ? $"Undo {e.Operation}" : e.Operation.ToString();
+                        StatusMessage = $"{opName} completed successfully.";
+                        return;
+                    }
+
                     // Execute incremental refresh (guaranteed to be on UI thread)
-                    await _shellTreeView.RefreshTreeIncremental(operationType, e.SourcePath, e.DestinationPath);
+                    await _shellTreeView.RefreshTreeIncremental(operationType, refreshSourcePath, refreshDestPath);
                     // Update status message
                     string operationName = e.IsUndoOperation ? $"Undo {e.Operation}" : e.Operation.ToString();
                     StatusMessage = $"{operationName} completed successfully.";
@@ -2088,22 +2117,7 @@ namespace ImageFolderManager.ViewModels
             return true;
         }
 
-        /// <summary>
-        /// Safe exception logging method
-        /// </summary>
-        private void LogException(string context, Exception ex)
-        {
-            try
-            {
-                Debug.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] Exception in {context}: {ex}");
-                // Add your logging framework call here if needed
-            }
-            catch
-            {
-                // Ignore logging errors to prevent cascade failures
-            }
-        }
-
+      
         /// <summary>
         /// Maps existing FolderOperation enum to new FolderOperationType enum
         /// </summary>

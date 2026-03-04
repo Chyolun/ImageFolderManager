@@ -3,16 +3,36 @@
   "WorkspaceRootPath": "D:\\ImageFolderManager\\",
   "Documents": [
     {
+      "AbsoluteMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|d:\\imagefoldermanager\\views\\copyconflictdialog.xaml||{F11ACC28-31D1-4C80-A34B-F4E09D3D753C}",
+      "RelativeMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|solutionrelative:views\\copyconflictdialog.xaml||{F11ACC28-31D1-4C80-A34B-F4E09D3D753C}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|d:\\imagefoldermanager\\views\\createfolderdialog.xaml||{F11ACC28-31D1-4C80-A34B-F4E09D3D753C}",
+      "RelativeMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|solutionrelative:views\\createfolderdialog.xaml||{F11ACC28-31D1-4C80-A34B-F4E09D3D753C}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|d:\\imagefoldermanager\\views\\deleteconfirmdialog.xaml||{F11ACC28-31D1-4C80-A34B-F4E09D3D753C}",
+      "RelativeMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|solutionrelative:views\\deleteconfirmdialog.xaml||{F11ACC28-31D1-4C80-A34B-F4E09D3D753C}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|d:\\imagefoldermanager\\views\\duplicatefiltersettingsdialog.xaml||{F11ACC28-31D1-4C80-A34B-F4E09D3D753C}",
+      "RelativeMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|solutionrelative:views\\duplicatefiltersettingsdialog.xaml||{F11ACC28-31D1-4C80-A34B-F4E09D3D753C}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|d:\\imagefoldermanager\\views\\batchtagsdialog.xaml||{F11ACC28-31D1-4C80-A34B-F4E09D3D753C}",
+      "RelativeMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|solutionrelative:views\\batchtagsdialog.xaml||{F11ACC28-31D1-4C80-A34B-F4E09D3D753C}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|D:\\ImageFolderManager\\views\\imagecompressiondialog.xaml.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|solutionrelative:views\\imagecompressiondialog.xaml.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
       "AbsoluteMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|d:\\imagefoldermanager\\controls\\shelltreeview.xaml.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
       "RelativeMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|solutionrelative:controls\\shelltreeview.xaml.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     },
     {
-      "AbsoluteMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|d:\\imagefoldermanager\\controls\\shelltreeview.xaml||{F11ACC28-31D1-4C80-A34B-F4E09D3D753C}",
+      "AbsoluteMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|D:\\ImageFolderManager\\controls\\shelltreeview.xaml||{F11ACC28-31D1-4C80-A34B-F4E09D3D753C}",
       "RelativeMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|solutionrelative:controls\\shelltreeview.xaml||{F11ACC28-31D1-4C80-A34B-F4E09D3D753C}"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|d:\\imagefoldermanager\\views\\imagecompressiondialog.xaml.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
-      "RelativeMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|solutionrelative:views\\imagecompressiondialog.xaml.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     },
     {
       "AbsoluteMoniker": "D:0:0:{ABD71D31-4877-48D3-91B8-46D8182AB4E1}|ImageFolderManager.csproj|D:\\ImageFolderManager\\views\\imagecompressiondialog.xaml||{F11ACC28-31D1-4C80-A34B-F4E09D3D753C}",
@@ -29,41 +49,104 @@
       "VerticalTabListWidth": 256,
       "DocumentGroups": [
         {
-          "DockedHeight": 573,
-          "SelectedChildIndex": 0,
+          "DockedHeight": 909,
+          "SelectedChildIndex": 6,
           "Children": [
-            {
-              "$type": "Document",
-              "DocumentIndex": 0,
-              "Title": "ShellTreeView.xaml.cs",
-              "DocumentMoniker": "D:\\ImageFolderManager\\Controls\\ShellTreeView.xaml.cs",
-              "RelativeDocumentMoniker": "Controls\\ShellTreeView.xaml.cs",
-              "ToolTip": "D:\\ImageFolderManager\\Controls\\ShellTreeView.xaml.cs*",
-              "RelativeToolTip": "Controls\\ShellTreeView.xaml.cs*",
-              "ViewState": "AgIAAPINAAAAAAAAAAAkwA8OAAAVAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2026-03-04T00:53:56.147Z",
-              "EditorCaption": ""
-            },
             {
               "$type": "Bookmark",
               "Name": "ST:0:0:{34e76e81-ee4a-11d0-ae2e-00a0c90fffc3}"
             },
             {
+              "$type": "Bookmark",
+              "Name": "ST:0:0:{d78612c7-9962-4b83-95d9-268046dad23a}"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 3,
+              "Title": "DuplicateFilterSettingsDialog.xaml",
+              "DocumentMoniker": "D:\\ImageFolderManager\\Views\\DuplicateFilterSettingsDialog.xaml",
+              "RelativeDocumentMoniker": "Views\\DuplicateFilterSettingsDialog.xaml",
+              "ToolTip": "D:\\ImageFolderManager\\Views\\DuplicateFilterSettingsDialog.xaml",
+              "RelativeToolTip": "Views\\DuplicateFilterSettingsDialog.xaml",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003549|",
+              "WhenOpened": "2026-03-04T03:29:51.186Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 2,
+              "Title": "DeleteConfirmDialog.xaml",
+              "DocumentMoniker": "D:\\ImageFolderManager\\Views\\DeleteConfirmDialog.xaml",
+              "RelativeDocumentMoniker": "Views\\DeleteConfirmDialog.xaml",
+              "ToolTip": "D:\\ImageFolderManager\\Views\\DeleteConfirmDialog.xaml",
+              "RelativeToolTip": "Views\\DeleteConfirmDialog.xaml",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003549|",
+              "WhenOpened": "2026-03-04T03:29:42.341Z",
+              "EditorCaption": ""
+            },
+            {
               "$type": "Document",
               "DocumentIndex": 1,
+              "Title": "CreateFolderDialog.xaml",
+              "DocumentMoniker": "D:\\ImageFolderManager\\Views\\CreateFolderDialog.xaml",
+              "RelativeDocumentMoniker": "Views\\CreateFolderDialog.xaml",
+              "ToolTip": "D:\\ImageFolderManager\\Views\\CreateFolderDialog.xaml",
+              "RelativeToolTip": "Views\\CreateFolderDialog.xaml",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003549|",
+              "WhenOpened": "2026-03-04T03:29:37.404Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 4,
+              "Title": "BatchTagsDialog.xaml",
+              "DocumentMoniker": "D:\\ImageFolderManager\\Views\\BatchTagsDialog.xaml",
+              "RelativeDocumentMoniker": "Views\\BatchTagsDialog.xaml",
+              "ToolTip": "D:\\ImageFolderManager\\Views\\BatchTagsDialog.xaml",
+              "RelativeToolTip": "Views\\BatchTagsDialog.xaml",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003549|",
+              "WhenOpened": "2026-03-04T03:29:32.438Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 0,
+              "Title": "CopyConflictDialog.xaml",
+              "DocumentMoniker": "D:\\ImageFolderManager\\Views\\CopyConflictDialog.xaml",
+              "RelativeDocumentMoniker": "Views\\CopyConflictDialog.xaml",
+              "ToolTip": "D:\\ImageFolderManager\\Views\\CopyConflictDialog.xaml",
+              "RelativeToolTip": "Views\\CopyConflictDialog.xaml",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003549|",
+              "WhenOpened": "2026-03-04T03:27:55.791Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 6,
+              "Title": "ShellTreeView.xaml.cs",
+              "DocumentMoniker": "D:\\ImageFolderManager\\Controls\\ShellTreeView.xaml.cs",
+              "RelativeDocumentMoniker": "Controls\\ShellTreeView.xaml.cs",
+              "ToolTip": "D:\\ImageFolderManager\\Controls\\ShellTreeView.xaml.cs",
+              "RelativeToolTip": "Controls\\ShellTreeView.xaml.cs",
+              "ViewState": "AgIAAKkLAAAAAAAAAAAYwL8LAAATAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-03-04T00:53:56.147Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 7,
               "Title": "ShellTreeView.xaml",
               "DocumentMoniker": "D:\\ImageFolderManager\\Controls\\ShellTreeView.xaml",
               "RelativeDocumentMoniker": "Controls\\ShellTreeView.xaml",
               "ToolTip": "D:\\ImageFolderManager\\Controls\\ShellTreeView.xaml",
               "RelativeToolTip": "Controls\\ShellTreeView.xaml",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003549|",
-              "WhenOpened": "2026-03-04T00:53:56.693Z",
-              "EditorCaption": ""
+              "WhenOpened": "2026-03-04T00:53:56.693Z"
             },
             {
               "$type": "Document",
-              "DocumentIndex": 2,
+              "DocumentIndex": 5,
               "Title": "ImageCompressionDialog.xaml.cs",
               "DocumentMoniker": "D:\\ImageFolderManager\\Views\\ImageCompressionDialog.xaml.cs",
               "RelativeDocumentMoniker": "Views\\ImageCompressionDialog.xaml.cs",
@@ -75,12 +158,8 @@
               "EditorCaption": ""
             },
             {
-              "$type": "Bookmark",
-              "Name": "ST:0:0:{d78612c7-9962-4b83-95d9-268046dad23a}"
-            },
-            {
               "$type": "Document",
-              "DocumentIndex": 3,
+              "DocumentIndex": 8,
               "Title": "ImageCompressionDialog.xaml",
               "DocumentMoniker": "D:\\ImageFolderManager\\Views\\ImageCompressionDialog.xaml",
               "RelativeDocumentMoniker": "Views\\ImageCompressionDialog.xaml",
@@ -92,7 +171,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 4,
+              "DocumentIndex": 9,
               "Title": "AnimatedImageLoader.cs",
               "DocumentMoniker": "D:\\ImageFolderManager\\Services\\AnimatedImageLoader.cs",
               "RelativeDocumentMoniker": "Services\\AnimatedImageLoader.cs",
@@ -100,8 +179,17 @@
               "RelativeToolTip": "Services\\AnimatedImageLoader.cs",
               "ViewState": "AgIAAAAAAAAAAAAAAAAAACoAAAApAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2026-03-02T08:53:21.732Z",
-              "EditorCaption": ""
+              "WhenOpened": "2026-03-02T08:53:21.732Z"
+            }
+          ]
+        },
+        {
+          "DockedHeight": 121,
+          "SelectedChildIndex": -1,
+          "Children": [
+            {
+              "$type": "Bookmark",
+              "Name": "ST:0:0:{004be353-6879-467c-9d1e-9ac23cdf6d49}"
             }
           ]
         }

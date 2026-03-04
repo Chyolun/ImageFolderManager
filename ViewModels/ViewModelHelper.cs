@@ -144,9 +144,21 @@ namespace ImageFolderManager.ViewModels
         public int AffectedItemCount { get; set; } = 1;
 
         /// <summary>
+        /// Additional destination paths for batch move operations.
+        /// When set, the TreeView will scroll to center all moved items collectively.
+        /// </summary>
+        public List<string> AdditionalDestinationPaths { get; set; }
+
+        /// <summary>
+        /// Returns true if this is a batch move carrying multiple destination paths.
+        /// </summary>
+        public bool IsBatchMove => AdditionalDestinationPaths != null && AdditionalDestinationPaths.Count > 0;
+
+        /// <summary>
         /// Error message if the operation failed
         /// </summary>
         public string ErrorMessage { get; set; }
+        public List<string> AdditionalSourcePaths { get; set; }
 
         /// <summary>
         /// Creates a new instance for a successful operation
@@ -223,6 +235,35 @@ namespace ImageFolderManager.ViewModels
                 IsUndoOperation = isUndoOperation,
                 AffectedItemCount = itemCount,
                 Context = $"Batch operation affecting {itemCount} items",
+                Timestamp = DateTime.Now
+            };
+        }
+
+        /// <summary>
+        /// Creates event args for a batch move operation where all destination paths
+        /// are known upfront, enabling the TreeView to scroll all moved items into center view.
+        /// </summary>
+        public static FolderOperationEventArgs CreateBatchMoveSuccess(
+            List<string> sourcePaths,
+            List<string> destinationPaths,
+            bool isUndoOperation = false)
+        {
+            if (sourcePaths == null || sourcePaths.Count == 0)
+                throw new ArgumentException("sourcePaths cannot be null or empty", nameof(sourcePaths));
+            if (destinationPaths == null || destinationPaths.Count == 0)
+                throw new ArgumentException("destinationPaths cannot be null or empty", nameof(destinationPaths));
+
+            return new FolderOperationEventArgs
+            {
+                Operation = FolderOperation.Move,
+                SourcePath = sourcePaths[0],
+                DestinationPath = destinationPaths[0],
+                AdditionalDestinationPaths = destinationPaths,   // full list for center-scroll
+                Success = true,
+                IsUndoOperation = isUndoOperation,
+                AffectedItemCount = destinationPaths.Count,
+                AdditionalSourcePaths = sourcePaths,
+                Context = $"Batch move of {destinationPaths.Count} folders",
                 Timestamp = DateTime.Now
             };
         }

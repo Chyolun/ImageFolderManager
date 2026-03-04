@@ -3006,6 +3006,53 @@ namespace ImageFolderManager.Controls
         }
 
         /// <summary>
+        /// Overload for batch move operations — processes all pairs then
+        /// scrolls the viewport to center all moved items collectively.
+        /// </summary>
+        public async Task RefreshTreeIncrementalBatchMove(
+            List<string> sourcePaths,
+            List<string> destinationPaths)
+        {
+            if (sourcePaths == null || destinationPaths == null) return;
+            if (sourcePaths.Count != destinationPaths.Count) return;
+
+            // Process each move individually (existing logic handles tree node updates)
+            for (int i = 0; i < sourcePaths.Count; i++)
+            {
+                string normalizedDest = PathService.NormalizePath(destinationPaths[i]);
+                if (_pathToTreeViewItem.ContainsKey(normalizedDest)) continue;
+
+                await HandleFolderMove(sourcePaths[i], destinationPaths[i]);
+                EmergencyRemoveDuplicates();
+            }
+
+            // After all moves, select every moved item and scroll to their collective center
+            await Application.Current.Dispatcher.InvokeAsync(() =>
+            {
+                ClearSelectedItems();
+
+                var movedItems = new List<TreeViewItem>();
+                foreach (var dest in destinationPaths)
+                {
+                    string normalized = PathService.NormalizePath(dest);
+                    if (_pathToTreeViewItem.TryGetValue(normalized, out var tvi))
+                    {
+                        SelectItem(tvi);
+                        movedItems.Add(tvi);
+                    }
+                }
+
+                if (movedItems.Count > 0)
+                {
+                    // BringIntoView the first item so the tree renders item positions,
+                    // then animate to the group center
+                    movedItems[0].BringIntoView();
+                    ScrollToCenterMultiple(movedItems);
+                }
+            }, DispatcherPriority.Loaded);
+        }
+
+        /// <summary>
         /// Emergency method to remove all duplicate children from TreeView
         /// </summary>
         public void EmergencyRemoveDuplicates()
@@ -3279,6 +3326,59 @@ namespace ImageFolderManager.Controls
                 EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
             };
 
+            scrollViewer.BeginAnimation(ScrollViewerBehavior.VerticalOffsetProperty, animation);
+        }
+
+        /// <summary>
+        /// Scrolls the TreeView so that the visual midpoint of all specified items
+        /// is centered in the viewport. Used after batch move operations.
+        /// </summary>
+        private void ScrollToCenterMultiple(IEnumerable<TreeViewItem> items)
+        {
+            var scrollViewer = FindVisualChild<ScrollViewer>(ShellTreeViewControl);
+            if (scrollViewer == null) return;
+
+            var visibleItems = items
+                .Where(item => item != null && item.IsVisible)
+                .ToList();
+
+            if (visibleItems.Count == 0) return;
+            if (visibleItems.Count == 1) { ScrollToCenter(visibleItems[0]); return; }
+
+            // Collect absolute Y positions of all items
+            var yPositions = new List<double>();
+            foreach (var item in visibleItems)
+            {
+                try
+                {
+                    var transform = item.TransformToAncestor(scrollViewer);
+                    var pos = transform.Transform(new Point(0, 0));
+                    double absTop = pos.Y + scrollViewer.VerticalOffset;
+                    yPositions.Add(absTop);
+                    yPositions.Add(absTop + item.ActualHeight);
+                }
+                catch (InvalidOperationException)
+                {
+                    // Item may not be in the visual tree yet — skip
+                }
+            }
+
+            if (yPositions.Count == 0) return;
+
+            double groupTop = yPositions.Min();
+            double groupBottom = yPositions.Max();
+            double groupCenter = (groupTop + groupBottom) / 2.0;
+
+            double targetOffset = groupCenter - scrollViewer.ViewportHeight / 2.0;
+            targetOffset = Math.Max(0, Math.Min(targetOffset, scrollViewer.ScrollableHeight));
+
+            var animation = new DoubleAnimation
+            {
+                From = scrollViewer.VerticalOffset,
+                To = targetOffset,
+                Duration = TimeSpan.FromMilliseconds(350),
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+            };
             scrollViewer.BeginAnimation(ScrollViewerBehavior.VerticalOffsetProperty, animation);
         }
 

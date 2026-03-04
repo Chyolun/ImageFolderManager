@@ -168,6 +168,9 @@
       <DependentUpon>BatchTagsDialog.xaml</DependentUpon>
     </Compile>
     <Compile Include="Converters\Converter.cs" />
+    <Compile Include="Views\CopyConflictDialog.xaml.cs">
+      <DependentUpon>CopyConflictDialog.xaml</DependentUpon>
+    </Compile>
     <Compile Include="Views\CreateFolderDialog.xaml.cs">
       <DependentUpon>CreateFolderDialog.xaml</DependentUpon>
     </Compile>
@@ -207,6 +210,10 @@
     <Page Include="Views\BatchTagsDialog.xaml">
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="Views\CopyConflictDialog.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
     </Page>
     <Page Include="Views\CreateFolderDialog.xaml">
       <Generator>MSBuild:Compile</Generator>

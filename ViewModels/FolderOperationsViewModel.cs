@@ -584,16 +584,33 @@ namespace ImageFolderManager.ViewModels
                 });
             }
 
-            foreach (var (src, dest) in movedSources)
+            // Build destination path list for all successfully moved folders
+            var sourcePaths = new List<string>();
+            var destPaths = new List<string>();
+            foreach (var folder in folderList)
             {
-                OnFolderOperationCompleted(FolderOperationEventArgs.CreateSuccess(
-                    FolderOperation.Move, src, dest));
-                await Task.Delay(50); 
+                string newPath = Path.Combine(targetFolder.FolderPath, Path.GetFileName(folder.FolderPath));
+                if (Directory.Exists(newPath))   // only include actually moved folders
+                {
+                    sourcePaths.Add(folder.FolderPath);
+                    destPaths.Add(newPath);
+                }
             }
-            UpdateStatus(overallSuccess
-                ? $"Moved {folderList.Count} folders."
-                : $"Moved {movedSources.Count} of {folderList.Count} folders (some errors).");
 
+            if (destPaths.Count == 1)
+            {
+                // Single item — use ordinary event so existing scroll logic handles it
+                OnFolderOperationCompleted(FolderOperationEventArgs.CreateSuccess(
+                    FolderOperation.Move, sourcePaths[0], destPaths[0]));
+            }
+            else if (destPaths.Count > 1)
+            {
+                // Multiple items — fire ONE batch event; TreeView will center-scroll all of them
+                OnFolderOperationCompleted(
+                    FolderOperationEventArgs.CreateBatchMoveSuccess(sourcePaths, destPaths));
+            }
+
+            CommandManager.InvalidateRequerySuggested();
             return overallSuccess;
         }
 
@@ -604,7 +621,7 @@ namespace ImageFolderManager.ViewModels
         // ─────────────────────────────────────────────────────────────────
 
         public async Task<bool> CopyFoldersAsync(
-            IEnumerable<FolderInfo> sourceFolders, FolderInfo targetFolder)
+             IEnumerable<FolderInfo> sourceFolders, FolderInfo targetFolder)
         {
             if (sourceFolders == null || targetFolder == null) return false;
 
@@ -614,51 +631,137 @@ namespace ImageFolderManager.ViewModels
 
             if (folderList.Count == 0) return false;
 
+            // ── Conflict pre-check (on UI thread before showing progress dialog) ──
+            // Build a resolution plan for every folder that would collide.
+            // Key = sourceFolder.FolderPath, Value = resolved destination path (or null = skip).
+            var resolutionPlan = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+            // "Apply-to-all" state
+            bool hasApplyToAll = false;
+            ConflictResolution applyToAllResolution = ConflictResolution.Skip;
+
+            bool cancelledByUser = false;
+
+            foreach (var sourceFolder in folderList)
+            {
+                string candidateDest = Path.Combine(targetFolder.FolderPath, sourceFolder.Name);
+
+                if (!Directory.Exists(candidateDest))
+                {
+                    // No conflict – use as-is
+                    resolutionPlan[sourceFolder.FolderPath] = candidateDest;
+                    continue;
+                }
+
+                // Conflict detected ────────────────────────────────────────
+                if (hasApplyToAll)
+                {
+                    // Apply the previously chosen resolution without showing a dialog
+                    string resolved = ResolveConflictAutomatically(
+                        sourceFolder.Name, targetFolder.FolderPath, applyToAllResolution);
+                    resolutionPlan[sourceFolder.FolderPath] = resolved; // null = skip
+                    continue;
+                }
+
+                // Show conflict dialog on UI thread
+                string chosenDest = null;
+                bool cancelled = false;
+
+                Application.Current.Dispatcher.Invoke(() =>
+                {
+                    bool isBatch = folderList.Count > 1;
+                    var dlg = new Views.CopyConflictDialog(
+                        sourceFolder.Name, targetFolder.FolderPath, isBatch)
+                    {
+                        Owner = Application.Current.MainWindow
+                    };
+
+                    bool? result = dlg.ShowDialog();
+
+                    if (result != true || dlg.Resolution == ConflictResolution.CancelAll)
+                    {
+                        cancelled = true;
+                        return;
+                    }
+
+                    if (dlg.ApplyToAll)
+                    {
+                        hasApplyToAll = true;
+                        applyToAllResolution = dlg.Resolution;
+                    }
+
+                    chosenDest = ResolveConflictFromDialog(
+                        dlg.Resolution, dlg.NewFolderName,
+                        sourceFolder.Name, targetFolder.FolderPath);
+                });
+
+                if (cancelled)
+                {
+                    cancelledByUser = true;
+                    break;
+                }
+
+                resolutionPlan[sourceFolder.FolderPath] = chosenDest; // null = skip
+            }
+
+            if (cancelledByUser) return false;
+
+            // ── Copy phase ────────────────────────────────────────────────
+            // Filter to folders that are NOT skipped (resolution != null)
+            var toProcess = folderList
+                .Where(f => resolutionPlan.TryGetValue(f.FolderPath, out var d) && d != null)
+                .ToList();
+
+            if (toProcess.Count == 0)
+            {
+                UpdateStatus("Copy cancelled: all folders skipped.");
+                return false;
+            }
+
             var progressDialog = new ProgressDialog(
                 "Copying Folders",
-                $"Copying {folderList.Count} folders...");
+                $"Copying {toProcess.Count} folder(s)...");
             progressDialog.Owner = Application.Current.MainWindow;
 
             bool overallSuccess = true;
-            int  processed      = 0;
+            int processed = 0;
 
-            var copyTask = Task.Run(async () =>
+            var copyTask = Task.Run(() =>
             {
-                foreach (var sourceFolder in folderList)
+                foreach (var sourceFolder in toProcess)
                 {
                     try
                     {
-                        double progress = (double)processed / folderList.Count;
+                        double progress = (double)processed / toProcess.Count;
                         Application.Current.Dispatcher.Invoke(() =>
                             progressDialog.UpdateProgress(progress, $"Copying: {sourceFolder.Name}"));
 
-                        string destPath = Path.Combine(targetFolder.FolderPath, sourceFolder.Name);
+                        string destPath = resolutionPlan[sourceFolder.FolderPath];
 
+                        // Handle Overwrite: delete existing folder first
                         if (Directory.Exists(destPath))
                         {
-                            // Auto-rename copy to avoid collision
-                            int idx = 1;
-                            string baseName = sourceFolder.Name;
-                            while (Directory.Exists(destPath))
-                            {
-                                destPath = Path.Combine(
-                                    targetFolder.FolderPath, $"{baseName} ({idx++})");
-                            }
+                            Directory.Delete(destPath, recursive: true);
                         }
 
                         CopyDirectoryInternal(sourceFolder.FolderPath, destPath);
 
-                        // ── Record for undo ───────────────────────────────
+                        // ── Record for undo & fire TreeView event ─────────
                         Application.Current.Dispatcher.Invoke(() =>
                         {
                             UndoManager.Push(UndoRecord.ForCopy(destPath));
+
+                            // FIX: DestinationPath must be the actual copied folder path,
+                            // NOT targetFolder.FolderPath (the parent).
                             OnFolderOperationCompleted(FolderOperationEventArgs.CreateSuccess(
-                                FolderOperation.Copy, sourceFolder.FolderPath, destPath));
+                                FolderOperation.Copy,
+                                sourceFolder.FolderPath,   // source (informational)
+                                destPath));                 // ← FIXED: real dest path
                         });
                     }
                     catch (Exception ex)
                     {
-                        Debug.WriteLine($"Error copying {sourceFolder.FolderPath}: {ex.Message}");
+                        Debug.WriteLine($"[CopyFoldersAsync] Error copying {sourceFolder.FolderPath}: {ex.Message}");
                         overallSuccess = false;
                     }
 
@@ -673,10 +776,62 @@ namespace ImageFolderManager.ViewModels
             await copyTask;
 
             UpdateStatus(overallSuccess
-                ? $"Copied {folderList.Count} folders."
-                : $"Copied {processed} of {folderList.Count} folders with some errors.");
+                ? $"Copied {toProcess.Count} folder(s)."
+                : $"Copied {processed} of {toProcess.Count} folder(s) with some errors.");
 
             return overallSuccess;
+        }
+
+        /// <summary>
+        /// Returns the destination path based on a dialog result, or null for Skip.
+        /// </summary>
+        private static string ResolveConflictFromDialog(
+            ConflictResolution resolution,
+            string newNameFromDialog,
+            string folderName,
+            string parentDir)
+        {
+            switch (resolution)
+            {
+                case ConflictResolution.Skip:
+                    return null;
+
+                case ConflictResolution.Overwrite:
+                    return Path.Combine(parentDir, folderName);   // same path → will be deleted first
+
+                case ConflictResolution.Rename:
+                    return Path.Combine(parentDir, newNameFromDialog);
+
+                default:
+                    return null;
+            }
+        }
+
+        /// <summary>
+        /// Applies an "Apply-to-all" resolution automatically (no dialog).
+        /// For Rename, generates a unique name.
+        /// </summary>
+        private static string ResolveConflictAutomatically(
+            string folderName, string parentDir, ConflictResolution resolution)
+        {
+            switch (resolution)
+            {
+                case ConflictResolution.Skip:
+                    return null;
+
+                case ConflictResolution.Overwrite:
+                    return Path.Combine(parentDir, folderName);
+
+                case ConflictResolution.Rename:
+                    int idx = 1;
+                    string candidate = $"{folderName} ({idx})";
+                    while (Directory.Exists(Path.Combine(parentDir, candidate)))
+                        candidate = $"{folderName} ({++idx})";
+                    return Path.Combine(parentDir, candidate);
+
+                default:
+                    return null;
+            }
         }
 
         /// <summary>Recursive directory copy (runs on a thread-pool thread).</summary>
@@ -692,9 +847,9 @@ namespace ImageFolderManager.ViewModels
                 file.CopyTo(Path.Combine(destination, file.Name), overwrite: false);
 
             foreach (var subDir in dir.GetDirectories())
-                CopyDirectoryInternal(subDir.FullName,
-                    Path.Combine(destination, subDir.Name));
+                CopyDirectoryInternal(subDir.FullName, Path.Combine(destination, subDir.Name));
         }
+
 
         #endregion
 
