@@ -54,10 +54,6 @@ namespace ImageFolderManager.ViewModels
         public IAsyncRelayCommand<FolderInfo> DeleteFolderCommand   { get; }
         public IAsyncRelayCommand<FolderInfo> CreateNewFolderCommand { get; }
 
-        // Keep the old name as a forwarding property so existing XAML bindings
-        // (UndoFolderMovementCommand) continue to work without change.
-        public IAsyncRelayCommand UndoFolderMovementCommand => UndoCommand;
-
         #endregion
 
         #region Events

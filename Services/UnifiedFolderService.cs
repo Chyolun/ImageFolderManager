@@ -42,16 +42,13 @@ namespace ImageFolderManager.Services
 
         #region Fields and Properties
 
-        // Services
-        private readonly FolderTagService _tagService = new FolderTagService();
-
         // Command system components (optional)
         private CommandSystemInitializer _commandSystem;
         private CommandExecutor _commandExecutor;
         private FolderStateMachine _stateMachine;
         private PathLockManager _pathLockManager;
         private bool _commandSystemEnabled = false;
-
+        private readonly FolderTagService _tagService;
         // Single file system watcher for the entire tree
         private FileSystemWatcher _rootWatcher;
 
@@ -134,11 +131,11 @@ namespace ImageFolderManager.Services
 
         #region Constructor and Initialization
 
-        public UnifiedFolderService(HierarchicalNodeManager nodeManager = null, bool enableCommandSystem = false)
+        public UnifiedFolderService(FolderTagService tagService, HierarchicalNodeManager nodeManager = null, bool enableCommandSystem = false)
         {
             _nodeManager = nodeManager ?? new HierarchicalNodeManager();
             _commandSystemEnabled = enableCommandSystem;
-
+            _tagService = tagService ?? throw new ArgumentNullException(nameof(tagService));
             // Initialize command system if requested
             if (_commandSystemEnabled)
             {

@@ -176,18 +176,18 @@ namespace ImageFolderManager.ViewModels
             var categoryService = new TagCategoryService();
             // Initialize services
             _nodeManager = new HierarchicalNodeManager();
-            
-            _unifiedFolderService = new UnifiedFolderService(_nodeManager);
+           
             _tagService = new FolderTagService(categoryService);
             _allLoadedFolders = new List<FolderInfo>();
-           
+            _unifiedFolderService = new UnifiedFolderService(_tagService, _nodeManager);
             // Initialize sub-ViewModels with enhanced TagCloudViewModel
             FolderOperations = new FolderOperationsViewModel(_unifiedFolderService);
             Search = new SearchViewModel(_unifiedFolderService, _allLoadedFolders);
             ImageLoading = new ImageLoadingViewModel(_unifiedFolderService);
-            TagManagement = new TagManagementViewModel(_tagService, new TagCloudViewModel());
-            _coordinator = new FolderOperationCoordinator(_unifiedFolderService, _tagService, TagManagement.TagCloud, _nodeManager);
-            TagManagement = new TagManagementViewModel(_tagService, new TagCloudViewModel(categoryService), _coordinator);
+ 
+            var tagCloud = new TagCloudViewModel(categoryService);
+            _coordinator = new FolderOperationCoordinator(_unifiedFolderService, _tagService, tagCloud, _nodeManager);
+            TagManagement = new TagManagementViewModel(_tagService, tagCloud, _coordinator);
 
             _cutCommand = new RelayCommand(ExecuteCutCommand, CanExecuteCutCommand);
             _copyCommand = new RelayCommand(ExecuteCopyCommand, CanExecuteCopyCommand);
