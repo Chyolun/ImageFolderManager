@@ -252,7 +252,6 @@ namespace ImageFolderManager.ViewModels
                 .ToList();
 
             if (folderList.Count == 0) return false;
-
             if (folderList.Count == 1)
                 return await DeleteFolderAsync(folderList[0]);
 
@@ -270,6 +269,7 @@ namespace ImageFolderManager.ViewModels
 
             bool overallSuccess = true;
             int processed = 0;
+            int failedCount = 0;
 
             var deleteTask = Task.Run(async () =>
             {
@@ -284,31 +284,46 @@ namespace ImageFolderManager.ViewModels
                         bool success = await _folderService.DeleteFolderAsync(
                             folder.FolderPath, useRecycleBin: true);
 
-                        if (!success) overallSuccess = false;
-
-                        Application.Current.Dispatcher.Invoke(() =>
-                            OnFolderOperationCompleted(FolderOperationEventArgs.CreateSuccess(
-                                FolderOperation.Delete, folder.FolderPath)));
+                        if (!success)
+                        {
+                            overallSuccess = false;
+                            Interlocked.Increment(ref failedCount);
+                        }
                     }
                     catch (Exception ex)
                     {
                         Debug.WriteLine($"Error deleting {folder.FolderPath}: {ex.Message}");
                         overallSuccess = false;
+                        Interlocked.Increment(ref failedCount);
                     }
 
-                    processed++;
+                    Interlocked.Increment(ref processed);
                 }
 
                 Application.Current.Dispatcher.Invoke(() =>
                     progressDialog.UpdateProgress(1.0, "Delete completed"));
             });
 
+            // Show the progress dialog (blocking the UI) first, and then wait for the task to complete
             progressDialog.ShowDialog();
             await deleteTask;
 
+            // When the task is complete, a refresh event is triggered on the UI thread
+            int successCount = folderList.Count - failedCount;
+            if (successCount > 0)
+            {
+                OnFolderOperationCompleted(new FolderOperationEventArgs
+                {
+                    Operation = FolderOperation.Refresh,
+                    Success = true,
+                    AffectedItemCount = successCount,
+                    Timestamp = DateTime.Now
+                });
+            }
+
             UpdateStatus(overallSuccess
                 ? $"Deleted {folderList.Count} folders."
-                : $"Deleted {processed} folders with some errors.");
+                : $"Deleted {successCount} of {folderList.Count} folders, {failedCount} failed.");
 
             return overallSuccess;
         }
@@ -569,29 +584,9 @@ namespace ImageFolderManager.ViewModels
                     movedSources.Select(x => x.src), targetFolder.FolderPath));
             }
 
-
-            if (movedSources.Count > 0)
-            {
-                OnFolderOperationCompleted(new FolderOperationEventArgs
-                {
-                    Operation = FolderOperation.Refresh,
-                    Success = true,
-                    Timestamp = DateTime.Now
-                });
-            }
-
             // Build destination path list for all successfully moved folders
-            var sourcePaths = new List<string>();
-            var destPaths = new List<string>();
-            foreach (var folder in folderList)
-            {
-                string newPath = Path.Combine(targetFolder.FolderPath, Path.GetFileName(folder.FolderPath));
-                if (Directory.Exists(newPath))   // only include actually moved folders
-                {
-                    sourcePaths.Add(folder.FolderPath);
-                    destPaths.Add(newPath);
-                }
-            }
+            var sourcePaths = movedSources.Select(x => x.src).ToList();
+            var destPaths = movedSources.Select(x => x.dest).ToList();
 
             if (destPaths.Count == 1)
             {

@@ -18,6 +18,7 @@ using Microsoft.Web.WebView2.Wpf;
 using CommunityToolkit.Mvvm.Input;
 using System.Web;
 using System.Linq;
+using System.Collections.Generic;
 
 
 
@@ -84,7 +85,9 @@ namespace ImageFolderManager
             ViewModel.SetSelectedFolderWithoutLoading(folder);
         }
 
-     
+
+        
+
         private T FindVisualChild<T>(DependencyObject parent) where T : DependencyObject
         {
             if (parent == null) return null;
@@ -358,7 +361,110 @@ namespace ImageFolderManager
                     e.Handled = true;
                 }
             }
+            if (e.Key == Key.F && Keyboard.Modifiers == ModifierKeys.Control)
+            {
+                OpenFindBar();
+                e.Handled = true;
+            }
+
         }
+
+        #region Find Bar
+
+        private List<string> _findResults = new List<string>();
+        private int _findIndex = -1;
+
+        /// <summary>Menu item click — Edit → Find</summary>
+        private void Find_Click(object sender, RoutedEventArgs e) => OpenFindBar();
+
+        private void OpenFindBar()
+        {
+            FindBar.Visibility = Visibility.Visible;
+            FindTextBox.Focus();
+            FindTextBox.SelectAll();
+        }
+
+        private void FindClose_Click(object sender, RoutedEventArgs e) => CloseFindBar();
+
+        private void CloseFindBar()
+        {
+            FindBar.Visibility = Visibility.Collapsed;
+            // Return focus to tree view
+            ShellTreeViewControl.Focus();
+        }
+
+        /// <summary>Re-run search whenever the user types.</summary>
+        private void FindTextBox_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            RunFind(FindTextBox.Text, forward: true, resetIndex: true);
+        }
+
+        private void FindNext_Click(object sender, RoutedEventArgs e)
+            => RunFind(FindTextBox.Text, forward: true, resetIndex: false);
+
+        private void FindPrev_Click(object sender, RoutedEventArgs e)
+            => RunFind(FindTextBox.Text, forward: false, resetIndex: false);
+
+        private void FindTextBox_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Enter)
+            {
+                bool backward = Keyboard.Modifiers.HasFlag(ModifierKeys.Shift);
+                RunFind(FindTextBox.Text, forward: !backward, resetIndex: false);
+                e.Handled = true;
+            }
+            else if (e.Key == Key.Escape)
+            {
+                CloseFindBar();
+                e.Handled = true;
+            }
+        }
+
+        /// <summary>Core search + navigation logic.</summary>
+        private void RunFind(string keyword, bool forward, bool resetIndex)
+        {
+            // Reset UI hints
+            FindNoMatchLabel.Visibility = Visibility.Collapsed;
+            FindMatchLabel.Text = "";
+
+            if (string.IsNullOrWhiteSpace(keyword))
+            {
+                _findResults.Clear();
+                _findIndex = -1;
+                return;
+            }
+
+            // Re-query when keyword changes or forced reset
+            if (resetIndex)
+            {
+                _findResults = ShellTreeViewControl.FindFoldersByName(keyword);
+                _findIndex = _findResults.Count > 0 ? 0 : -1;
+            }
+            else if (_findResults.Count > 0)
+            {
+                if (forward)
+                    _findIndex = (_findIndex + 1) % _findResults.Count;
+                else
+                    _findIndex = (_findIndex - 1 + _findResults.Count) % _findResults.Count;
+            }
+
+            if (_findResults.Count == 0)
+            {
+                FindNoMatchLabel.Text = "No results";
+                FindNoMatchLabel.Visibility = Visibility.Visible;
+                return;
+            }
+
+            // Update counter label
+            FindMatchLabel.Text = $"{_findIndex + 1} / {_findResults.Count}";
+
+            // Navigate tree to match
+            string target = _findResults[_findIndex];
+            ShellTreeViewControl.NavigateToPath(target);
+        }
+
+        
+        #endregion
 
         /// <summary>
         /// Safely executes the undo command and surfaces any exception as a
@@ -535,9 +641,6 @@ namespace ImageFolderManager
                 if (menuItem != null) menuItem.IsEnabled = true;
             }
         }
-
-
-
 
         private void TagsCloud_Click(object sender, RoutedEventArgs e)
         {

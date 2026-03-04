@@ -216,7 +216,7 @@ namespace ImageFolderManager.Services
                     case FolderCommandType.Create:
                         if (command is CreateFolderCommand createCmd)
                         {
-                            await AddFolderToIndex(createCmd.CreatedPath);
+                            await AddFolderToIndexSafe(createCmd.CreatedPath);
                             FolderCreated?.Invoke(createCmd.CreatedPath);
                         }
                         break;
@@ -224,7 +224,7 @@ namespace ImageFolderManager.Services
                     case FolderCommandType.Delete:
                         if (command is DeleteFolderCommand deleteCmd)
                         {
-                            RemoveFolderFromIndex(deleteCmd.FolderPath);
+                            RemoveFolderFromIndexSafe(deleteCmd.FolderPath);
                             FolderDeleted?.Invoke(deleteCmd.FolderPath);
                         }
                         break;
@@ -232,8 +232,8 @@ namespace ImageFolderManager.Services
                     case FolderCommandType.Move:
                         if (command is MoveFolderCommand moveCmd)
                         {
-                            RemoveFolderFromIndex(moveCmd.SourcePath);
-                            await AddFolderToIndex(moveCmd.DestinationPath);
+                            RemoveFolderFromIndexSafe(moveCmd.SourcePath);
+                            await AddFolderToIndexSafe(moveCmd.DestinationPath);
                             FolderRenamed?.Invoke(moveCmd.SourcePath, moveCmd.DestinationPath);
                         }
                         break;
@@ -241,8 +241,8 @@ namespace ImageFolderManager.Services
                     case FolderCommandType.Rename:
                         if (command is RenameFolderCommand renameCmd)
                         {
-                            RemoveFolderFromIndex(renameCmd.OldPath);
-                            await AddFolderToIndex(renameCmd.NewPath);
+                            RemoveFolderFromIndexSafe(renameCmd.OldPath);
+                            await AddFolderToIndexSafe(renameCmd.NewPath);
                             FolderRenamed?.Invoke(renameCmd.OldPath, renameCmd.NewPath);
                         }
                         break;
@@ -402,7 +402,7 @@ namespace ImageFolderManager.Services
                     var newFolderPath = Path.Combine(parentPath, folderName);
                     Directory.CreateDirectory(newFolderPath);
 
-                    await AddFolderToIndex(newFolderPath);
+                    await AddFolderToIndexSafe(newFolderPath);
                     FolderCreated?.Invoke(newFolderPath);
 
                     return true;
@@ -443,7 +443,7 @@ namespace ImageFolderManager.Services
                         Directory.Delete(folderPath, true);
                     }
 
-                    RemoveFolderFromIndex(folderPath);
+                    RemoveFolderFromIndexSafe(folderPath);
                     FolderDeleted?.Invoke(folderPath);
 
                     return true;
@@ -474,8 +474,8 @@ namespace ImageFolderManager.Services
                 {
                     Directory.Move(sourcePath, destinationPath);
 
-                    RemoveFolderFromIndex(sourcePath);
-                    await AddFolderToIndex(destinationPath);
+                    RemoveFolderFromIndexSafe(sourcePath);
+                    await AddFolderToIndexSafe(destinationPath);
                     FolderRenamed?.Invoke(sourcePath, destinationPath);
 
                     return true;
@@ -509,8 +509,8 @@ namespace ImageFolderManager.Services
                     var newPath = Path.Combine(Path.GetDirectoryName(folderPath), newName);
                     Directory.Move(folderPath, newPath);
 
-                    RemoveFolderFromIndex(folderPath);
-                    await AddFolderToIndex(newPath);
+                    RemoveFolderFromIndexSafe(folderPath);
+                    await AddFolderToIndexSafe(newPath);
                     FolderRenamed?.Invoke(folderPath, newPath);
 
                     return true;
@@ -647,9 +647,9 @@ namespace ImageFolderManager.Services
 			}
 		}
 
-		private async Task HandleCreateEventAsync(string path)
+		private async Task HandleCreateEventAsync(string normalizedPath)
 		{
-			var normalizedPath = PathNormalizationService.GetCanonicalPath(path);
+		    
 			await AddFolderToIndexSafe(normalizedPath);
 			FolderCreated?.Invoke(normalizedPath);
 
@@ -660,9 +660,9 @@ namespace ImageFolderManager.Services
 			FileSystemEvent?.Invoke(folderInfo, args, WatcherChangeTypes.Created);
 		}
 
-		private async Task HandleDeleteEventAsync(string path)
+		private async Task HandleDeleteEventAsync(string normalizedPath)
 		{
-			var normalizedPath = PathNormalizationService.GetCanonicalPath(path);
+			
 			RemoveFolderFromIndexSafe(normalizedPath);
 			FolderDeleted?.Invoke(normalizedPath);
 
@@ -672,10 +672,8 @@ namespace ImageFolderManager.Services
 			FileSystemEvent?.Invoke(null, args, WatcherChangeTypes.Deleted);
 		}
 
-		private async Task HandleRenameEventAsync(string oldPath, string newPath)
+		private async Task HandleRenameEventAsync(string normalizedOldPath, string normalizedNewPath)
 		{
-			var normalizedOldPath = PathNormalizationService.GetCanonicalPath(oldPath);
-			var normalizedNewPath = PathNormalizationService.GetCanonicalPath(newPath);
 
 			RemoveFolderFromIndexSafe(normalizedOldPath);
 			await AddFolderToIndexSafe(normalizedNewPath);
@@ -690,69 +688,14 @@ namespace ImageFolderManager.Services
             }
         }
 
-		private async Task HandleChangeEventAsync(string path)
-		{
-			var normalizedPath = PathNormalizationService.GetCanonicalPath(path);
+		private async Task HandleChangeEventAsync(string normalizedPath)
+        { 
 			// For change events, just refresh the folder info if it exists
 			if (_folderIndex.ContainsKey(normalizedPath))
 			{
 				await AddFolderToIndexSafe(normalizedPath); // Refresh existing entry
 			}
 		}
-
-
-
-		private async Task ProcessSingleEventSafe(FileSystemEventData eventData)
-        {
-            var normalizedPath = PathService.NormalizePath(eventData.Path);
-
-            // Cancel any existing operation for this path
-            if (_activeOperations.TryGetValue(normalizedPath, out var existingCts))
-            {
-                existingCts.Cancel();
-                _activeOperations.TryRemove(normalizedPath, out _);
-            }
-
-            // Create new cancellation token for this operation
-            var cts = new CancellationTokenSource();
-            _activeOperations[normalizedPath] = cts;
-
-            try
-            {
-                switch (eventData.ChangeType)
-                {
-                    case WatcherChangeTypes.Created:
-                        await AddFolderToIndexSafe(normalizedPath, cts.Token);
-                        break;
-
-                    case WatcherChangeTypes.Deleted:
-                        RemoveFolderFromIndexSafe(normalizedPath);
-                        break;
-                }
-
-                // Fire legacy event for backward compatibility
-                if (!cts.Token.IsCancellationRequested)
-                {
-                    var folderInfo = GetFolderInfoFromIndex(normalizedPath);
-                    var args = new FileSystemEventArgs(eventData.ChangeType,
-                        Path.GetDirectoryName(eventData.Path), Path.GetFileName(eventData.Path));
-                    FileSystemEvent?.Invoke(folderInfo, args, eventData.ChangeType);
-                }
-            }
-            catch (OperationCanceledException)
-            {
-                // Expected when operation is cancelled
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"Error processing filesystem event for {normalizedPath}: {ex.Message}");
-            }
-            finally
-            {
-                _activeOperations.TryRemove(normalizedPath, out _);
-                cts.Dispose();
-            }
-        }
 
         private async Task AddFolderToIndexSafe(string folderPath, CancellationToken cancellationToken = default)
         {
@@ -883,55 +826,6 @@ namespace ImageFolderManager.Services
                 Debug.WriteLine($"Error creating FolderInfo for {folderPath}: {ex.Message}");
                 return null;
             }
-        }
-
-
-        private async Task AddFolderToIndex(string folderPath)
-        {
-            if (string.IsNullOrEmpty(folderPath) || !Directory.Exists(folderPath))
-                return;
-
-            var normalizedPath = PathService.NormalizePath(folderPath);
-
-            // Add validation to prevent corruption
-            if (string.IsNullOrEmpty(normalizedPath))
-                return;
-
-            var folderInfo = CreateFolderInfo(normalizedPath);
-
-            if (folderInfo != null)
-            {
-                var indexEntry = new FolderIndexEntry
-                {
-                    FolderInfo = folderInfo,
-                    LastAccessed = DateTime.Now,
-                    IsMonitored = true
-                };
-
-
-               // Use atomic update to prevent race conditions
-                _folderIndex.AddOrUpdate(normalizedPath, indexEntry, (key, existing) =>
-                {
-                    // Preserve loading state if exists
-                    if (existing?.FolderInfo?.IsLoading == true && folderInfo.IsLoading == false)
-                    {
-                        folderInfo.IsLoading = false;
-                    }
-                    return indexEntry;
-                });
-            }
-        }
-
-        private void RemoveFolderFromIndex(string folderPath)
-        {
-            if (string.IsNullOrEmpty(folderPath)) return;
-
-            var normalizedPath = PathService.NormalizePath(folderPath);
-
-            // Add validation to prevent corruption
-            if (string.IsNullOrEmpty(normalizedPath))
-                return;
-            _folderIndex.TryRemove(normalizedPath, out _);
         }
 
         private FolderInfo GetFolderInfoFromIndex(string folderPath)

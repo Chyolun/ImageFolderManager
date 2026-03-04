@@ -1364,6 +1364,8 @@ namespace ImageFolderManager.Controls
 
         #endregion
 
+        
+
         public void UpdatePathMapping(string oldPath, string newPath)
         {
             if (_pathToTreeViewItem.TryGetValue(oldPath, out var treeViewItem))
@@ -1681,6 +1683,55 @@ namespace ImageFolderManager.Controls
                 Debug.WriteLine($"Error collapsing directory: {ex.Message}");
                 return false;
             }
+        }
+
+        /// <summary>
+        /// Finds all folders whose name contains <paramref name="keyword"/> (case-insensitive).
+        /// Searches the internal path-to-item dictionary so collapsed nodes are included.
+        /// Returns paths sorted by folder name then full path.
+        /// </summary>
+        public List<string> FindFoldersByName(string keyword)
+        {
+            if (string.IsNullOrWhiteSpace(keyword))
+                return new List<string>();
+
+            string root = _rootDirectory;
+            if (string.IsNullOrEmpty(root) || !Directory.Exists(root))
+                return new List<string>();
+
+            try
+            {
+                return Directory
+                    .EnumerateDirectories(root, "*", SearchOption.AllDirectories)
+                    .Where(p =>
+                    {
+                        var name = System.IO.Path.GetFileName(p);
+                        return name.IndexOf(keyword, StringComparison.OrdinalIgnoreCase) >= 0;
+                    })
+                    .OrderBy(p => System.IO.Path.GetFileName(p), StringComparer.OrdinalIgnoreCase)
+                    .ThenBy(p => p, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"FindFoldersByName error: {ex.Message}");
+                return new List<string>();
+            }
+        }
+
+        /// <summary>
+        /// Navigates to the given path: expands parents, selects and scrolls the item into view.
+        /// </summary>
+        public void NavigateToPath(string path)
+        {
+            if (string.IsNullOrEmpty(path)) return;
+            SelectPath(path);
+            Application.Current.Dispatcher.InvokeAsync(() =>
+            {
+                string normalized = PathService.NormalizePath(path);
+                if (_pathToTreeViewItem.TryGetValue(normalized, out var tvi))
+                    tvi.BringIntoView();
+            }, System.Windows.Threading.DispatcherPriority.Loaded);
         }
 
         private TreeViewItem FindTreeViewItemByPath(string path)

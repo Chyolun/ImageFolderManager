@@ -81,17 +81,20 @@ namespace ImageFolderManager.ViewModels
             get => _statusMessage;
             set
             {
+                bool changed;
                 lock (_statusMessageLock)
                 {
-                    // If an important message is active, only allow new important messages to override it
+                    // If an important message is active, ordinary messages are silently dropped
                     if (_isImportantStatusMessageActive)
-                    {
-                        // Skip setting the message as it would override an important message
                         return;
-                    }
 
-                    SetProperty(ref _statusMessage, value);
+                    changed = _statusMessage != value;
+                    _statusMessage = value;
                 }
+                // Fire PropertyChanged outside the lock to avoid holding the lock
+                // while invoking potentially slow UI-thread callbacks
+                if (changed)
+                    OnPropertyChanged();
             }
         }
 
@@ -123,7 +126,7 @@ namespace ImageFolderManager.ViewModels
             set => Search.SearchText = value;
         }
 
-        public Controls.ShellTreeView ShellTreeView { get; set; }
+
         public ObservableCollection<FolderInfo> SearchResultFolders => Search.SearchResultFolders;
         public bool IsRealTimeIndexingActive => _unifiedFolderService?.IsIndexing == false &&
                                                !string.IsNullOrEmpty(_unifiedFolderService?.RootDirectory);
@@ -209,12 +212,6 @@ namespace ImageFolderManager.ViewModels
             
             // Initialize coordinator in folder service
             _unifiedFolderService.InitializeCoordinator(_coordinator);
-
-            // Initialize tree view services if available
-            if (ShellTreeView != null)
-            {
-                ShellTreeView.InitializeServices(_nodeManager, _coordinator);
-            }
         }
 
         #region Event Subscriptions
@@ -245,7 +242,6 @@ namespace ImageFolderManager.ViewModels
             {
                 await HandleTagsUpdated(e);
                 // Notify that DisplayTagLine has changed
-                OnPropertyChanged(nameof(DisplayTagLine));
             };
 
             // Handle tag cloud request
@@ -1493,18 +1489,18 @@ namespace ImageFolderManager.ViewModels
         /// <param name="durationMs">Duration in milliseconds to protect the message from being overridden</param>
         public void SetImportantStatusMessage(string message, int durationMs = 1000)
         {
+            bool changed;
             lock (_statusMessageLock)
             {
-                // Always set the message immediately
-                StatusMessage = message;
-
-                // Set the flag to prevent overriding
+                // ① Set the flag FIRST, so any concurrent ordinary writes are blocked immediately
                 _isImportantStatusMessageActive = true;
 
-                // Dispose existing timer if any
-                _statusMessageTimer?.Dispose();
+                // ② Write the backing field directly — bypasses the setter to avoid nested lock acquisition
+                changed = _statusMessage != message;
+                _statusMessage = message;
 
-                // Create a new timer to clear the flag after the duration
+                // ③ Reset the expiry timer
+                _statusMessageTimer?.Dispose();
                 _statusMessageTimer = new System.Threading.Timer(_ =>
                 {
                     lock (_statusMessageLock)
@@ -1513,6 +1509,9 @@ namespace ImageFolderManager.ViewModels
                     }
                 }, null, durationMs, System.Threading.Timeout.Infinite);
             }
+            // ④ Fire PropertyChanged outside the lock, consistent with the setter
+            if (changed)
+                OnPropertyChanged(nameof(StatusMessage));
         }
 
         /// <summary>
@@ -1733,19 +1732,6 @@ namespace ImageFolderManager.ViewModels
             // This would be handled by the View
             // The View would check for existing TagCloudWindow and show it
             StatusMessage = "Opening tag cloud...";
-        }
-
-        private async Task HandleFolderOperationCompleted(FolderOperationEventArgs e)
-        {
-            if (e.Success)
-            {
-                // Refresh affected areas
-                await Search.PerformSilentSearchAsync();
-                await UpdateTagCloudAsync();
-
-                OnPropertyChanged(nameof(IsRealTimeIndexingActive));
-                OnPropertyChanged(nameof(IndexedFolderCount));
-            }
         }
 
         private async Task HandleTagsUpdated(TagsUpdatedEventArgs e)
@@ -2005,7 +1991,8 @@ namespace ImageFolderManager.ViewModels
 
                     // Map operation type
                     FolderOperationType operationType = MapToFolderOperationType(e.Operation);
-                    if (e.IsUndoOperation)
+                    if (e.IsUndoOperation &&
+                        (e.Operation == FolderOperation.Move || e.Operation == FolderOperation.Refresh))
                     {
                         operationType = FolderOperationType.UndoMove;
                     }
@@ -2024,7 +2011,6 @@ namespace ImageFolderManager.ViewModels
                     {
                         // Check if source still exists (it shouldn't after a successful move)
                         bool sourceStillExists = PathService.DirectoryExists(e.SourcePath);
-                        bool destExists = PathService.DirectoryExists(e.DestinationPath);
 
                         if (sourceStillExists)
                         {
@@ -2050,9 +2036,9 @@ namespace ImageFolderManager.ViewModels
                     && e.AdditionalDestinationPaths?.Count > 1)
                     {
                         // Batch move — use dedicated method that centers all moved items
-                        var sources = e.AdditionalDestinationPaths
-                            .Select((dest, i) => i == 0 ? e.SourcePath : dest)   
-                            .ToList();
+                        //var sources = e.AdditionalDestinationPaths
+                        //    .Select((dest, i) => i == 0 ? e.SourcePath : dest)   
+                        //    .ToList();
                         await _shellTreeView.RefreshTreeIncrementalBatchMove(
                               e.AdditionalSourcePaths,
                               e.AdditionalDestinationPaths);
