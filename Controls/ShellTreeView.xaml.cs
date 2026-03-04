@@ -3132,6 +3132,15 @@ namespace ImageFolderManager.Controls
                 parentItem.Items.Insert(insertAt, newItem);
                 _pathToTreeViewItem[normalizedNew] = newItem;
 
+                // Select and scroll to the new folder
+                ClearSelectedItems();
+                SelectItem(newItem);
+                newItem.BringIntoView();
+                 Application.Current.Dispatcher.InvokeAsync(() =>
+                {
+                    newItem.BringIntoView();
+                    ScrollToCenter(newItem);
+                }, DispatcherPriority.Loaded);
                 // Invalidate parent's cached children so the next expansion is fresh
                 if (parentItem.Tag is FolderNode parentNode)
                     parentNode.InvalidateChildren();
@@ -3216,6 +3225,11 @@ namespace ImageFolderManager.Controls
 
                             // Select the renamed folder
                             SelectPath(newPath);
+                            // Scroll to make the renamed folder visible
+                            if (_pathToTreeViewItem.TryGetValue(newPath, out var renamedTreeItem))
+                            {
+                                renamedTreeItem.BringIntoView();
+                            }
                         }
                         catch (Exception ex)
                         {
@@ -3239,6 +3253,33 @@ namespace ImageFolderManager.Controls
                     await RefreshParentDirectory(parentPath);
                 }
             }
+        }
+
+        private void ScrollToCenter(TreeViewItem item)
+        {
+            var scrollViewer = FindVisualChild<ScrollViewer>(ShellTreeViewControl);
+            if (scrollViewer == null) return;
+
+            var transform = item.TransformToAncestor(scrollViewer);
+            var itemPosition = transform.Transform(new Point(0, 0));
+
+            double itemTop = itemPosition.Y + scrollViewer.VerticalOffset;
+            double itemHeight = item.ActualHeight;
+            double viewportHeight = scrollViewer.ViewportHeight;
+
+            double targetOffset = itemTop - (viewportHeight / 2) + (itemHeight / 2);
+            targetOffset = Math.Max(0, Math.Min(targetOffset, scrollViewer.ScrollableHeight));
+
+            // Animate scroll position
+            var animation = new DoubleAnimation
+            {
+                From = scrollViewer.VerticalOffset,
+                To = targetOffset,
+                Duration = TimeSpan.FromMilliseconds(300),
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+            };
+
+            scrollViewer.BeginAnimation(ScrollViewerBehavior.VerticalOffsetProperty, animation);
         }
 
         /// <summary>
@@ -3540,6 +3581,24 @@ namespace ImageFolderManager.Controls
                 {
                     Debug.WriteLine($"[{moveId}] Skipped sorting for previously unloaded parent");
                 }
+
+                // ===== STEP 6.5: SCROLL TO MOVED ITEM =====
+                if (destParentWasNotLoaded)
+                {
+                    // Background loading is still in progress — wait briefly for it to register
+                    await Task.Delay(300);
+                }
+
+                await Application.Current.Dispatcher.InvokeAsync(() =>
+                {
+                    if (_pathToTreeViewItem.TryGetValue(normalizedDestPath, out var movedItem))
+                    {
+                        ClearSelectedItems();
+                        SelectItem(movedItem);
+                        movedItem.BringIntoView();
+                        ScrollToCenter(movedItem);
+                    }
+                }, DispatcherPriority.Loaded);
 
                 // ===== STEP 7: FINAL VERIFICATION =====
                 // Verify the moved item's FolderNode points to correct path
@@ -4063,4 +4122,29 @@ namespace ImageFolderManager.Controls
 
 
     }
+
+    /// <summary>
+/// Attached behavior that enables animating ScrollViewer.VerticalOffset.
+/// </summary>
+public static class ScrollViewerBehavior
+{
+    public static readonly DependencyProperty VerticalOffsetProperty =
+        DependencyProperty.RegisterAttached(
+            "VerticalOffset",
+            typeof(double),
+            typeof(ScrollViewerBehavior),
+            new PropertyMetadata(0.0, OnVerticalOffsetChanged));
+
+    public static void SetVerticalOffset(DependencyObject target, double value)
+        => target.SetValue(VerticalOffsetProperty, value);
+
+    public static double GetVerticalOffset(DependencyObject target)
+        => (double)target.GetValue(VerticalOffsetProperty);
+
+    private static void OnVerticalOffsetChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    {
+        if (d is ScrollViewer sv)
+            sv.ScrollToVerticalOffset((double)e.NewValue);
+    }
+}
 }
