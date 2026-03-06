@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
@@ -2220,7 +2220,7 @@ namespace ImageFolderManager.Controls
             if (ViewModel != null)
             {
                 // Call the ViewModel method to load images
-                ViewModel.LoadImagesForSelectedFolderAsync();
+                _ = ViewModel.LoadImagesForSelectedFolderAsync();
             }
             else
             {
@@ -2590,7 +2590,7 @@ namespace ImageFolderManager.Controls
 
                 if (ViewModel != null)
                 {
-                    ViewModel.CreateNewFolder(folderInfo);
+                    _ = ViewModel.CreateNewFolder(folderInfo);
                  
                 }
                 else
@@ -2620,7 +2620,7 @@ namespace ImageFolderManager.Controls
                 if (ViewModel != null)
                 {
                     Debug.WriteLine($"Calling ViewModel.BatchUpdateTags for {selectedFolders.Count} folders");
-                    ViewModel.BatchUpdateTags(selectedFolders);
+                    _ = ViewModel.BatchUpdateTags(selectedFolders);
                 }
                 else
                 {
@@ -2789,7 +2789,7 @@ namespace ImageFolderManager.Controls
                     Debug.WriteLine($"Calling ViewModel.RenameFolder for {path}");
 
                     // Execute rename operation through ViewModel
-                     ViewModel.RenameFolder(folderInfo);
+                     _ = ViewModel.RenameFolder(folderInfo);
                 }
                 else
                 {
@@ -2863,7 +2863,7 @@ namespace ImageFolderManager.Controls
                 if (ViewModel != null)
                 {
                     // Execute delete operation through ViewModel
-                    ViewModel.DeleteFolders(selectedFolders);
+                    _ = ViewModel.DeleteFolders(selectedFolders);
 
                     // Clear selection and refresh tree
                     ClearSelectedItems();
@@ -3336,7 +3336,7 @@ namespace ImageFolderManager.Controls
                             string parentPath = Path.GetDirectoryName(newPath);
                             if (!string.IsNullOrEmpty(parentPath))
                             {
-                                RefreshParentDirectory(parentPath);
+                                _ = RefreshParentDirectory(parentPath);
                             }
                         }
                     }

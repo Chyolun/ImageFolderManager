@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -461,7 +461,7 @@ namespace ImageFolderManager.Views
             StatusText.Text = "Custom destination selected.";
         }
 
-        private async void Import_Click(object sender, RoutedEventArgs e)
+        private void Import_Click(object sender, RoutedEventArgs e)
         {
             string destinationPath = DestinationPathTextBox.Text?.Trim();
 
@@ -565,7 +565,7 @@ namespace ImageFolderManager.Views
             {
                 // Start the tag application task in background
                 // Don't await it to allow the dialog to close immediately
-                System.Threading.Tasks.Task.Run(async () => await ApplyTagsToImportedFoldersAsync(tagsToApply));
+                _ = System.Threading.Tasks.Task.Run(() => ApplyTagsToImportedFoldersAsync(tagsToApply));
                 StatusText.Text += $" Tags will be applied: {string.Join(" ", tagsToApply.Select(t => $"#{t}"))}";
             }
             DialogResult = true; // This is the key fix - explicitly set DialogResult to true

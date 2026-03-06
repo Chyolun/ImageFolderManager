@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
@@ -465,9 +465,10 @@ namespace ImageFolderManager.ViewModels
             }
         }
 
-        private async Task ShowTagCloud() // Changed to async Task (no lambda wrapper needed)
+        private Task ShowTagCloud()
         {
             TagCloudRequested?.Invoke(this, EventArgs.Empty);
+            return Task.CompletedTask;
         }
 
         private void UpdateStars()

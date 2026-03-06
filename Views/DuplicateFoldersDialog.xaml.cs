@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -48,7 +48,7 @@ namespace ImageFolderManager.Views
         /// <summary>
         /// Finds duplicate folders and displays them in the UI with filter information
         /// </summary>
-        private async Task FindAndDisplayDuplicates()
+        private Task FindAndDisplayDuplicates()
         {
             try
             {
@@ -61,7 +61,7 @@ namespace ImageFolderManager.Views
                 if (stats.totalFolders == 0)
                 {
                     ShowNoFoldersMessage();
-                    return;
+                    return Task.CompletedTask;
                 }
 
                 // Get actual duplicate groups
@@ -83,7 +83,7 @@ namespace ImageFolderManager.Views
                 if (duplicateGroups.Count == 0)
                 {
                     ShowNoDuplicatesMessage();
-                    return;
+                    return Task.CompletedTask;
                 }
 
                 // Display duplicate groups
@@ -93,12 +93,14 @@ namespace ImageFolderManager.Views
                 }
 
                 StatusText.Text = $"Found {duplicateGroups.Count} duplicate folder groups";
+                return Task.CompletedTask;
             }
             catch (Exception ex)
             {
                 StatusText.Text = "Error occurred while searching for duplicates";
                 MessageBox.Show($"Error finding duplicates: {ex.Message}", "Error",
                     MessageBoxButton.OK, MessageBoxImage.Error);
+                return Task.CompletedTask;
             }
         }
 

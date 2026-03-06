@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -660,9 +660,8 @@ namespace ImageFolderManager.Services
 			FileSystemEvent?.Invoke(folderInfo, args, WatcherChangeTypes.Created);
 		}
 
-		private async Task HandleDeleteEventAsync(string normalizedPath)
+		private Task HandleDeleteEventAsync(string normalizedPath)
 		{
-			
 			RemoveFolderFromIndexSafe(normalizedPath);
 			FolderDeleted?.Invoke(normalizedPath);
 
@@ -670,6 +669,7 @@ namespace ImageFolderManager.Services
 			var args = new FileSystemEventArgs(WatcherChangeTypes.Deleted,
 				Path.GetDirectoryName(normalizedPath), Path.GetFileName(normalizedPath));
 			FileSystemEvent?.Invoke(null, args, WatcherChangeTypes.Deleted);
+			return Task.CompletedTask;
 		}
 
 		private async Task HandleRenameEventAsync(string normalizedOldPath, string normalizedNewPath)

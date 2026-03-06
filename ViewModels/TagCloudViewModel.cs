@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
@@ -189,7 +189,7 @@ namespace ImageFolderManager.ViewModels
         /// <summary>
         /// Gets tag data with category information
         /// </summary>
-        private async Task<Dictionary<string, TagCloudItemData>> GetTagDataWithCategoriesAsync(
+        private Task<Dictionary<string, TagCloudItemData>> GetTagDataWithCategoriesAsync(
             IEnumerable<FolderInfo> allFolders, bool forceFullUpdate)
         {
             if (forceFullUpdate)
@@ -228,12 +228,12 @@ namespace ImageFolderManager.ViewModels
                 _isFullUpdateNeeded = false;
 
                 Debug.WriteLine($"Performed full tag count with categories, found {tagData.Count} unique tags");
-                return tagData;
+                return Task.FromResult(tagData);
             }
             else
             {
                 Debug.WriteLine("Using cached tag data");
-                return new Dictionary<string, TagCloudItemData>(_cachedTagData, StringComparer.OrdinalIgnoreCase);
+                return Task.FromResult(new Dictionary<string, TagCloudItemData>(_cachedTagData, StringComparer.OrdinalIgnoreCase));
             }
         }
 
@@ -266,7 +266,7 @@ namespace ImageFolderManager.ViewModels
         /// <summary>
         /// Creates categorized tag items from tag data
         /// </summary>
-        private async Task<Dictionary<string, List<TagCloudItem>>> CreateCategorizedTagItemsAsync(
+        private Task<Dictionary<string, List<TagCloudItem>>> CreateCategorizedTagItemsAsync(
             Dictionary<string, TagCloudItemData> allTagData, CancellationToken cancellationToken)
         {
             var result = new Dictionary<string, List<TagCloudItem>>();
@@ -326,7 +326,7 @@ namespace ImageFolderManager.ViewModels
                 result[category] = tagItems;
             }
 
-            return result;
+            return Task.FromResult(result);
         }
 
         /// <summary>
@@ -425,10 +425,10 @@ namespace ImageFolderManager.ViewModels
             }
         }
 
-        public async Task DeleteTagAsync(string tagName)
+        public Task DeleteTagAsync(string tagName)
         {
             if (string.IsNullOrWhiteSpace(tagName))
-                return;
+                return Task.CompletedTask;
 
             // Find the tag in our collections
             var tagsToRemove = new List<TagCloudItem>();
@@ -461,6 +461,7 @@ namespace ImageFolderManager.ViewModels
 
             // If you have a TagDeleted event, raise it here
             TagDeleted?.Invoke(this, tagName);
+            return Task.CompletedTask;
         }
 
         /// <summary>
@@ -601,14 +602,14 @@ namespace ImageFolderManager.ViewModels
         /// <summary>
         /// Moves a tag to a different category
         /// </summary>
-        public async Task MoveTagToCategoryAsync(TagCloudItem tag, string newCategory)
+        public Task MoveTagToCategoryAsync(TagCloudItem tag, string newCategory)
         {
             if (tag == null || string.IsNullOrWhiteSpace(newCategory))
-                return;
+                return Task.CompletedTask;
 
             string oldCategory = tag.Category;
             if (oldCategory.Equals(newCategory, StringComparison.OrdinalIgnoreCase))
-                return;
+                return Task.CompletedTask;
 
             // Update tag category
             tag.Category = newCategory;
@@ -638,6 +639,8 @@ namespace ImageFolderManager.ViewModels
             {
                 UpdateTagItemsForSelectedCategory();
             }
+
+            return Task.CompletedTask;
         }
 
         /// <summary>

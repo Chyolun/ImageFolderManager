@@ -406,18 +406,11 @@ namespace ImageFolderManager.ViewModels
 
             try
             {
-                // Ensure TreeView is ready on UI thread
-                await Application.Current.Dispatcher.InvokeAsync(() =>
+                if (_shellTreeView != null)
                 {
-                    if (_shellTreeView != null)
-                    {
-                        // Clear existing state
-                        _shellTreeView.ClearTreeView();
-
-                        // Set root directory
-                        _shellTreeView.SetRootDirectory(path);
-                    }
-                });
+                    // ShellTreeView.SetRootDirectory is thread-safe and awaits full initialization.
+                    await _shellTreeView.SetRootDirectory(path);
+                }
 
                 // Wait for TreeView initialization to complete with timeout
                 await WaitForTreeViewInitializationAsync(path, TimeSpan.FromSeconds(10));
@@ -1492,14 +1485,14 @@ namespace ImageFolderManager.ViewModels
             bool changed;
             lock (_statusMessageLock)
             {
-                // ① Set the flag FIRST, so any concurrent ordinary writes are blocked immediately
+                // 1) Set the flag FIRST, so any concurrent ordinary writes are blocked immediately
                 _isImportantStatusMessageActive = true;
 
-                // ② Write the backing field directly — bypasses the setter to avoid nested lock acquisition
+                // 2) Write the backing field directly - bypasses the setter to avoid nested lock acquisition
                 changed = _statusMessage != message;
                 _statusMessage = message;
 
-                // ③ Reset the expiry timer
+                // 3) Reset the expiry timer
                 _statusMessageTimer?.Dispose();
                 _statusMessageTimer = new System.Threading.Timer(_ =>
                 {
@@ -1509,7 +1502,7 @@ namespace ImageFolderManager.ViewModels
                     }
                 }, null, durationMs, System.Threading.Timeout.Infinite);
             }
-            // ④ Fire PropertyChanged outside the lock, consistent with the setter
+            // 4) Fire PropertyChanged outside the lock, consistent with the setter
             if (changed)
                 OnPropertyChanged(nameof(StatusMessage));
         }
@@ -2023,7 +2016,7 @@ namespace ImageFolderManager.ViewModels
 
                     if (e.Operation == FolderOperation.Copy && !e.IsUndoOperation)
                     {
-                        // For Copy → Create, the "new path" argument to HandleFolderCreate
+                        // For Copy -> Create, the "new path" argument to HandleFolderCreate
                         // must be the destination (the newly created copy).
                         refreshSourcePath = e.DestinationPath;   // pass destPath as the "new" node path
                         refreshDestPath = null;
@@ -2035,7 +2028,7 @@ namespace ImageFolderManager.ViewModels
                     && e.IsBatchMove
                     && e.AdditionalDestinationPaths?.Count > 1)
                     {
-                        // Batch move — use dedicated method that centers all moved items
+                        // Batch move - use dedicated method that centers all moved items
                         //var sources = e.AdditionalDestinationPaths
                         //    .Select((dest, i) => i == 0 ? e.SourcePath : dest)   
                         //    .ToList();

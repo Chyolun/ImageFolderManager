@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -48,7 +48,7 @@ namespace ImageFolderManager.Commands
             return FolderCommandType.BatchMove; // Default to BatchMove for mixed operations
         }
 
-        protected override async Task<CommandResult> ValidateAsync(CancellationToken cancellationToken)
+        protected override Task<CommandResult> ValidateAsync(CancellationToken cancellationToken)
         {
             var invalidCommands = new List<string>();
 
@@ -78,12 +78,12 @@ namespace ImageFolderManager.Commands
                 }
 
                 if (cancellationToken.IsCancellationRequested)
-                    return CommandResult.CreateFailure("Batch validation cancelled");
+                    return Task.FromResult(CommandResult.CreateFailure("Batch validation cancelled"));
             }
 
             if (invalidCommands.Count > 0)
             {
-                return CommandResult.CreateFailure($"Batch validation failed:\n{string.Join("\n", invalidCommands)}");
+                return Task.FromResult(CommandResult.CreateFailure($"Batch validation failed:\n{string.Join("\n", invalidCommands)}"));
             }
 
             // Check for path conflicts between commands
@@ -95,10 +95,10 @@ namespace ImageFolderManager.Commands
 
             if (duplicatePaths.Count > 0)
             {
-                return CommandResult.CreateFailure($"Batch contains conflicting paths: {string.Join(", ", duplicatePaths)}");
+                return Task.FromResult(CommandResult.CreateFailure($"Batch contains conflicting paths: {string.Join(", ", duplicatePaths)}"));
             }
 
-            return CommandResult.CreateSuccess("Batch validation passed");
+            return Task.FromResult(CommandResult.CreateSuccess("Batch validation passed"));
         }
 
         protected override async Task<CommandResult> ExecuteInternalAsync(CancellationToken cancellationToken)
