@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
@@ -154,7 +154,7 @@ namespace ImageFolderManager.Services
                         result.Success = true;
                         result.Message = "Folder refreshed successfully";
                     }
-                    catch (Exception ex)
+                    catch (Exception)
                     {
                         await _nodeManager.CompleteRefresh(normalizedPath, false);
                         throw;

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
@@ -48,7 +48,13 @@ namespace ImageFolderManager.ViewModels
         public FolderInfo SelectedSearchResult
         {
             get => _selectedSearchResult;
-            set => SetProperty(ref _selectedSearchResult, value);
+            set
+            {
+                if (SetProperty(ref _selectedSearchResult, value) && value != null)
+                {
+                    SearchResultSelected?.Invoke(this, value);
+                }
+            }
         }
 
         #endregion

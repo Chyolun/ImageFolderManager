@@ -3687,7 +3687,7 @@ namespace ImageFolderManager.Controls
                             TrySafeAddPathMapping(normalizedDestPath, sourceItem);
                         }
                     }
-                    catch (Exception ex)
+                    catch (Exception)
                     {
                      
                         // Fallback: create new item
@@ -3769,7 +3769,7 @@ namespace ImageFolderManager.Controls
                     });
                 }
             }
-            catch (Exception ex)
+            catch (Exception)
             {          
                 throw; // Re-throw to trigger any higher-level error handling
             }
@@ -4105,7 +4105,7 @@ namespace ImageFolderManager.Controls
             if (string.IsNullOrEmpty(parentPath) || !Directory.Exists(parentPath))
                 return;
 
-            await Application.Current.Dispatcher.InvokeAsync(async () =>
+            await Application.Current.Dispatcher.InvokeAsync(() =>
             {
                 // Store current children for comparison
                 var currentChildren = new Dictionary<string, TreeViewItem>();

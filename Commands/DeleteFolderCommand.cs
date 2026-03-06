@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -15,14 +15,12 @@ namespace ImageFolderManager.Commands
         private readonly string _folderPath;
         private readonly bool _useRecycleBin;
         private string _parentPath;
-        private bool _wasDeleted;
 
         public DeleteFolderCommand(string folderPath, bool useRecycleBin = true) : base(FolderCommandType.Delete)
         {
             _folderPath = PathService.NormalizePath(folderPath);
             _useRecycleBin = useRecycleBin;
             _parentPath = Path.GetDirectoryName(_folderPath);
-            _wasDeleted = false;
         }
 
         public string FolderPath => _folderPath;
@@ -61,7 +59,6 @@ namespace ImageFolderManager.Commands
                     {
                         Directory.Delete(_folderPath, true);
                     }
-                    _wasDeleted = true;
                 }, cancellationToken);
 
                 LogCommand($"Deleted folder: {_folderPath} (RecycleBin: {_useRecycleBin})");

@@ -1131,7 +1131,7 @@ namespace ImageFolderManager.ViewModels
                     // Copy files recursively with progress tracking
                     CopyDirectoryWithProgress(sourcePath, destinationPath, progressDialog, baseProgress, progressWeight, ref processedFiles, totalFiles);
                 }
-                catch (Exception ex)
+                catch (Exception)
                 {
                     // If counting fails, fall back to simple copy
                     progressDialog?.UpdateProgress(baseProgress + (progressWeight * 0.5), $"Copying contents of {Path.GetFileName(sourcePath)}...");
@@ -1953,7 +1953,7 @@ namespace ImageFolderManager.ViewModels
                 }
            
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 throw;
             }
@@ -2055,7 +2055,7 @@ namespace ImageFolderManager.ViewModels
            
                 }
             }
-            catch (Exception ex)
+            catch (Exception)
             {
               
                 // Fallback to full refresh on error
@@ -2133,7 +2133,7 @@ namespace ImageFolderManager.ViewModels
                     // This will test if the event subscription works
                     var eventInfo = FolderOperations.GetType().GetEvent("FolderOperationCompleted");
                 }
-                catch (Exception ex)
+                catch (Exception)
                 {
                 
                 }

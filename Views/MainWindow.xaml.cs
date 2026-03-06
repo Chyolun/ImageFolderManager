@@ -29,7 +29,6 @@ namespace ImageFolderManager
 
         #region property 
         public MainViewModel ViewModel => DataContext as MainViewModel;
-        private MenuItem _undoMenuItem;
         #endregion
 
         // ADD this to track which instance we're using
