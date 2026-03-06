@@ -19,6 +19,7 @@ using CommunityToolkit.Mvvm.Input;
 using System.Web;
 using System.Linq;
 using System.Collections.Generic;
+using System.Windows.Threading;
 
 
 
@@ -372,12 +373,22 @@ namespace ImageFolderManager
 
         private List<string> _findResults = new List<string>();
         private int _findIndex = -1;
+        private DispatcherTimer _findDebounceTimer;
+        private const int FindDebounceDelayMs = 600;
 
         /// <summary>Menu item click — Edit → Find</summary>
         private void Find_Click(object sender, RoutedEventArgs e) => OpenFindBar();
 
         private void OpenFindBar()
         {
+            if (_findDebounceTimer == null)
+            {
+                _findDebounceTimer = new DispatcherTimer
+                {
+                    Interval = TimeSpan.FromMilliseconds(FindDebounceDelayMs)
+                };
+                _findDebounceTimer.Tick += FindDebounceTimer_Tick;
+            }
             FindBar.Visibility = Visibility.Visible;
             FindTextBox.Focus();
             FindTextBox.SelectAll();
@@ -387,15 +398,33 @@ namespace ImageFolderManager
 
         private void CloseFindBar()
         {
+            _findDebounceTimer?.Stop();
             FindBar.Visibility = Visibility.Collapsed;
-            // Return focus to tree view
             ShellTreeViewControl.Focus();
+        }
+
+        private void FindDebounceTimer_Tick(object sender, EventArgs e)
+        {
+            _findDebounceTimer.Stop();   
+            RunFind(FindTextBox.Text, forward: true, resetIndex: true);
         }
 
         /// <summary>Re-run search whenever the user types.</summary>
         private void FindTextBox_TextChanged(object sender, TextChangedEventArgs e)
         {
-            RunFind(FindTextBox.Text, forward: true, resetIndex: true);
+
+            if (string.IsNullOrWhiteSpace(FindTextBox.Text))
+            {
+                _findDebounceTimer?.Stop();
+                _findResults.Clear();
+                _findIndex = -1;
+                FindNoMatchLabel.Visibility = Visibility.Collapsed;
+                FindMatchLabel.Text = "";
+                return;
+            }
+
+            _findDebounceTimer?.Stop();
+            _findDebounceTimer?.Start();
         }
 
         private void FindNext_Click(object sender, RoutedEventArgs e)

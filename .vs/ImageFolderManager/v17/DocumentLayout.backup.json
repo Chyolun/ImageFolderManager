@@ -52,7 +52,7 @@
               "RelativeDocumentMoniker": "Views\\MainWindow.xaml.cs",
               "ToolTip": "D:\\ImageFolderManager\\Views\\MainWindow.xaml.cs",
               "RelativeToolTip": "Views\\MainWindow.xaml.cs",
-              "ViewState": "AgIAAHEBAAAAAAAAAAAAAHEBAAAAAAAAAAAAAA==",
+              "ViewState": "AgIAAHoBAAAAAAAAAAAtwHgBAAAxAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
               "WhenOpened": "2026-03-04T08:24:56.519Z",
               "EditorCaption": ""
@@ -118,7 +118,8 @@
               "ToolTip": "D:\\ImageFolderManager\\Views\\ImageCompressionDialog.xaml",
               "RelativeToolTip": "Views\\ImageCompressionDialog.xaml",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003549|",
-              "WhenOpened": "2026-03-03T14:51:20.975Z"
+              "WhenOpened": "2026-03-03T14:51:20.975Z",
+              "EditorCaption": ""
             },
             {
               "$type": "Document",
