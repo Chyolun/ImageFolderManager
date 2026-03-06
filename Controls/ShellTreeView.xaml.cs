@@ -1377,52 +1377,8 @@ namespace ImageFolderManager.Controls
 
         public void SelectPath(string path)
         {
-            if (!PathService.DirectoryExists(path))
-                return;
-
-            try
-            {
-                // If the path isn't within our tree, consider changing the root directory
-                bool isWithinTree = IsPathWithinTreeScope(path);
-                if (!isWithinTree)
-                {
-                    // Ask user if they want to change the root
-                    var result = MessageBox.Show(
-                        $"The selected path '{path}' is not within the current tree view. Do you want to change the root directory to this path?",
-                        "Change Root Directory",
-                        MessageBoxButton.YesNo,
-                        MessageBoxImage.Question);
-
-                    if (result == MessageBoxResult.Yes)
-                    {
-                        // Change root to this path
-                        ChangeRootDirectory(path);
-                        return;
-                    }
-                }
-
-                // Expand all parent folders
-                ExpandPathToFolder(path);
-
-                // If we already have a TreeViewItem for this path, select it
-                if (_pathToTreeViewItem.TryGetValue(path, out var treeViewItem))
-                {
-                    // Clear previous selections
-                    ClearSelectedItems();
-
-                    // Select the item with animation
-                    SelectItem(treeViewItem);
-
-                    // Notify about the selection
-                    NotifyFolderSelection(treeViewItem);
-                }
-            }
-            catch (Exception ex)
-            {
-                HandleException("Error selecting path", ex, false);
-            }
+            _ = NavigateToPathAsync(path, CancellationToken.None, promptToChangeRoot: true);
         }
-
         private bool IsPathWithinTreeScope(string path)
         {
             if (string.IsNullOrEmpty(_rootDirectory))
@@ -1432,59 +1388,71 @@ namespace ImageFolderManager.Controls
             return PathService.IsPathWithin(_rootDirectory, path);
         }
 
-        private void ExpandPathToFolder(string path)
+        private async Task ExpandPathToFolderAsync(string path, CancellationToken cancellationToken)
         {
             if (string.IsNullOrEmpty(path)) return;
 
-            try
+            // Build list of parent directories that need to be expanded
+            var directoriesToExpand = new List<string>();
+            var currentDir = new DirectoryInfo(path).Parent;
+
+            while (currentDir != null)
             {
-                // Build list of parent directories that need to be expanded
-                var directoriesToExpand = new List<string>();
-                var currentDir = new DirectoryInfo(path).Parent;
+                if (!string.IsNullOrEmpty(_rootDirectory) &&
+                    PathService.PathsEqual(currentDir.FullName, _rootDirectory))
+                    break;
 
-                while (currentDir != null)
-                {
-                    if (!string.IsNullOrEmpty(_rootDirectory) &&
-                        PathService.PathsEqual(currentDir.FullName, _rootDirectory))
-                        break;
-
-                    directoriesToExpand.Insert(0, currentDir.FullName);
-                    currentDir = currentDir.Parent;
-                }
-
-                // Expand from root down
-                if (ShellTreeViewControl.Items.Count == 0) return;
-
-                var rootItem = ShellTreeViewControl.Items[0] as TreeViewItem;
-                if (rootItem == null) return;
-
-                _ = rootItem.IsExpanded = true;
-
-                Task.Run(async () =>
-                {
-                    foreach (var dir in directoriesToExpand)
-                    {
-                        try
-                        {
-                            if (_pathToTreeViewItem.TryGetValue(dir, out var tvi))
-                            {
-                                await Application.Current.Dispatcher.InvokeAsync(() =>
-                                {
-                                    tvi.IsExpanded = true;
-                                });
-                                await Task.Delay(50); // Allow expansion to complete
-                            }
-                        }
-                        catch { }
-                    }
-                });
+                directoriesToExpand.Insert(0, PathService.NormalizePath(currentDir.FullName));
+                currentDir = currentDir.Parent;
             }
-            catch (Exception ex)
+
+            if (ShellTreeViewControl.Items.Count == 0) return;
+
+            await Application.Current.Dispatcher.InvokeAsync(() =>
             {
-                Debug.WriteLine($"Error expanding path: {ex.Message}");
+                if (ShellTreeViewControl.Items[0] is TreeViewItem rootItem)
+                {
+                    rootItem.IsExpanded = true;
+                }
+            });
+
+            foreach (var dir in directoriesToExpand)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                for (int attempt = 0; attempt < 40; attempt++)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    TreeViewItem parentItem = null;
+                    if (_pathToTreeViewItem.TryGetValue(dir, out var foundParent))
+                    {
+                        parentItem = foundParent;
+                    }
+                    else
+                    {
+                        var parentPath = Path.GetDirectoryName(dir);
+                        if (!string.IsNullOrEmpty(parentPath) && _pathToTreeViewItem.TryGetValue(PathService.NormalizePath(parentPath), out var parentCandidate))
+                        {
+                            parentItem = parentCandidate;
+                        }
+                    }
+
+                    if (parentItem != null)
+                    {
+                        await Application.Current.Dispatcher.InvokeAsync(() =>
+                        {
+                            parentItem.IsExpanded = true;
+                        });
+
+                        if (_pathToTreeViewItem.ContainsKey(dir))
+                            break;
+                    }
+
+                    await Task.Delay(50, cancellationToken);
+                }
             }
         }
-
         public List<FolderInfo> GetSelectedFolderInfos()
         {
             var selectedFolders = new List<FolderInfo>();
@@ -1690,7 +1658,7 @@ namespace ImageFolderManager.Controls
         /// Searches the internal path-to-item dictionary so collapsed nodes are included.
         /// Returns paths sorted by folder name then full path.
         /// </summary>
-        public List<string> FindFoldersByName(string keyword)
+        public async Task<List<string>> FindFoldersByNameAsync(string keyword, CancellationToken cancellationToken = default)
         {
             if (string.IsNullOrWhiteSpace(keyword))
                 return new List<string>();
@@ -1699,41 +1667,155 @@ namespace ImageFolderManager.Controls
             if (string.IsNullOrEmpty(root) || !Directory.Exists(root))
                 return new List<string>();
 
-            try
+            string normalizedKeyword = keyword.Trim();
+
+            return await Task.Run(() =>
             {
-                return Directory
-                    .EnumerateDirectories(root, "*", SearchOption.AllDirectories)
-                    .Where(p =>
+                var results = new List<string>();
+                var stack = new Stack<string>();
+                stack.Push(root);
+
+                while (stack.Count > 0)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    var current = stack.Pop();
+                    string[] children;
+
+                    try
                     {
-                        var name = System.IO.Path.GetFileName(p);
-                        return name.IndexOf(keyword, StringComparison.OrdinalIgnoreCase) >= 0;
-                    })
-                    .OrderBy(p => System.IO.Path.GetFileName(p), StringComparer.OrdinalIgnoreCase)
+                        children = Directory.GetDirectories(current);
+                    }
+                    catch (UnauthorizedAccessException)
+                    {
+                        continue;
+                    }
+                    catch (DirectoryNotFoundException)
+                    {
+                        continue;
+                    }
+                    catch (PathTooLongException)
+                    {
+                        continue;
+                    }
+                    catch (IOException)
+                    {
+                        continue;
+                    }
+
+                    foreach (var child in children)
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                        stack.Push(child);
+
+                        var name = Path.GetFileName(child);
+                        if (name.IndexOf(normalizedKeyword, StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            results.Add(PathService.NormalizePath(child));
+                        }
+                    }
+                }
+
+                return results
+                    .OrderBy(p => Path.GetFileName(p), StringComparer.OrdinalIgnoreCase)
                     .ThenBy(p => p, StringComparer.OrdinalIgnoreCase)
                     .ToList();
-            }
-            catch (Exception ex)
+            }, cancellationToken);
+        }
+
+        public List<string> FindFoldersByName(string keyword)
+        {
+            try
             {
-                Debug.WriteLine($"FindFoldersByName error: {ex.Message}");
+                return FindFoldersByNameAsync(keyword, CancellationToken.None).GetAwaiter().GetResult();
+            }
+            catch
+            {
                 return new List<string>();
             }
         }
-
         /// <summary>
         /// Navigates to the given path: expands parents, selects and scrolls the item into view.
         /// </summary>
-        public void NavigateToPath(string path)
+        public async Task<bool> NavigateToPathAsync(string path, CancellationToken cancellationToken = default, bool promptToChangeRoot = false)
         {
-            if (string.IsNullOrEmpty(path)) return;
-            SelectPath(path);
-            Application.Current.Dispatcher.InvokeAsync(() =>
+            if (string.IsNullOrWhiteSpace(path)) return false;
+
+            string normalizedPath = PathService.NormalizePath(path);
+            if (!PathService.DirectoryExists(normalizedPath))
+                return false;
+
+            try
             {
-                string normalized = PathService.NormalizePath(path);
-                if (_pathToTreeViewItem.TryGetValue(normalized, out var tvi))
-                    tvi.BringIntoView();
-            }, System.Windows.Threading.DispatcherPriority.Loaded);
+                bool isWithinTree = IsPathWithinTreeScope(normalizedPath);
+                if (!isWithinTree)
+                {
+                    if (!promptToChangeRoot)
+                        return false;
+
+                    var result = MessageBox.Show(
+                        $"The selected path '{normalizedPath}' is not within the current tree view. Do you want to change the root directory to this path?",
+                        "Change Root Directory",
+                        MessageBoxButton.YesNo,
+                        MessageBoxImage.Question);
+
+                    if (result == MessageBoxResult.Yes)
+                    {
+                        ChangeRootDirectory(normalizedPath);
+                        return true;
+                    }
+
+                    return false;
+                }
+
+                await ExpandPathToFolderAsync(normalizedPath, cancellationToken);
+
+                for (int attempt = 0; attempt < 40; attempt++)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    if (_pathToTreeViewItem.TryGetValue(normalizedPath, out var treeViewItem))
+                    {
+                        await Application.Current.Dispatcher.InvokeAsync(() =>
+                        {
+                            ClearSelectedItems();
+                            SelectItem(treeViewItem);
+                            NotifyFolderSelectionWithoutLoading(treeViewItem);
+                            treeViewItem.BringIntoView();
+                            ScrollToCenter(treeViewItem);
+                        }, DispatcherPriority.Loaded);
+
+                        return true;
+                    }
+
+                    var parentPath = Path.GetDirectoryName(normalizedPath);
+                    if (!string.IsNullOrEmpty(parentPath) && _pathToTreeViewItem.TryGetValue(PathService.NormalizePath(parentPath), out var parentItem))
+                    {
+                        await Application.Current.Dispatcher.InvokeAsync(() =>
+                        {
+                            parentItem.IsExpanded = true;
+                        });
+                    }
+
+                    await Task.Delay(50, cancellationToken);
+                }
+
+                return false;
+            }
+            catch (OperationCanceledException)
+            {
+                return false;
+            }
+            catch (Exception ex)
+            {
+                HandleException("Error navigating to path", ex, false);
+                return false;
+            }
         }
 
+        public void NavigateToPath(string path)
+        {
+            _ = NavigateToPathAsync(path);
+        }
         private TreeViewItem FindTreeViewItemByPath(string path)
         {
             // Normalize the path

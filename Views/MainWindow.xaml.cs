@@ -17,6 +17,8 @@ using MahApps.Metro.Controls.Dialogs;
 using Microsoft.Web.WebView2.Wpf;
 using CommunityToolkit.Mvvm.Input;
 using System.Web;
+using System.Threading;
+using System.Threading.Tasks;
 using System.Linq;
 using System.Collections.Generic;
 using System.Windows.Threading;
@@ -375,8 +377,10 @@ namespace ImageFolderManager
         private int _findIndex = -1;
         private DispatcherTimer _findDebounceTimer;
         private const int FindDebounceDelayMs = 600;
+        private CancellationTokenSource _findOperationCts;
+        private int _findRequestId;
 
-        /// <summary>Menu item click — Edit → Find</summary>
+        /// <summary>Menu item click - Edit -> Find</summary>
         private void Find_Click(object sender, RoutedEventArgs e) => OpenFindBar();
 
         private void OpenFindBar()
@@ -399,6 +403,9 @@ namespace ImageFolderManager
         private void CloseFindBar()
         {
             _findDebounceTimer?.Stop();
+            _findOperationCts?.Cancel();
+            _findOperationCts?.Dispose();
+            _findOperationCts = null;
             FindBar.Visibility = Visibility.Collapsed;
             ShellTreeViewControl.Focus();
         }
@@ -406,7 +413,7 @@ namespace ImageFolderManager
         private void FindDebounceTimer_Tick(object sender, EventArgs e)
         {
             _findDebounceTimer.Stop();   
-            RunFind(FindTextBox.Text, forward: true, resetIndex: true);
+            _ = RunFindAsync(FindTextBox.Text, forward: true, resetIndex: true);
         }
 
         /// <summary>Re-run search whenever the user types.</summary>
@@ -416,6 +423,9 @@ namespace ImageFolderManager
             if (string.IsNullOrWhiteSpace(FindTextBox.Text))
             {
                 _findDebounceTimer?.Stop();
+                _findOperationCts?.Cancel();
+                _findOperationCts?.Dispose();
+                _findOperationCts = null;
                 _findResults.Clear();
                 _findIndex = -1;
                 FindNoMatchLabel.Visibility = Visibility.Collapsed;
@@ -428,17 +438,17 @@ namespace ImageFolderManager
         }
 
         private void FindNext_Click(object sender, RoutedEventArgs e)
-            => RunFind(FindTextBox.Text, forward: true, resetIndex: false);
+            => _ = RunFindAsync(FindTextBox.Text, forward: true, resetIndex: false);
 
         private void FindPrev_Click(object sender, RoutedEventArgs e)
-            => RunFind(FindTextBox.Text, forward: false, resetIndex: false);
+            => _ = RunFindAsync(FindTextBox.Text, forward: false, resetIndex: false);
 
         private void FindTextBox_KeyDown(object sender, KeyEventArgs e)
         {
             if (e.Key == Key.Enter)
             {
                 bool backward = Keyboard.Modifiers.HasFlag(ModifierKeys.Shift);
-                RunFind(FindTextBox.Text, forward: !backward, resetIndex: false);
+                _ = RunFindAsync(FindTextBox.Text, forward: !backward, resetIndex: false);
                 e.Handled = true;
             }
             else if (e.Key == Key.Escape)
@@ -449,49 +459,130 @@ namespace ImageFolderManager
         }
 
         /// <summary>Core search + navigation logic.</summary>
-        private void RunFind(string keyword, bool forward, bool resetIndex)
+        private async Task RunFindAsync(string keyword, bool forward, bool resetIndex)
         {
             // Reset UI hints
             FindNoMatchLabel.Visibility = Visibility.Collapsed;
             FindMatchLabel.Text = "";
 
-            if (string.IsNullOrWhiteSpace(keyword))
+            int requestId = Interlocked.Increment(ref _findRequestId);
+            _findOperationCts?.Cancel();
+            _findOperationCts?.Dispose();
+            _findOperationCts = new CancellationTokenSource();
+            var cancellationToken = _findOperationCts.Token;
+
+            string trimmedKeyword = keyword?.Trim();
+            if (string.IsNullOrWhiteSpace(trimmedKeyword))
             {
                 _findResults.Clear();
                 _findIndex = -1;
                 return;
             }
 
-            // Re-query when keyword changes or forced reset
-            if (resetIndex)
+            try
             {
-                _findResults = ShellTreeViewControl.FindFoldersByName(keyword);
-                _findIndex = _findResults.Count > 0 ? 0 : -1;
-            }
-            else if (_findResults.Count > 0)
-            {
-                if (forward)
-                    _findIndex = (_findIndex + 1) % _findResults.Count;
-                else
-                    _findIndex = (_findIndex - 1 + _findResults.Count) % _findResults.Count;
-            }
+                if (resetIndex)
+                {
+                    _findResults = await ShellTreeViewControl.FindFoldersByNameAsync(trimmedKeyword, cancellationToken);
+                    _findIndex = _findResults.Count > 0 ? 0 : -1;
+                }
+                else if (_findResults.Count > 0)
+                {
+                    // Reconcile stale entries after move/delete operations
+                    _findResults = _findResults
+                        .Where(p => PathService.DirectoryExists(p))
+                        .ToList();
 
-            if (_findResults.Count == 0)
+                    if (_findResults.Count == 0)
+                    {
+                        _findIndex = -1;
+                    }
+                    else
+                    {
+                        if (_findIndex < 0 || _findIndex >= _findResults.Count)
+                            _findIndex = 0;
+
+                        if (forward)
+                            _findIndex = (_findIndex + 1) % _findResults.Count;
+                        else
+                            _findIndex = (_findIndex - 1 + _findResults.Count) % _findResults.Count;
+                    }
+                }
+
+                if (requestId != _findRequestId)
+                    return;
+
+                if (_findResults.Count == 0)
+                {
+                    FindNoMatchLabel.Text = "No results";
+                    FindNoMatchLabel.Visibility = Visibility.Visible;
+                    return;
+                }
+
+                int attempts = _findResults.Count;
+                bool navigated = false;
+
+                while (attempts-- > 0 && _findResults.Count > 0)
+                {
+                    if (_findIndex < 0 || _findIndex >= _findResults.Count)
+                        _findIndex = 0;
+
+                    string target = _findResults[_findIndex];
+                    if (!PathService.DirectoryExists(target))
+                    {
+                        _findResults.RemoveAt(_findIndex);
+                        if (_findResults.Count == 0)
+                        {
+                            _findIndex = -1;
+                            break;
+                        }
+
+                        if (_findIndex >= _findResults.Count)
+                            _findIndex = 0;
+
+                        continue;
+                    }
+
+                    navigated = await ShellTreeViewControl.NavigateToPathAsync(target, cancellationToken);
+                    if (navigated)
+                        break;
+
+                    // If navigation failed, drop this stale/unreachable entry and continue
+                    _findResults.RemoveAt(_findIndex);
+                    if (_findResults.Count == 0)
+                    {
+                        _findIndex = -1;
+                        break;
+                    }
+
+                    if (_findIndex >= _findResults.Count)
+                        _findIndex = 0;
+                }
+
+                if (requestId != _findRequestId)
+                    return;
+
+                if (!navigated || _findResults.Count == 0 || _findIndex < 0)
+                {
+                    FindNoMatchLabel.Text = "No results";
+                    FindNoMatchLabel.Visibility = Visibility.Visible;
+                    FindMatchLabel.Text = "";
+                    return;
+                }
+
+                FindMatchLabel.Text = $"{_findIndex + 1} / {_findResults.Count}";
+            }
+            catch (OperationCanceledException)
             {
+                // Ignored - a newer request superseded this one
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"RunFindAsync error: {ex.Message}");
                 FindNoMatchLabel.Text = "No results";
                 FindNoMatchLabel.Visibility = Visibility.Visible;
-                return;
             }
-
-            // Update counter label
-            FindMatchLabel.Text = $"{_findIndex + 1} / {_findResults.Count}";
-
-            // Navigate tree to match
-            string target = _findResults[_findIndex];
-            ShellTreeViewControl.NavigateToPath(target);
         }
-
-        
         #endregion
 
         /// <summary>
@@ -708,7 +799,7 @@ namespace ImageFolderManager
                 {
                     MessageBox.Show(
                         "Please set a root directory first before searching for duplicate folders.\n\n" +
-                        "You can set the root directory from Settings → Root Directory.",
+                        "You can set the root directory from Settings -> Root Directory.",
                         "No Root Directory",
                         MessageBoxButton.OK,
                         MessageBoxImage.Information);
@@ -895,5 +986,6 @@ namespace ImageFolderManager
 
 
 }
+
 
 
