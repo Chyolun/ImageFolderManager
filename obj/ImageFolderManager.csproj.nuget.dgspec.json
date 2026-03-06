@@ -1,0 +1,134 @@
+{
+  "format": 1,
+  "restore": {
+    "D:\\ImageFolderManager\\ImageFolderManager.csproj": {}
+  },
+  "projects": {
+    "D:\\ImageFolderManager\\ImageFolderManager.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "D:\\ImageFolderManager\\ImageFolderManager.csproj",
+        "projectName": "ImageFolderManager",
+        "projectPath": "D:\\ImageFolderManager\\ImageFolderManager.csproj",
+        "packagesPath": "C:\\Users\\DELL\\.nuget\\packages\\",
+        "outputPath": "D:\\ImageFolderManager\\obj\\",
+        "projectStyle": "PackageReference",
+        "skipContentFileWrite": true,
+        "UsingMicrosoftNETSdk": false,
+        "fallbackFolders": [
+          "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
+        ],
+        "configFilePaths": [
+          "C:\\Users\\DELL\\AppData\\Roaming\\NuGet\\NuGet.Config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.FallbackLocation.config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
+        ],
+        "originalTargetFrameworks": [
+          "net48"
+        ],
+        "sources": {
+          "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
+          "https://api.nuget.org/v3/index.json": {}
+        },
+        "frameworks": {
+          "net48": {
+            "projectReferences": {}
+          }
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        }
+      },
+      "frameworks": {
+        "net48": {
+          "dependencies": {
+            "CommunityToolkit.Mvvm": {
+              "target": "Package",
+              "version": "[8.4.0, )"
+            },
+            "ControlzEx": {
+              "target": "Package",
+              "version": "[4.4.0, )"
+            },
+            "Magick.NET-Q8-AnyCPU": {
+              "target": "Package",
+              "version": "[14.10.3, )"
+            },
+            "Magick.NET.Core": {
+              "target": "Package",
+              "version": "[14.10.3, )"
+            },
+            "MahApps.Metro": {
+              "target": "Package",
+              "version": "[2.4.11, )"
+            },
+            "Microsoft-WindowsAPICodePack-Core": {
+              "target": "Package",
+              "version": "[1.1.5, )"
+            },
+            "Microsoft-WindowsAPICodePack-Shell": {
+              "target": "Package",
+              "version": "[1.1.5, )"
+            },
+            "Microsoft.Bcl.AsyncInterfaces": {
+              "target": "Package",
+              "version": "[8.0.0, )"
+            },
+            "Microsoft.Web.WebView2": {
+              "target": "Package",
+              "version": "[1.0.3296.44, )"
+            },
+            "Microsoft.Xaml.Behaviors.Wpf": {
+              "target": "Package",
+              "version": "[1.1.19, )"
+            },
+            "Newtonsoft.Json": {
+              "target": "Package",
+              "version": "[13.0.4, )"
+            },
+            "System.Buffers": {
+              "target": "Package",
+              "version": "[4.6.1, )"
+            },
+            "System.ComponentModel.Annotations": {
+              "target": "Package",
+              "version": "[5.0.0, )"
+            },
+            "System.Memory": {
+              "target": "Package",
+              "version": "[4.6.3, )"
+            },
+            "System.Numerics.Vectors": {
+              "target": "Package",
+              "version": "[4.6.1, )"
+            },
+            "System.Runtime.CompilerServices.Unsafe": {
+              "target": "Package",
+              "version": "[6.1.2, )"
+            },
+            "System.Threading.Tasks.Extensions": {
+              "target": "Package",
+              "version": "[4.6.3, )"
+            }
+          }
+        }
+      },
+      "runtimes": {
+        "win": {
+          "#import": []
+        },
+        "win-arm64": {
+          "#import": []
+        },
+        "win-x64": {
+          "#import": []
+        },
+        "win-x86": {
+          "#import": []
+        }
+      }
+    }
+  }
+}

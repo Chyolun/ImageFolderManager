@@ -11,10 +11,10 @@ false
 DEBUG;TRACE
 D:\ImageFolderManager\App.xaml
 151208509088
-3-762465776
+31184926617
 671843984717
-431825790174
+43-1631332563
 Views\BatchTagsDialog.xaml;Views\CopyConflictDialog.xaml;Views\CreateFolderDialog.xaml;Views\DeleteConfirmDialog.xaml;Views\DuplicateFilterSettingsDialog.xaml;Views\DuplicateFoldersDialog.xaml;Views\ImageCompressionDialog.xaml;Views\ImportFolderDialog.xaml;Views\MainWindow.xaml;Views\PreviewSizeDialog.xaml;Views\ProgressDialog.xaml;Views\RenameFolderDialog.xaml;Views\RenameTagDialog.xaml;Controls\ShellTreeView.xaml;Views\TagCloudWindow.xaml;
 
-False
+True
 
