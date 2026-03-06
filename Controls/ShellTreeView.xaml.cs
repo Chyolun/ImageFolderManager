@@ -2368,6 +2368,17 @@ namespace ImageFolderManager.Controls
                     NewFolder_Click(s, args);
                 };
                 contextMenu.Items.Add(newFolderItem);
+
+                // New Sibling Folder — disabled when selected node IS the root
+                var newSiblingFolderItem = new MenuItem { Header = "New Sibling Folder" };
+                newSiblingFolderItem.IsEnabled =
+                    !string.IsNullOrEmpty(_rootDirectory) &&
+                    !PathService.PathsEqual(selectedFolders[0].FolderPath, _rootDirectory);
+                newSiblingFolderItem.Click += (s, args) => {
+                    Debug.WriteLine("New Sibling Folder clicked");
+                    NewSiblingFolder_Click(s, args);
+                };
+                contextMenu.Items.Add(newSiblingFolderItem);
             }
 
             if (selectedFolders.Count > 1)
@@ -2687,6 +2698,69 @@ namespace ImageFolderManager.Controls
             catch (Exception ex)
             {
                 HandleException("Error creating new folder", ex);
+            }
+        }
+
+        private void NewSiblingFolder_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                Debug.WriteLine("NewSiblingFolder_Click handler called");
+
+                var treeViewItem = GetSelectedTreeViewItem();
+                if (treeViewItem == null)
+                {
+                    Debug.WriteLine("No TreeViewItem selected");
+                    return;
+                }
+
+                var folderNode = treeViewItem.Tag as FolderNode;
+                if (folderNode == null)
+                {
+                    Debug.WriteLine("Selected item has no FolderNode");
+                    return;
+                }
+
+                string currentPath = folderNode.FullPath;
+                if (!PathService.DirectoryExists(currentPath))
+                {
+                    Debug.WriteLine($"Invalid path: {currentPath}");
+                    return;
+                }
+
+                // Cannot create sibling of root
+                if (!string.IsNullOrEmpty(_rootDirectory) &&
+                    PathService.PathsEqual(currentPath, _rootDirectory))
+                {
+                    MessageBox.Show("Cannot create a sibling folder for the root directory.",
+                        "Operation Not Allowed", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+
+                string parentPath = Path.GetDirectoryName(currentPath);
+                if (string.IsNullOrEmpty(parentPath) || !PathService.DirectoryExists(parentPath))
+                {
+                    Debug.WriteLine($"Cannot resolve parent path for: {currentPath}");
+                    return;
+                }
+
+                // Reuse existing CreateNewFolder logic with the parent as the target
+                var parentFolderInfo = new FolderInfo(parentPath);
+
+                if (ViewModel != null)
+                {
+                    _ = ViewModel.CreateNewFolder(parentFolderInfo);
+                }
+                else
+                {
+                    Debug.WriteLine("ViewModel is null");
+                    MessageBox.Show("Could not create folder: ViewModel is not available.",
+                        "Operation Failed", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
+            catch (Exception ex)
+            {
+                HandleException("Error creating sibling folder", ex);
             }
         }
 

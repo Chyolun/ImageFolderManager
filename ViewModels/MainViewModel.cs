@@ -2044,6 +2044,14 @@ namespace ImageFolderManager.ViewModels
                     // Execute incremental refresh (guaranteed to be on UI thread)
                     await _shellTreeView.RefreshTreeIncremental(operationType, refreshSourcePath, refreshDestPath);
                     // Update status message
+                    // Auto-select the newly created folder in the tree
+                    if (operationType == FolderOperationType.Create && !e.IsUndoOperation
+                        && !string.IsNullOrEmpty(refreshSourcePath))
+                    {
+                        // Small delay to ensure the tree node has been fully inserted
+                        await Task.Delay(100);
+                        _shellTreeView.SelectPath(refreshSourcePath);
+                    }
                     string operationName = e.IsUndoOperation ? $"Undo {e.Operation}" : e.Operation.ToString();
                     StatusMessage = $"{operationName} completed successfully.";
                 }
