@@ -502,6 +502,7 @@
                   DragOver="TreeView_DragOver"
                   DragLeave="TreeView_DragLeave"
                   PreviewMouseLeftButtonDown="TreeView_PreviewMouseLeftButtonDown"
+                  PreviewMouseRightButtonDown="TreeView_PreviewMouseRightButtonDown"
                   PreviewMouseMove="TreeView_PreviewMouseMove"
                   PreviewMouseLeftButtonUp="TreeView_PreviewMouseLeftButtonUp"
                   VirtualizingPanel.IsVirtualizing="True"

@@ -2050,7 +2050,7 @@ namespace ImageFolderManager.ViewModels
                     {
                         // Small delay to ensure the tree node has been fully inserted
                         await Task.Delay(100);
-                        _shellTreeView.SelectPath(refreshSourcePath);
+                        await _shellTreeView.NavigateToPathAsync(refreshSourcePath, CancellationToken.None, promptToChangeRoot: false, centerInView: false);
                     }
                     string operationName = e.IsUndoOperation ? $"Undo {e.Operation}" : e.Operation.ToString();
                     StatusMessage = $"{operationName} completed successfully.";

@@ -132,9 +132,6 @@ namespace ImageFolderManager.Controls
                     }
                 }
             };
-
-            // Manually bind context menu event
-            ShellTreeViewControl.ContextMenuOpening += ShellTreeViewControl_ContextMenuOpening;
             //ViewModel.FolderOperations.FolderOperationCompleted += FolderOperations_FolderOperationCompleted;
             // Initialize with default root directory
             LoadDefaultRootDirectoryAsync();
@@ -1655,8 +1652,7 @@ namespace ImageFolderManager.Controls
 
         /// <summary>
         /// Finds all folders whose name contains <paramref name="keyword"/> (case-insensitive).
-        /// Searches the internal path-to-item dictionary so collapsed nodes are included.
-        /// Returns paths sorted by folder name then full path.
+        /// Traversal order follows the tree's natural top-to-bottom order (pre-order DFS).
         /// </summary>
         public async Task<List<string>> FindFoldersByNameAsync(string keyword, CancellationToken cancellationToken = default)
         {
@@ -1702,23 +1698,30 @@ namespace ImageFolderManager.Controls
                         continue;
                     }
 
-                    foreach (var child in children)
+                    Array.Sort(children, (a, b) =>
+                    {
+                        int byName = WindowsNaturalStringComparer.Instance.Compare(
+                            Path.GetFileName(a),
+                            Path.GetFileName(b));
+                        if (byName != 0) return byName;
+                        return StringComparer.OrdinalIgnoreCase.Compare(a, b);
+                    });
+
+                    for (int i = children.Length - 1; i >= 0; i--)
                     {
                         cancellationToken.ThrowIfCancellationRequested();
+                        var child = PathService.NormalizePath(children[i]);
                         stack.Push(child);
 
                         var name = Path.GetFileName(child);
                         if (name.IndexOf(normalizedKeyword, StringComparison.OrdinalIgnoreCase) >= 0)
                         {
-                            results.Add(PathService.NormalizePath(child));
+                            results.Add(child);
                         }
                     }
                 }
 
-                return results
-                    .OrderBy(p => Path.GetFileName(p), StringComparer.OrdinalIgnoreCase)
-                    .ThenBy(p => p, StringComparer.OrdinalIgnoreCase)
-                    .ToList();
+                return results;
             }, cancellationToken);
         }
 
@@ -1736,7 +1739,7 @@ namespace ImageFolderManager.Controls
         /// <summary>
         /// Navigates to the given path: expands parents, selects and scrolls the item into view.
         /// </summary>
-        public async Task<bool> NavigateToPathAsync(string path, CancellationToken cancellationToken = default, bool promptToChangeRoot = false)
+        public async Task<bool> NavigateToPathAsync(string path, CancellationToken cancellationToken = default, bool promptToChangeRoot = false, bool centerInView = true)
         {
             if (string.IsNullOrWhiteSpace(path)) return false;
 
@@ -1780,8 +1783,11 @@ namespace ImageFolderManager.Controls
                             ClearSelectedItems();
                             SelectItem(treeViewItem);
                             NotifyFolderSelectionWithoutLoading(treeViewItem);
-                            treeViewItem.BringIntoView();
-                            ScrollToCenter(treeViewItem);
+                            if (centerInView)
+                            {
+                                treeViewItem.BringIntoView();
+                                ScrollToCenter(treeViewItem);
+                            }
                         }, DispatcherPriority.Loaded);
 
                         return true;
@@ -2319,30 +2325,20 @@ namespace ImageFolderManager.Controls
             Point position = Mouse.GetPosition(ShellTreeViewControl);
             var item = GetTreeViewItemUnderMouse(position);
 
-            if (item == null)
-            {
-                e.Handled = true;
-                return;
-            }
-
-            // If the item under cursor is not already selected, select it only
-            if (!IsItemSelected(item))
-            {
-                ClearSelectedItems();
-                SelectItem(item);
-
-                // Update selected folder but don't load images
-                NotifyFolderSelectionWithoutLoading(item);
-            }
-
             // Get the selected folders
             var selectedFolders = GetSelectedFolderInfos();
+
+            // Keyboard-triggered context menu or stale selection fallback
+            if (selectedFolders.Count == 0 && item?.Tag is FolderNode node && PathService.DirectoryExists(node.FullPath))
+            {
+                selectedFolders.Add(new FolderInfo(node.FullPath));
+            }
+
             if (selectedFolders.Count == 0)
             {
                 e.Handled = true;
                 return;
             }
-
             // Create context menu
             var contextMenu = new ContextMenu();
 
@@ -2578,6 +2574,27 @@ namespace ImageFolderManager.Controls
 
             // Handle multi-selection
             TreeView_PreviewMouseDown(sender, e);
+        }
+
+        private void TreeView_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            var hitTestResult = VisualTreeHelper.HitTest(ShellTreeViewControl, e.GetPosition(ShellTreeViewControl));
+            if (hitTestResult == null) return;
+
+            var treeViewItem = FindAncestor<TreeViewItem>(hitTestResult.VisualHit);
+            if (treeViewItem == null) return;
+
+            // Preserve existing multi-selection when right-clicking outside it.
+            if (_selectedItems.Count > 1 && !IsItemSelected(treeViewItem))
+                return;
+
+            if (!IsItemSelected(treeViewItem))
+            {
+                ClearSelectedItems();
+                SelectItem(treeViewItem);
+                _lastSelectedItem = treeViewItem;
+                NotifyFolderSelectionWithoutLoading(treeViewItem);
+            }
         }
 
         private void TreeView_PreviewMouseMove(object sender, MouseEventArgs e)
@@ -3386,15 +3403,11 @@ namespace ImageFolderManager.Controls
                 parentItem.Items.Insert(insertAt, newItem);
                 _pathToTreeViewItem[normalizedNew] = newItem;
 
-                // Select and scroll to the new folder
+                // Select the new folder without forcing viewport jump
                 ClearSelectedItems();
                 SelectItem(newItem);
-                newItem.BringIntoView();
-                 Application.Current.Dispatcher.InvokeAsync(() =>
-                {
-                    newItem.BringIntoView();
-                    ScrollToCenter(newItem);
-                }, DispatcherPriority.Loaded);
+                _lastSelectedItem = newItem;
+                NotifyFolderSelectionWithoutLoading(newItem);
                 // Invalidate parent's cached children so the next expansion is fresh
                 if (parentItem.Tag is FolderNode parentNode)
                     parentNode.InvalidateChildren();
@@ -3452,6 +3465,8 @@ namespace ImageFolderManager.Controls
 
             if (_pathToTreeViewItem.TryGetValue(oldPath, out var renamedItem))
             {
+                bool wasSelected = IsItemSelected(renamedItem);
+
                 // Update the TreeViewItem's tag and header
                 await Application.Current.Dispatcher.InvokeAsync(() =>
                 {
@@ -3477,12 +3492,11 @@ namespace ImageFolderManager.Controls
                                 PathService.InvalidatePathCache(parentPath, false);
                             }
 
-                            // Select the renamed folder
-                            SelectPath(newPath);
-                            // Scroll to make the renamed folder visible
-                            if (_pathToTreeViewItem.TryGetValue(newPath, out var renamedTreeItem))
+                            // Keep selection state without forcing navigation/scroll
+                            if (wasSelected)
                             {
-                                renamedTreeItem.BringIntoView();
+                                _lastSelectedItem = renamedItem;
+                                NotifyFolderSelectionWithoutLoading(renamedItem);
                             }
                         }
                         catch (Exception ex)
@@ -3668,6 +3682,7 @@ namespace ImageFolderManager.Controls
         {
             string moveId = Guid.NewGuid().ToString("N").Substring(0, 8);
             bool destParentWasNotLoaded = false; // Variable to track destination parent loading state
+            bool wasSourceSelected = false;
 
             try
             {
@@ -3693,6 +3708,7 @@ namespace ImageFolderManager.Controls
                     await HandleFolderCreate(normalizedDestPath);
                     return;
                 }
+                wasSourceSelected = IsItemSelected(sourceItem);
 
                 TreeViewItem sourceParent = sourceItem.Parent as TreeViewItem;
                 if (sourceParent == null)
@@ -3898,15 +3914,14 @@ namespace ImageFolderManager.Controls
 
                 await Application.Current.Dispatcher.InvokeAsync(() =>
                 {
-                    if (_pathToTreeViewItem.TryGetValue(normalizedDestPath, out var movedItem))
+                    if (wasSourceSelected && _pathToTreeViewItem.TryGetValue(normalizedDestPath, out var movedItem))
                     {
                         ClearSelectedItems();
                         SelectItem(movedItem);
-                        movedItem.BringIntoView();
-                        ScrollToCenter(movedItem);
+                        _lastSelectedItem = movedItem;
+                        NotifyFolderSelectionWithoutLoading(movedItem);
                     }
                 }, DispatcherPriority.Loaded);
-
                 // ===== STEP 7: FINAL VERIFICATION =====
                 // Verify the moved item's FolderNode points to correct path
                 if (_pathToTreeViewItem.TryGetValue(normalizedDestPath, out var verifyItem))

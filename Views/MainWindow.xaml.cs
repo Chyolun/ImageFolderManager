@@ -481,36 +481,42 @@ namespace ImageFolderManager
 
             try
             {
-                if (resetIndex)
-                {
-                    _findResults = await ShellTreeViewControl.FindFoldersByNameAsync(trimmedKeyword, cancellationToken);
-                    _findIndex = _findResults.Count > 0 ? 0 : -1;
-                }
-                else if (_findResults.Count > 0)
-                {
-                    // Reconcile stale entries after move/delete operations
-                    _findResults = _findResults
-                        .Where(p => PathService.DirectoryExists(p))
-                        .ToList();
+                string currentPath = (_findIndex >= 0 && _findIndex < _findResults.Count)
+                    ? _findResults[_findIndex]
+                    : null;
 
-                    if (_findResults.Count == 0)
-                    {
-                        _findIndex = -1;
-                    }
-                    else
-                    {
-                        if (_findIndex < 0 || _findIndex >= _findResults.Count)
-                            _findIndex = 0;
-
-                        if (forward)
-                            _findIndex = (_findIndex + 1) % _findResults.Count;
-                        else
-                            _findIndex = (_findIndex - 1 + _findResults.Count) % _findResults.Count;
-                    }
-                }
+                var refreshedResults = await ShellTreeViewControl.FindFoldersByNameAsync(trimmedKeyword, cancellationToken);
 
                 if (requestId != _findRequestId)
                     return;
+
+                _findResults = refreshedResults;
+
+                if (_findResults.Count == 0)
+                {
+                    _findIndex = -1;
+                }
+                else if (resetIndex)
+                {
+                    _findIndex = 0;
+                }
+                else
+                {
+                    int anchorIndex = -1;
+                    if (!string.IsNullOrEmpty(currentPath))
+                    {
+                        anchorIndex = _findResults.FindIndex(p => PathService.PathsEqual(p, currentPath));
+                    }
+
+                    if (anchorIndex < 0)
+                    {
+                        anchorIndex = forward ? -1 : 0;
+                    }
+
+                    _findIndex = forward
+                        ? (anchorIndex + 1) % _findResults.Count
+                        : (anchorIndex - 1 + _findResults.Count) % _findResults.Count;
+                }
 
                 if (_findResults.Count == 0)
                 {
@@ -986,6 +992,3 @@ namespace ImageFolderManager
 
 
 }
-
-
-
