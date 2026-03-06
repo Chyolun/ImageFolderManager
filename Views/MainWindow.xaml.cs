@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using System.IO;
 using System.Reflection;
@@ -262,7 +262,7 @@ namespace ImageFolderManager
             if (ViewModel.Images.Count == 0 && ViewModel.SelectedFolder != null)
             {
                 // If this is the first time user clicks in the images area, load images
-                ViewModel.LoadImagesForSelectedFolderAsync();
+                _ = ViewModel.LoadImagesForSelectedFolderAsync();
                 return;
             }
 
@@ -300,7 +300,7 @@ namespace ImageFolderManager
             if (ShellTreeViewControl != null)
             {
                 // Refresh and restore selection if possible
-                await ShellTreeViewControl.RefreshTree();
+                await ShellTreeViewControl.RefreshTreeFull();
 
                 // Reselect the previously selected folder if it still exists
                 if (!string.IsNullOrEmpty(currentPath) && Directory.Exists(currentPath))
@@ -501,10 +501,10 @@ namespace ImageFolderManager
             var contextMenu = new ContextMenu();
 
             var loadImagesItem = new MenuItem { Header = "Load Images" };
-            loadImagesItem.Click += (s, args) =>
+            loadImagesItem.Click += async (s, args) =>
             {
 
-                ViewModel.SetSelectedFolderAsync(folderInfo);
+                await ViewModel.SetSelectedFolderAsync(folderInfo);
             };
             contextMenu.Items.Add(loadImagesItem);
 
@@ -535,7 +535,7 @@ namespace ImageFolderManager
                 // Refresh the tree view after deletion
                 if (ShellTreeViewControl != null)
                 {
-                    await ShellTreeViewControl.RefreshTree();
+                    await ShellTreeViewControl.RefreshTreeFull();
                 }
             };
             contextMenu.Items.Add(deleteItem);
@@ -803,12 +803,12 @@ namespace ImageFolderManager
                 "Image Folder Manager v1.0\n\n" +
                 "A powerful WPF application for managing and organizing large collections of image folders.\n\n" +
                 "Features:\n" +
-                "• Advanced tagging system with categories\n" +
-                "• Smart search functionality\n" +
-                "• Tag cloud visualization\n" +
-                "• Rating system (1-5 stars)\n" +
-                "• Real-time folder monitoring\n" +
-                "• Modern MVVM architecture\n\n" +
+                "- Advanced tagging system with categories\n" +
+                "- Smart search functionality\n" +
+                "- Tag cloud visualization\n" +
+                "- Rating system (1-5 stars)\n" +
+                "- Real-time folder monitoring\n" +
+                "- Modern MVVM architecture\n\n" +
                 "Built with .NET Framework 4.8 and WPF\n"
                );
         }
@@ -867,3 +867,5 @@ namespace ImageFolderManager
 
 
 }
+
+

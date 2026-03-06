@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using System.IO;
 using System.Threading.Tasks;
@@ -119,6 +119,9 @@ namespace ImageFolderManager
                 {
                     
                 };
+
+                // Keep a reference to the active view model for app-level cleanup.
+                _mainViewModel = mainWindow.DataContext as MainViewModel;
 
                 // Set as main window
                 MainWindow = mainWindow;

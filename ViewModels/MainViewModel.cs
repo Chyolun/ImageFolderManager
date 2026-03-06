@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
@@ -707,7 +707,7 @@ namespace ImageFolderManager.ViewModels
                         {
                             MessageBox.Show(
                                 $"The following selected items are not valid folders and will be ignored:\n\n" +
-                                string.Join("\n", invalidFolders.Select(f => $"• {Path.GetFileName(f)}")),
+                                string.Join("\n", invalidFolders.Select(f => $"- {Path.GetFileName(f)}")),
                                 "Invalid Selections",
                                 MessageBoxButton.OK,
                                 MessageBoxImage.Warning);
@@ -719,7 +719,7 @@ namespace ImageFolderManager.ViewModels
                             var folderNames = validFolders.Select(Path.GetFileName).ToList();
                             var summaryMessage = validFolders.Count == 1
                                 ? $"Selected folder: {folderNames[0]}"
-                                : $"Selected {validFolders.Count} folders:\n• " + string.Join("\n• ", folderNames.Take(5));
+                                : $"Selected {validFolders.Count} folders:\n- " + string.Join("\n- ", folderNames.Take(5));
 
                             if (validFolders.Count > 5)
                             {
@@ -1240,7 +1240,7 @@ namespace ImageFolderManager.ViewModels
             {
                 var failedFolders = results.Where(r => !r.Success).ToList();
                 var errorMessage = "The following folders failed to import:\n\n";
-                errorMessage += string.Join("\n", failedFolders.Select(f => $"• {f.FolderName}: {f.Message}"));
+                errorMessage += string.Join("\n", failedFolders.Select(f => $"- {f.FolderName}: {f.Message}"));
 
                 MessageBox.Show(errorMessage, "Import Errors", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
@@ -1263,7 +1263,7 @@ namespace ImageFolderManager.ViewModels
                 // If we have a shell tree view, refresh it
                 if (_shellTreeView != null)
                 {
-                    await _shellTreeView.RefreshTree();
+                    await _shellTreeView.RefreshTreeFull();
                 }
 
                 // Select the first imported folder if available

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -124,12 +124,13 @@ namespace ImageFolderManager.Commands
                         {
                             _commandHistory.Push(command);
 
-                            // Limit history size to prevent memory issues
+                            // Limit history size to prevent memory issues.
+                            // Stack enumerates from newest to oldest, so keep the newest 100 entries.
                             if (_commandHistory.Count > 100)
                             {
-                                var oldestCommands = _commandHistory.Skip(100).ToArray();
+                                var recentCommands = _commandHistory.Take(100).ToArray();
                                 _commandHistory.Clear();
-                                foreach (var cmd in oldestCommands.Reverse())
+                                foreach (var cmd in recentCommands.Reverse())
                                 {
                                     _commandHistory.Push(cmd);
                                 }
@@ -299,10 +300,12 @@ namespace ImageFolderManager.Commands
             // Execute undo with the same locking mechanism
             var affectedPaths = lastCommand.GetAffectedPaths();
             PathLockToken lockToken = null;
+            var semaphoreAcquired = false;
 
             try
             {
                 await _executorSemaphore.WaitAsync(cancellationToken);
+                semaphoreAcquired = true;
 
                 lockToken = await _lockManager.AcquireLocksAsync(affectedPaths, cancellationToken);
 
@@ -335,7 +338,10 @@ namespace ImageFolderManager.Commands
             finally
             {
                 lockToken?.Dispose();
-                _executorSemaphore.Release();
+                if (semaphoreAcquired)
+                {
+                    _executorSemaphore.Release();
+                }
             }
         }
 
@@ -405,3 +411,5 @@ namespace ImageFolderManager.Commands
         Failed
     }
 }
+
+
