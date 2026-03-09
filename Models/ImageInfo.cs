@@ -78,15 +78,6 @@ public class ImageInfo : INotifyPropertyChanged, IDisposable
     private bool _isDisposed;
     private CancellationTokenSource _loadingCts;
 
-    private bool _isAnimated;
-    public bool IsAnimated
-    {
-        get => _isAnimated;
-        private set { if (_isAnimated != value) { _isAnimated = value; OnPropertyChanged(); } }
-    }
-
-  
-
     /// <summary>
     /// Loads the thumbnail for this image
     /// </summary>

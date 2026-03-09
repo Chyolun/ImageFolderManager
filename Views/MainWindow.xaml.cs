@@ -13,7 +13,7 @@ using ImageFolderManager.ViewModels;
 using ImageFolderManager.Views;
 using ImageFolderManager.Controls;
 using MahApps.Metro.Controls;
-using MahApps.Metro.Controls.Dialogs; 
+using MahApps.Metro.Controls.Dialogs;
 using Microsoft.Web.WebView2.Wpf;
 using CommunityToolkit.Mvvm.Input;
 using System.Web;
@@ -42,8 +42,8 @@ namespace ImageFolderManager
             InitializeComponent();
             var viewModel = new MainViewModel();
             _mainViewModelInstanceInfo = viewModel.GetInstanceInfo();
-            DataContext = viewModel;    
-            viewModel.SetShellTreeView(ShellTreeViewControl); 
+            DataContext = viewModel;
+            viewModel.SetShellTreeView(ShellTreeViewControl);
             this.Loaded += MainWindow_Loaded;
             this.Closing += MainWindow_Closing;
             LoadDefaultRootDirectoryAsync();
@@ -51,14 +51,14 @@ namespace ImageFolderManager
 
         // ADD THIS METHOD: Initialize debug monitoring when window is fully loaded
         private void MainWindow_Loaded(object sender, RoutedEventArgs e)
-        {               
+        {
 
         }
 
         // ADD THIS METHOD: Cleanup debug monitoring when window is closing
         private void MainWindow_Closing(object sender, System.ComponentModel.CancelEventArgs e)
         {
-          
+
         }
 
         private async void LoadDefaultRootDirectoryAsync()
@@ -88,7 +88,7 @@ namespace ImageFolderManager
         }
 
 
-        
+
 
         private T FindVisualChild<T>(DependencyObject parent) where T : DependencyObject
         {
@@ -412,7 +412,7 @@ namespace ImageFolderManager
 
         private void FindDebounceTimer_Tick(object sender, EventArgs e)
         {
-            _findDebounceTimer.Stop();   
+            _findDebounceTimer.Stop();
             _ = RunFindAsync(FindTextBox.Text, forward: true, resetIndex: true);
         }
 
