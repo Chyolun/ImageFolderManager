@@ -85,12 +85,7 @@ public class ImageInfo : INotifyPropertyChanged, IDisposable
         private set { if (_isAnimated != value) { _isAnimated = value; OnPropertyChanged(); } }
     }
 
-    private List<AnimatedFrame> _animatedFrames;
-    public List<AnimatedFrame> AnimatedFrames
-    {
-        get => _animatedFrames;
-        private set { if (_animatedFrames != value) { _animatedFrames = value; OnPropertyChanged(); } }
-    }
+  
 
     /// <summary>
     /// Loads the thumbnail for this image
@@ -124,21 +119,7 @@ public class ImageInfo : INotifyPropertyChanged, IDisposable
             {
                 Thumbnail = null;
             }
-
-           // Check if it's a GIF
-            string ext = Path.GetExtension(normalizedPath).ToLowerInvariant();
-            if (ext == ".gif" || ext == ".webp")
-            {
-                var frames = await AnimatedImageLoader.LoadFramesAsync(normalizedPath, token);
-                if (frames != null && frames.Count > 1)
-                {
-                    AnimatedFrames = frames;
-                    IsAnimated = true;
-                    IsLoaded = true;
-                    IsLoading = false;
-                    return true;
-                }
-            }
+         
         
             // Load thumbnail through ImageCache
             var thumbnail = await ImageCache.LoadThumbnailAsync(FilePath, token, progress);

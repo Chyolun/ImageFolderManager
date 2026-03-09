@@ -1665,64 +1665,64 @@ namespace ImageFolderManager.Controls
 
             string normalizedKeyword = keyword.Trim();
 
+            // Collect results on background thread using filesystem DFS,
+            // but sorted strictly with StrCmpLogicalW to match Tree View order.
             return await Task.Run(() =>
             {
                 var results = new List<string>();
-                var stack = new Stack<string>();
-                stack.Push(root);
-
-                while (stack.Count > 0)
-                {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    var current = stack.Pop();
-                    string[] children;
-
-                    try
-                    {
-                        children = Directory.GetDirectories(current);
-                    }
-                    catch (UnauthorizedAccessException)
-                    {
-                        continue;
-                    }
-                    catch (DirectoryNotFoundException)
-                    {
-                        continue;
-                    }
-                    catch (PathTooLongException)
-                    {
-                        continue;
-                    }
-                    catch (IOException)
-                    {
-                        continue;
-                    }
-
-                    Array.Sort(children, (a, b) =>
-                    {
-                        int byName = WindowsNaturalStringComparer.Instance.Compare(
-                            Path.GetFileName(a),
-                            Path.GetFileName(b));
-                        if (byName != 0) return byName;
-                        return StringComparer.OrdinalIgnoreCase.Compare(a, b);
-                    });
-
-                    for (int i = children.Length - 1; i >= 0; i--)
-                    {
-                        cancellationToken.ThrowIfCancellationRequested();
-                        var child = PathService.NormalizePath(children[i]);
-                        stack.Push(child);
-
-                        var name = Path.GetFileName(child);
-                        if (name.IndexOf(normalizedKeyword, StringComparison.OrdinalIgnoreCase) >= 0)
-                        {
-                            results.Add(child);
-                        }
-                    }
-                }
-
+                TraverseForFind(root, normalizedKeyword, results, cancellationToken);
                 return results;
             }, cancellationToken);
+        }
+
+        /// <summary>
+        /// Recursive pre-order DFS that sorts children with StrCmpLogicalW,
+        /// exactly matching the Tree View's display order.
+        /// </summary>
+        private void TraverseForFind(string path, string keyword, List<string> results, CancellationToken ct)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            string[] children;
+            try
+            {
+                children = Directory.GetDirectories(path);
+            }
+            catch (UnauthorizedAccessException) { return; }
+            catch (DirectoryNotFoundException) { return; }
+            catch (PathTooLongException) { return; }
+            catch (IOException) { return; }
+
+            // Sort with StrCmpLogicalW — identical to FolderNode.EnumerateChildren and Tree View
+            Array.Sort(children, (a, b) =>
+                WindowsNaturalStringComparer.Instance.Compare(
+                    Path.GetFileName(a),
+                    Path.GetFileName(b)));
+
+            foreach (var child in children)
+            {
+                ct.ThrowIfCancellationRequested();
+
+                // Skip hidden / system folders (same rule as FolderNode.EnumerateChildren)
+                try
+                {
+                    var attrs = File.GetAttributes(child);
+                    if ((attrs & FileAttributes.Hidden) != 0 ||
+                        (attrs & FileAttributes.System) != 0)
+                        continue;
+                }
+                catch { continue; }
+
+                string normalizedChild = PathService.NormalizePath(child);
+                string name = Path.GetFileName(normalizedChild);
+
+                // Check match before recursing — pre-order means parent before children
+                if (name.IndexOf(keyword, StringComparison.OrdinalIgnoreCase) >= 0)
+                    results.Add(normalizedChild);
+
+                // Recurse into subtree
+                TraverseForFind(normalizedChild, keyword, results, ct);
+            }
         }
 
         public List<string> FindFoldersByName(string keyword)
@@ -1736,6 +1736,7 @@ namespace ImageFolderManager.Controls
                 return new List<string>();
             }
         }
+
         /// <summary>
         /// Navigates to the given path: expands parents, selects and scrolls the item into view.
         /// </summary>
@@ -1784,11 +1785,15 @@ namespace ImageFolderManager.Controls
                             SelectItem(treeViewItem);
                             NotifyFolderSelectionWithoutLoading(treeViewItem);
                             if (centerInView)
-                            {
                                 treeViewItem.BringIntoView();
-                                ScrollToCenter(treeViewItem);
-                            }
-                        }, DispatcherPriority.Loaded);
+                        }, DispatcherPriority.Normal);
+
+                        if (centerInView)
+                        {
+                            await Application.Current.Dispatcher.InvokeAsync(() =>
+                                ScrollToCenter(treeViewItem),
+                                DispatcherPriority.Background);
+                        }
 
                         return true;
                     }
@@ -3396,7 +3401,7 @@ namespace ImageFolderManager.Controls
                 {
                     if (!(parentItem.Items[i] is TreeViewItem sibling)) continue;
                     if (!(sibling.Tag is FolderNode sibNode)) continue;
-                    if (NaturalStringComparer.Compare(sibNode.Name, newNode.Name) > 0)
+                    if (WindowsNaturalStringComparer.Instance.Compare(sibNode.Name, newNode.Name) > 0)
                         break;
                     insertAt = i + 1;
                 }

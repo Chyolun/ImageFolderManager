@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using ImageFolderManager.Services;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -133,7 +134,7 @@ namespace ImageFolderManager.Controls
 
                 // Natural sort (Windows Explorer order)
                 list.Sort((a, b) =>
-                    NaturalStringComparer.Compare(a.Name, b.Name));
+                    WindowsNaturalStringComparer.Instance.Compare(a.Name, b.Name));
             }
             catch (OperationCanceledException)
             {

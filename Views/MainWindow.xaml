@@ -445,15 +445,6 @@
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
                                 <StackPanel Margin="5">
-                                    <controls:AnimatedImageControl
-                                        Frames="{Binding AnimatedFrames}"
-                                        Width="{Binding DataContext.PreviewWidth, RelativeSource={RelativeSource AncestorType=Window}}"
-                                        Height="{Binding DataContext.PreviewHeight, RelativeSource={RelativeSource AncestorType=Window}}"
-                                        Stretch="Uniform"
-                                        VerticalAlignment="Center"
-                                        HorizontalAlignment="Center"
-                                        Tag="{Binding FilePath}"
-                                        MouseLeftButtonDown="Image_MouseLeftButtonDown"/>
                                     <Image Source="{Binding Thumbnail}"
                                        Width="{Binding DataContext.PreviewWidth, RelativeSource={RelativeSource AncestorType=Window}}"
                                        Height="{Binding DataContext.PreviewHeight, RelativeSource={RelativeSource AncestorType=Window}}"

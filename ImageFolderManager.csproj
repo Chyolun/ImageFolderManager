@@ -76,11 +76,9 @@
     <Compile Include="Commands\IFolderCommand.cs" />
     <Compile Include="Commands\MoveFolderCommand.cs" />
     <Compile Include="Commands\RenameFolderCommand.cs" />
-    <Compile Include="Controls\AnimatedImageControl.cs" />
     <Compile Include="Controls\FolderNode.cs" />
     <Compile Include="Controls\FolderTreeItemFactory.cs" />
     <Compile Include="Models\TagDisplayInfo.cs" />
-    <Compile Include="Services\AnimatedImageLoader.cs" />
     <Compile Include="Services\AppSettings.cs" />
     <Compile Include="Services\CommandSystemConfiguration.cs" />
     <Compile Include="Services\CommandSystemInitializer.cs" />
@@ -178,8 +176,8 @@
       <Generator>MSBuild:Compile</Generator>
     </Page>
     <Page Include="Views\ImportFolderDialog.xaml">
-      <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
     </Page>
     <Page Include="Views\MainWindow.xaml">
       <Generator>MSBuild:Compile</Generator>
@@ -276,4 +274,3 @@
     <PackageReference Include="System.Threading.Tasks.Extensions" Version="4.6.3" />
   </ItemGroup>
 </Project>
-
