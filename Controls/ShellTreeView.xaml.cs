@@ -96,9 +96,9 @@ namespace ImageFolderManager.Controls
 
         private readonly Dictionary<TreeViewItem, CancellationTokenSource> _expansionCts
                  = new Dictionary<TreeViewItem, CancellationTokenSource>();
-        private const int BATCH_SIZE = 30; 
-        private const int BATCH_DELAY_MS = 8; 
-
+        private const int BATCH_SIZE = 30;
+        private const int BATCH_DELAY_MS = 8;
+        private bool _isInitializing = false;
         public ShellTreeView()
         {
             InitializeComponent();
@@ -117,7 +117,8 @@ namespace ImageFolderManager.Controls
                     Debug.WriteLine("ShellTreeView received correct DataContext (MainViewModel)");
 
                     // Check if root directory has changed
-                    if (PathService.DirectoryExists(AppSettings.Instance.DefaultRootDirectory) &&
+                    if (!_isInitializing &&
+                        PathService.DirectoryExists(AppSettings.Instance.DefaultRootDirectory) &&
                         _rootDirectory != AppSettings.Instance.DefaultRootDirectory)
                     {
                         ChangeRootDirectory(AppSettings.Instance.DefaultRootDirectory);
@@ -135,7 +136,7 @@ namespace ImageFolderManager.Controls
             //ViewModel.FolderOperations.FolderOperationCompleted += FolderOperations_FolderOperationCompleted;
             // Initialize with default root directory
             LoadDefaultRootDirectoryAsync();
-            
+
         }
 
         /// <summary>
@@ -557,6 +558,7 @@ namespace ImageFolderManager.Controls
 
         private async void LoadDefaultRootDirectoryAsync()
         {
+            _isInitializing = true;
             try
             {
                 if (!string.IsNullOrEmpty(AppSettings.Instance.DefaultRootDirectory))
@@ -582,6 +584,13 @@ namespace ImageFolderManager.Controls
             {
                 HideLoadingIndicator();
                 HandleException("Error loading default root directory", ex);
+            }
+            finally
+            {
+                // Clear the flag so subsequent explicit root-directory changes
+                // (triggered by the user) are processed normally.
+                _isInitializing = false;
+                // ──────────────────────────────────────────────────────────────
             }
         }
 
@@ -1265,7 +1274,7 @@ namespace ImageFolderManager.Controls
                             }
                         });
 
-                      
+
                     });
 
 
@@ -1278,7 +1287,7 @@ namespace ImageFolderManager.Controls
                         PathService.InvalidatePathCache(parentPath, true);
                     }
 
-                 
+
                 }
                 catch (Exception ex)
                 {
@@ -1361,7 +1370,7 @@ namespace ImageFolderManager.Controls
 
         #endregion
 
-        
+
 
         public void UpdatePathMapping(string oldPath, string newPath)
         {
@@ -1370,7 +1379,7 @@ namespace ImageFolderManager.Controls
                 _pathToTreeViewItem.Remove(oldPath);
                 _pathToTreeViewItem[newPath] = treeViewItem;
             }
-        }  
+        }
 
         public void SelectPath(string path)
         {
@@ -1892,7 +1901,7 @@ namespace ImageFolderManager.Controls
 
         private void SelectAllVisibleItems()
         {
-            const int MAX_SELECT = 200; 
+            const int MAX_SELECT = 200;
             var allVisible = GetAllVisibleTreeViewItems();
             ClearSelectedItems();
 
@@ -1905,7 +1914,7 @@ namespace ImageFolderManager.Controls
 
             if (allVisible.Count > MAX_SELECT)
                 Debug.WriteLine($"SelectAll limited to {MAX_SELECT} of {allVisible.Count} items");
-       
+
         }
 
         #endregion
@@ -2706,7 +2715,7 @@ namespace ImageFolderManager.Controls
                 if (ViewModel != null)
                 {
                     _ = ViewModel.CreateNewFolder(folderInfo);
-                 
+
                 }
                 else
                 {
@@ -2967,7 +2976,7 @@ namespace ImageFolderManager.Controls
                     Debug.WriteLine($"Calling ViewModel.RenameFolder for {path}");
 
                     // Execute rename operation through ViewModel
-                     _ = ViewModel.RenameFolder(folderInfo);
+                    _ = ViewModel.RenameFolder(folderInfo);
                 }
                 else
                 {
@@ -3012,7 +3021,7 @@ namespace ImageFolderManager.Controls
                 if (ViewModel != null)
                 {
                     // Execute delete command through ViewModel
-                   // ViewModel.DeleteFolderCommand.Execute(folderInfo);
+                    // ViewModel.DeleteFolderCommand.Execute(folderInfo);
                     _ = Task.Run(async () => await ViewModel.DeleteFolders(new[] { folderInfo }));
                 }
                 else
@@ -3286,7 +3295,7 @@ namespace ImageFolderManager.Controls
         /// </summary>
         public void EmergencyRemoveDuplicates()
         {
-          
+
             try
             {
                 var duplicatesRemoved = 0;
@@ -3330,7 +3339,7 @@ namespace ImageFolderManager.Controls
                     {
                         if (nameGroup.Value.Count > 1)
                         {
-                          
+
                             // Keep the first, remove the rest
                             for (int i = 1; i < nameGroup.Value.Count; i++)
                             {
@@ -3464,8 +3473,8 @@ namespace ImageFolderManager.Controls
         /// </summary>
         private async Task HandleFolderRename(string oldPath, string newPath)
         {
-           
-        if (string.IsNullOrEmpty(oldPath) || string.IsNullOrEmpty(newPath))
+
+            if (string.IsNullOrEmpty(oldPath) || string.IsNullOrEmpty(newPath))
                 return;
 
             if (_pathToTreeViewItem.TryGetValue(oldPath, out var renamedItem))
@@ -3736,9 +3745,7 @@ namespace ImageFolderManager.Controls
                 await Application.Current.Dispatcher.InvokeAsync(() =>
                 {
                     // Check if destination parent is in "not yet loaded" state
-                    destParentWasNotLoaded = destParentItem.Items.Count == 1 &&
-                                            destParentItem.Items[0] is TreeViewItem loadingItem &&
-                                            !loadingItem.IsEnabled; // Loading items are disabled                 
+                    destParentWasNotLoaded = FolderTreeItemFactory.HasOnlyPlaceholder(destParentItem);
                 });
 
                 // ===== STEP 4: REMOVE SOURCE ITEM =====            
@@ -3759,151 +3766,60 @@ namespace ImageFolderManager.Controls
 
                 // Remove from path mapping
                 TrySafeRemovePathMapping(normalizedSourcePath);
+
                 // ===== STEP 5: UPDATE FOLDERNODE AND ADD TO DESTINATION =====
-                await Application.Current.Dispatcher.InvokeAsync(() =>
+                if (destParentWasNotLoaded)
                 {
-                    try
+                    // ── BUG 2 FIX ─────────────────────────────────────────────────
+                    // Target node was unexpanded and held only a placeholder.
+                    // Instead of trying to manually populate siblings (the old complex
+                    // background-loading block that was also broken), we simply trigger
+                    // the node's normal lazy-expansion.  ExpandNodeAsync will scan the
+                    // filesystem – which now contains the moved folder – and build every
+                    // child TreeViewItem correctly, registering all paths in the mapping.
+                    var destNode = destParentItem.Tag as FolderNode;
+                    if (destNode != null)
                     {
-                        // *** CRITICAL FIX: Update the TreeViewItem's  FolderNode to point to new path ***
+                        // Call ExpandNodeAsync directly so we can await its completion
+                        // before trying to select the moved item below.
+                        await ExpandNodeAsync(destParentItem, destNode);
+                    }
+
+                    // Make the node visually expanded.  At this point HasOnlyPlaceholder
+                    // is false (real items were loaded), so TreeViewItem_Expanded will
+                    // NOT re-trigger ExpandNodeAsync – no double expansion.
+                    await Application.Current.Dispatcher.InvokeAsync(() =>
+                    {
+                        destParentItem.IsExpanded = true;
+                    });
+                    // ──────────────────────────────────────────────────────────────
+                }
+                else
+                {
+                    // Normal case: parent already had its children loaded.
+                    // Re-use the existing sourceItem (updated to the new path) and
+                    // insert it directly.
+                    await Application.Current.Dispatcher.InvokeAsync(() =>
+                    {
                         var newFolderNode = new FolderNode(normalizedDestPath);
                         sourceItem.Tag = newFolderNode;
                         sourceItem.Header = FolderTreeItemFactory.CreateHeader(newFolderNode.Name);
-                        // Handle based on destination parent loading state
-                        if (destParentWasNotLoaded)
-                        {
-                           
-                            // Remove the loading dummy node since we're adding real content
-                            RemoveDummyNode(destParentItem);
-                          
-                            // Add the moved item
-                            destParentItem.Items.Add(sourceItem);
 
-                            // CRITICAL FIX: 
-                            string destParentActualPath = (destParentItem.Tag as FolderNode)?.FullPath;
-                            if (!string.IsNullOrEmpty(destParentActualPath))
-                            {
-                                Task.Run(async () =>
-                                {
-                                    try
-                                    {
-                                        var subdirectories = Directory.GetDirectories(destParentActualPath);
-                                        var newItems = new List<TreeViewItem>();
+                        destParentItem.Items.Add(sourceItem);
 
-                                        var existingNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                                        await Application.Current.Dispatcher.InvokeAsync(() =>
-                                        {
-                                            foreach (TreeViewItem child in destParentItem.Items)
-                                            {
-                                                if (child.Tag is FolderNode folderNode)
-                                                {
-                                                    existingNames.Add(folderNode.Name);
-                                                }
-                                            }
-                                        });
-                                        foreach (var subdir in subdirectories)
-                                        {
-                                            string dirName = Path.GetFileName(subdir);
-                                            if (!existingNames.Contains(dirName))
-                                            {
-                                                try
-                                                {
-                                                    var folderNode = new FolderNode(subdir);
-                                                    var newItem = FolderTreeItemFactory.CreateItem(folderNode);
-                                                    newItems.Add(newItem);
-                                                                                                  }
-                                                catch (Exception ex)
-                                                {
-                                                    Debug.WriteLine($"[{moveId}] Error creating item for {dirName}: {ex.Message}");
-                                                }
-                                            }
-                                        }
-
-                                        if (newItems.Count > 0)
-                                        {
-                                            await Application.Current.Dispatcher.InvokeAsync(() =>
-                                            {
-                                                foreach (var item in newItems)
-                                                {
-                                                    destParentItem.Items.Add(item);
-
-                                                    if (item.Tag is FolderNode folderNode)
-                                                    {
-                                                        string itemPath = folderNode.FullPath;
-                                                        if (!string.IsNullOrEmpty(itemPath))
-                                                        {
-                                                            _pathToTreeViewItem[itemPath] = item;
-                                                        }
-                                                    }
-                                                }
-                                  
-                                            });
-                                            await EnsureNaturalSorting(destParentItem);
-                                        }
-                                        else
-                                        {
-                                            Debug.WriteLine($"[{moveId}] No additional child folders to add");
-                                        }
-                                    }
-                                    catch (Exception ex)
-                                    {
-                                        Debug.WriteLine($"[{moveId}] Error in background loading: {ex.Message}");
-                                    }
-                                });
-                            }
-                        }
-                        else
-                        {
-                            // Normal case: parent was already loaded, just add the item
-                            destParentItem.Items.Add(sourceItem);
-                        }
-
-                        // Update path mapping atomically
                         if (!TryUpdatePathMapping(normalizedSourcePath, normalizedDestPath, sourceItem))
-                        {
-                            // Fallback: try safe add if update failed
                             TrySafeAddPathMapping(normalizedDestPath, sourceItem);
-                        }
-                    }
-                    catch (Exception)
-                    {
-                     
-                        // Fallback: create new item
-                        try
-                        {
-                            var fallbackFolderNode = new FolderNode(normalizedDestPath);
-                            var fallbackItem = FolderTreeItemFactory.CreateItem(fallbackFolderNode); 
+                    });
 
-                            if (destParentWasNotLoaded)
-                            {
-                                RemoveDummyNode(destParentItem);
-                                destParentItem.Items.Add(fallbackItem);
-                                string destParentActualPath = (destParentItem.Tag as FolderNode)?.FullPath;
-                                if (!string.IsNullOrEmpty(destParentActualPath) && ShouldHaveExpansionIndicator(destParentActualPath))
-                                {
-                                    AddDummyNode(destParentItem);
-                                }
-                            }
-                            else
-                            {
-                                destParentItem.Items.Add(fallbackItem);
-                            }
-
-                            _pathToTreeViewItem[normalizedDestPath] = fallbackItem;
-                        }
-                        catch (Exception fallbackEx)
-                        {
-                            Debug.WriteLine($"[{moveId}] CRITICAL ERROR - Fallback also failed: {fallbackEx.Message}");
-                            throw;
-                        }
-                    }
-                });
+                    await EnsureNaturalSorting(destParentItem);
+                }
 
                 // ===== STEP 6: SORT AND UI UPDATE (only if parent was already loaded) =====
-           
+
                 if (!destParentWasNotLoaded)
                 {
                     // Only sort if parent was already loaded to avoid interfering with lazy loading
-                    await EnsureNaturalSorting(destParentItem);                    
+                    await EnsureNaturalSorting(destParentItem);
                 }
                 else
                 {
@@ -3946,7 +3862,7 @@ namespace ImageFolderManager.Controls
                 }
             }
             catch (Exception)
-            {          
+            {
                 throw; // Re-throw to trigger any higher-level error handling
             }
         }
@@ -3957,7 +3873,7 @@ namespace ImageFolderManager.Controls
         /// </summary>
         private int FindNaturalInsertionIndex(TreeViewItem parentItem, TreeViewItem newItem)
         {
-            if (!(newItem.Tag is FolderNode newFolderNode ))
+            if (!(newItem.Tag is FolderNode newFolderNode))
                 return GetRealChildrenCount(parentItem);
 
             string newName = newFolderNode.Name;
@@ -3969,7 +3885,7 @@ namespace ImageFolderManager.Controls
                 if (parentItem.Items[i] is TreeViewItem existingItem)
                 {
                     // Skip dummy nodes (loading indicators) - they don't have proper folderNode tags
-                    if (existingItem.Tag is FolderNode existingFolderNode )
+                    if (existingItem.Tag is FolderNode existingFolderNode)
                     {
                         // Compare names using Windows natural comparison (handles numeric sequences properly)
                         if (WindowsNaturalStringComparer.Instance.Compare(newName, existingFolderNode.Name) < 0)
@@ -4081,39 +3997,39 @@ namespace ImageFolderManager.Controls
         /// <summary>
         /// Updates parent expansion indicator based on remaining children
         /// </summary>
-       private void UpdateParentExpansionIndicator(TreeViewItem parentItem)
-{
-    if (parentItem.Tag is FolderNode folderNode)
-    {
-        string parentPath = folderNode.FullPath;
-        if (!string.IsNullOrEmpty(parentPath))
+        private void UpdateParentExpansionIndicator(TreeViewItem parentItem)
         {
-            bool shouldHaveIndicator = ShouldHaveExpansionIndicator(parentPath);
-            bool currentlyHasIndicator = HasExpansionIndicator(parentItem);
-            bool isExpanded = parentItem.IsExpanded;
-
-            if (isExpanded)
+            if (parentItem.Tag is FolderNode folderNode)
             {
-                if (currentlyHasIndicator)
+                string parentPath = folderNode.FullPath;
+                if (!string.IsNullOrEmpty(parentPath))
                 {
- 
-                    RemoveDummyNode(parentItem);
-                }
-            }
-            else
-            {
-                if (shouldHaveIndicator && !currentlyHasIndicator)
-                { 
-                    AddDummyNode(parentItem);
-                }
-                else if (!shouldHaveIndicator && currentlyHasIndicator)
-                {                  
-                    RemoveDummyNode(parentItem);
+                    bool shouldHaveIndicator = ShouldHaveExpansionIndicator(parentPath);
+                    bool currentlyHasIndicator = HasExpansionIndicator(parentItem);
+                    bool isExpanded = parentItem.IsExpanded;
+
+                    if (isExpanded)
+                    {
+                        if (currentlyHasIndicator)
+                        {
+
+                            RemoveDummyNode(parentItem);
+                        }
+                    }
+                    else
+                    {
+                        if (shouldHaveIndicator && !currentlyHasIndicator)
+                        {
+                            AddDummyNode(parentItem);
+                        }
+                        else if (!shouldHaveIndicator && currentlyHasIndicator)
+                        {
+                            RemoveDummyNode(parentItem);
+                        }
+                    }
                 }
             }
         }
-    }
-}
 
         /// <summary>
         /// Checks if a directory should have expansion indicator
@@ -4228,7 +4144,7 @@ namespace ImageFolderManager.Controls
                 {
                     try
                     {
-                        var newFolderNode = new  FolderNode(newPath);
+                        var newFolderNode = new FolderNode(newPath);
                         item.Tag = newFolderNode;
                         item.Header = FolderTreeItemFactory.CreateItem(newFolderNode);
                     }
@@ -4421,7 +4337,7 @@ namespace ImageFolderManager.Controls
             Debug.WriteLine("=== End Tree View State Debug ===");
         }
 
-  
+
 
     }
     /// <summary>
@@ -4451,27 +4367,27 @@ namespace ImageFolderManager.Controls
     }
 
     /// <summary>
-/// Attached behavior that enables animating ScrollViewer.VerticalOffset.
-/// </summary>
-public static class ScrollViewerBehavior
-{
-    public static readonly DependencyProperty VerticalOffsetProperty =
-        DependencyProperty.RegisterAttached(
-            "VerticalOffset",
-            typeof(double),
-            typeof(ScrollViewerBehavior),
-            new PropertyMetadata(0.0, OnVerticalOffsetChanged));
-
-    public static void SetVerticalOffset(DependencyObject target, double value)
-        => target.SetValue(VerticalOffsetProperty, value);
-
-    public static double GetVerticalOffset(DependencyObject target)
-        => (double)target.GetValue(VerticalOffsetProperty);
-
-    private static void OnVerticalOffsetChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    /// Attached behavior that enables animating ScrollViewer.VerticalOffset.
+    /// </summary>
+    public static class ScrollViewerBehavior
     {
-        if (d is ScrollViewer sv)
-            sv.ScrollToVerticalOffset((double)e.NewValue);
+        public static readonly DependencyProperty VerticalOffsetProperty =
+            DependencyProperty.RegisterAttached(
+                "VerticalOffset",
+                typeof(double),
+                typeof(ScrollViewerBehavior),
+                new PropertyMetadata(0.0, OnVerticalOffsetChanged));
+
+        public static void SetVerticalOffset(DependencyObject target, double value)
+            => target.SetValue(VerticalOffsetProperty, value);
+
+        public static double GetVerticalOffset(DependencyObject target)
+            => (double)target.GetValue(VerticalOffsetProperty);
+
+        private static void OnVerticalOffsetChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+        {
+            if (d is ScrollViewer sv)
+                sv.ScrollToVerticalOffset((double)e.NewValue);
+        }
     }
-}
 }
