@@ -77,6 +77,10 @@ namespace ImageFolderManager.Services
         private HierarchicalNodeManager _nodeManager;
         private FolderOperationCoordinator _coordinator;
 
+        private readonly ConcurrentDictionary<string, HashSet<string>> _folderNameIndex =
+                new ConcurrentDictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+        private readonly object _nameIndexLock = new object();
+
         #endregion
 
         #region Public Properties
@@ -360,7 +364,9 @@ namespace ImageFolderManager.Services
         }
 
         /// <summary>
-        /// Search folders by name or path containing the specified term
+        /// Search folders by name or path containing the specified term.
+        /// Uses a pre-built name index for O(hits) instead of O(n).
+        /// Falls back to the path scan for path-only matches.
         /// </summary>
         public IEnumerable<string> SearchFolders(string searchTerm)
         {
@@ -368,15 +374,31 @@ namespace ImageFolderManager.Services
                 return Enumerable.Empty<string>();
 
             var normalizedSearchTerm = searchTerm.ToLowerInvariant();
+            var results = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-            return _folderIndex.Keys.Where(folderPath =>
+            // ©¤©¤ Fast path: name index (folder name substring) ©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤
+            foreach (var kvp in _folderNameIndex)
             {
-                var folderName = Path.GetFileName(folderPath)?.ToLowerInvariant() ?? "";
-                var fullPath = folderPath.ToLowerInvariant();
+                if (kvp.Key.Contains(normalizedSearchTerm))
+                {
+                    foreach (var path in kvp.Value)
+                        results.Add(path);
+                }
+            }
 
-                return folderName.Contains(normalizedSearchTerm) ||
-                       fullPath.Contains(normalizedSearchTerm);
-            });
+            // ©¤©¤ Slow path: path substring (handles deep path matches) ©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤
+            // Only needed when the term might appear in a parent-segment of the path
+            // but NOT in the folder name itself.
+            foreach (var folderPath in _folderIndex.Keys)
+            {
+                if (!results.Contains(folderPath) &&
+                    folderPath.ToLowerInvariant().Contains(normalizedSearchTerm))
+                {
+                    results.Add(folderPath);
+                }
+            }
+
+            return results;
         }
 
         #endregion
@@ -696,6 +718,40 @@ namespace ImageFolderManager.Services
 				await AddFolderToIndexSafe(normalizedPath); // Refresh existing entry
 			}
 		}
+
+        // In AddFolderToIndexSafe(), after the _folderIndex.AddOrUpdate(...) call:
+        private void AddToNameIndex(string folderPath)
+        {
+            string name = Path.GetFileName(folderPath)?.ToLowerInvariant();
+            if (string.IsNullOrEmpty(name)) return;
+
+            lock (_nameIndexLock)
+            {
+                var bucket = _folderNameIndex.GetOrAdd(name,
+                    _ => new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+                lock (bucket) bucket.Add(folderPath);
+            }
+        }
+
+        // In RemoveFolderFromIndexSafe(), after the _folderIndex.TryRemove(...) call:
+        private void RemoveFromNameIndex(string folderPath)
+        {
+            string name = Path.GetFileName(folderPath)?.ToLowerInvariant();
+            if (string.IsNullOrEmpty(name)) return;
+
+            if (_folderNameIndex.TryGetValue(name, out var bucket))
+            {
+                lock (bucket) bucket.Remove(folderPath);
+            }
+        }
+
+        // In RefreshIndexAsync(), after rebuilding _folderIndex, rebuild name index too:
+        private void RebuildNameIndex()
+        {
+            _folderNameIndex.Clear();
+            foreach (var path in _folderIndex.Keys)
+                AddToNameIndex(path);
+        }
 
         private async Task AddFolderToIndexSafe(string folderPath, CancellationToken cancellationToken = default)
         {

@@ -132,6 +132,9 @@ namespace ImageFolderManager.ViewModels
                                                !string.IsNullOrEmpty(_unifiedFolderService?.RootDirectory);
         public int IndexedFolderCount => _unifiedFolderService?.IndexedFolderCount ?? 0;
 
+        // save last import folder directory
+        private string _lastImportSourceDirectory;
+
         // Preview settings
         public int PreviewWidth => AppSettings.Instance.PreviewWidth;
         public int PreviewHeight => AppSettings.Instance.PreviewHeight;
@@ -662,13 +665,21 @@ namespace ImageFolderManager.ViewModels
                     dialog.ShowPlacesList = true;
 
                     // Set initial directory if available
-                    if (!string.IsNullOrEmpty(AppSettings.Instance.DefaultRootDirectory))
+                    string importStartDir = null;
+                    if (!string.IsNullOrEmpty(_lastImportSourceDirectory)
+                        && Directory.Exists(_lastImportSourceDirectory))
                     {
-                        var parentDir = Directory.GetParent(AppSettings.Instance.DefaultRootDirectory)?.FullName;
-                        if (!string.IsNullOrEmpty(parentDir) && Directory.Exists(parentDir))
-                        {
-                            dialog.InitialDirectory = parentDir;
-                        }
+                        importStartDir = _lastImportSourceDirectory;
+                    }
+                    else if (!string.IsNullOrEmpty(AppSettings.Instance.DefaultRootDirectory))
+                    {
+                        importStartDir = Directory.GetParent(
+                            AppSettings.Instance.DefaultRootDirectory)?.FullName;
+                    }
+
+                    if (!string.IsNullOrEmpty(importStartDir) && Directory.Exists(importStartDir))
+                    {
+                        dialog.InitialDirectory = importStartDir;
                     }
 
                     // Show the dialog
@@ -720,6 +731,10 @@ namespace ImageFolderManager.ViewModels
                             }
 
                             StatusMessage = $"Selected {validFolders.Count} folder(s) for import.";
+
+                            _lastImportSourceDirectory =                        
+                               Directory.GetParent(validFolders[0])?.FullName   
+                              ?? _lastImportSourceDirectory;
 
                             return validFolders;
                         }
@@ -1745,7 +1760,7 @@ namespace ImageFolderManager.ViewModels
             {
                 await TagManagement.LoadFolderMetadataAsync(e.Folder);
             }
-
+            Search.InvalidateSearchIndex();
             await UpdateTagCloudAsync();
         }
 
@@ -1777,6 +1792,7 @@ namespace ImageFolderManager.ViewModels
             if (newFolder != null)
             {
                 _allLoadedFolders.Add(newFolder);
+                Search.InvalidateSearchIndex();
                 await Search.PerformSilentSearchAsync();
                 await UpdateTagCloudAsync();
             }
@@ -1787,7 +1803,7 @@ namespace ImageFolderManager.ViewModels
             _allLoadedFolders.RemoveAll(f =>
                 PathService.PathsEqual(f.FolderPath, folderPath) ||
                 PathService.IsPathWithin(folderPath, f.FolderPath));
-
+            Search.InvalidateSearchIndex();
             await Search.PerformSilentSearchAsync();
             await UpdateTagCloudAsync();
         }
@@ -1816,6 +1832,7 @@ namespace ImageFolderManager.ViewModels
                 folder.FolderPath = updatedPath;
             }
 
+            Search.InvalidateSearchIndex();
             await Search.PerformSilentSearchAsync();
             await UpdateTagCloudAsync();
         }
@@ -1841,6 +1858,7 @@ namespace ImageFolderManager.ViewModels
                 }
             }
 
+            Search.InvalidateSearchIndex();
             await Search.PerformSilentSearchAsync();
             await UpdateTagCloudAsync();
 
