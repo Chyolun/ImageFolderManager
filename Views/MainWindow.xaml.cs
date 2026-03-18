@@ -68,10 +68,10 @@ namespace ImageFolderManager
                 await ViewModel.LoadDirectoryAsync(AppSettings.Instance.DefaultRootDirectory);
 
                 // Select the path in the shell tree view
-                if (ShellTreeViewControl != null)
-                {
-                    ShellTreeViewControl.SelectPath(AppSettings.Instance.DefaultRootDirectory);
-                }
+                //if (ShellTreeViewControl != null)
+                //{
+                //    ShellTreeViewControl.SelectPath(AppSettings.Instance.DefaultRootDirectory);
+                //}
             }
         }
 

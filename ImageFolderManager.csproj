@@ -126,8 +126,14 @@
     <Compile Include="Views\ImageCompressionDialog.xaml.cs">
       <DependentUpon>ImageCompressionDialog.xaml</DependentUpon>
     </Compile>
+    <Compile Include="Views\ImportFileConflictDialog.xaml.cs">
+      <DependentUpon>ImportFileConflictDialog.xaml</DependentUpon>
+    </Compile>
     <Compile Include="Views\ImportFolderDialog.xaml.cs">
       <DependentUpon>ImportFolderDialog.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="Views\ImportMergeFolderDialog.xaml.cs">
+      <DependentUpon>ImportMergeFolderDialog.xaml</DependentUpon>
     </Compile>
     <Compile Include="Views\PreviewSizeDialog.xaml.cs">
       <DependentUpon>PreviewSizeDialog.xaml</DependentUpon>
@@ -175,7 +181,15 @@
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>
+    <Page Include="Views\ImportFileConflictDialog.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
     <Page Include="Views\ImportFolderDialog.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+    <Page Include="Views\ImportMergeFolderDialog.xaml">
       <Generator>MSBuild:Compile</Generator>
       <SubType>Designer</SubType>
     </Page>

@@ -98,6 +98,7 @@ namespace ImageFolderManager.Controls
                  = new Dictionary<TreeViewItem, CancellationTokenSource>();
         private const int BATCH_SIZE = 30;
         private const int BATCH_DELAY_MS = 8;
+
         private bool _isInitializing = false;
         public ShellTreeView()
         {
@@ -328,14 +329,6 @@ namespace ImageFolderManager.Controls
 
                 // Initialize the tree with new root (this calls InitializeShellTreeAsync which clears everything)
                 await InitializeShellTreeAsync();
-
-                // If we have a specific root path, select it after initialization
-                if (!string.IsNullOrEmpty(rootPath))
-                {
-                    // Small delay to ensure tree is fully loaded before selection
-                    await Task.Delay(200);
-                    SelectPath(rootPath);
-                }
 
                 // Hide loading indicator
                 if (showLoadingIndicator)
@@ -659,10 +652,6 @@ namespace ImageFolderManager.Controls
 
                 // Reinitialize tree with new root (this will clear existing items)
                 await InitializeShellTreeAsync();
-
-                // Now select this path after initialization is complete
-                await Task.Delay(200); // Small delay to ensure tree is fully loaded
-                SelectPath(newRootDirectory);
 
                 HideLoadingIndicator();
             }
@@ -1749,7 +1738,7 @@ namespace ImageFolderManager.Controls
         /// <summary>
         /// Navigates to the given path: expands parents, selects and scrolls the item into view.
         /// </summary>
-        public async Task<bool> NavigateToPathAsync(string path, CancellationToken cancellationToken = default, bool promptToChangeRoot = false, bool centerInView = true)
+        public async Task<bool> NavigateToPathAsync(string path, CancellationToken cancellationToken = default, bool promptToChangeRoot = false, bool centerInView = false)
         {
             if (string.IsNullOrWhiteSpace(path)) return false;
 

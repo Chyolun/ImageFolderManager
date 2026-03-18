@@ -182,7 +182,7 @@ namespace ImageFolderManager.ViewModels
             var categoryService = new TagCategoryService();
             // Initialize services
             _nodeManager = new HierarchicalNodeManager();
-           
+
             _tagService = new FolderTagService(categoryService);
             _allLoadedFolders = new List<FolderInfo>();
             _unifiedFolderService = new UnifiedFolderService(_tagService, _nodeManager);
@@ -190,7 +190,7 @@ namespace ImageFolderManager.ViewModels
             FolderOperations = new FolderOperationsViewModel(_unifiedFolderService);
             Search = new SearchViewModel(_unifiedFolderService, _allLoadedFolders);
             ImageLoading = new ImageLoadingViewModel(_unifiedFolderService);
- 
+
             var tagCloud = new TagCloudViewModel(categoryService);
             _coordinator = new FolderOperationCoordinator(_unifiedFolderService, _tagService, tagCloud, _nodeManager);
             TagManagement = new TagManagementViewModel(_tagService, tagCloud, _coordinator);
@@ -212,7 +212,7 @@ namespace ImageFolderManager.ViewModels
             // Subscribe to unified service events
             SubscribeToServiceEvents();
 
-            
+
             // Initialize coordinator in folder service
             _unifiedFolderService.InitializeCoordinator(_coordinator);
         }
@@ -732,8 +732,8 @@ namespace ImageFolderManager.ViewModels
 
                             StatusMessage = $"Selected {validFolders.Count} folder(s) for import.";
 
-                            _lastImportSourceDirectory =                        
-                               Directory.GetParent(validFolders[0])?.FullName   
+                            _lastImportSourceDirectory =
+                               Directory.GetParent(validFolders[0])?.FullName
                               ?? _lastImportSourceDirectory;
 
                             return validFolders;
@@ -834,17 +834,18 @@ namespace ImageFolderManager.ViewModels
         {
             try
             {
-                // Check if root directory is set
+                // ©¤©¤ Guard: root directory must be set ©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤
                 if (string.IsNullOrEmpty(AppSettings.Instance.DefaultRootDirectory) ||
                     !Directory.Exists(AppSettings.Instance.DefaultRootDirectory))
                 {
                     StatusMessage = "Please set a valid root directory first.";
-                    MessageBox.Show("Please set a valid root directory in Settings before importing folders.",
+                    MessageBox.Show(
+                        "Please set a valid root directory in Settings before importing folders.",
                         "No Root Directory", MessageBoxButton.OK, MessageBoxImage.Warning);
                     return;
                 }
 
-                // Use a more advanced folder selection dialog that supports multiple selection
+                // ©¤©¤ Select source folders ©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤
                 var sourceFolders = await ShowMultiFolderSelectionDialogAsync();
 
                 if (sourceFolders == null || sourceFolders.Count == 0)
@@ -853,168 +854,125 @@ namespace ImageFolderManager.ViewModels
                     return;
                 }
 
-                // Validate selected folders and check for duplicates
-                var validFolders = new List<string>();
-                var skippedDueToLocation = new List<string>();
-                var skippedDueToNameDuplication = new Dictionary<string, string>(); // folderName -> existingFullPath
+                // ©¤©¤ Show import configuration dialog ©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤
+                var importDialog = new ImportFolderDialog(
+                    sourceFolders,
+                    AppSettings.Instance.DefaultRootDirectory,   // rootDirectoryPath
+                    _allLoadedFolders,                            // allLoadedFolders
+                    _tagService);                                 // folderTagService
+                importDialog.Owner = Application.Current.MainWindow;
 
-                // Create a lookup dictionary for existing folder names to their full paths
-                var existingFolderLookup = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-                foreach (var folder in _allLoadedFolders)
+                if (importDialog.ShowDialog() != true)
                 {
-                    var folderName = Path.GetFileName(folder.FolderPath);
-                    if (!existingFolderLookup.ContainsKey(folderName))
-                    {
-                        existingFolderLookup[folderName] = folder.FolderPath;
-                    }
-                }
-
-                foreach (var folderPath in sourceFolders)
-                {
-                    if (!Directory.Exists(folderPath))
-                        continue;
-
-                    var folderName = Path.GetFileName(folderPath);
-
-                    // Check if folder is not already within the root directory
-                    if (PathService.IsPathWithin(AppSettings.Instance.DefaultRootDirectory, folderPath))
-                    {
-                        skippedDueToLocation.Add(folderName);
-                        continue;
-                    }
-
-                    // Check for duplicate folder names in the existing collection
-                    if (existingFolderLookup.ContainsKey(folderName))
-                    {
-                        skippedDueToNameDuplication[folderName] = existingFolderLookup[folderName];
-                        continue;
-                    }
-
-                    validFolders.Add(folderPath);
-                }
-
-                // Create comprehensive skip message if any folders were skipped
-                var skipMessages = new List<string>();
-
-                if (skippedDueToLocation.Count > 0)
-                {
-                    skipMessages.Add($"Already in root directory: {string.Join(", ", skippedDueToLocation)}");
-                }
-
-                if (skippedDueToNameDuplication.Count > 0)
-                {
-                    var duplicateNames = string.Join(", ", skippedDueToNameDuplication.Keys);
-                    skipMessages.Add($"Duplicate folder names: {duplicateNames}");
-                }
-
-                // Check if any valid folders remain
-                if (validFolders.Count == 0)
-                {
-                    var noValidMessage = "No valid folders selected for import.";
-
-                    if (skippedDueToLocation.Count > 0 && skippedDueToNameDuplication.Count > 0)
-                    {
-                        noValidMessage += " All folders were skipped due to being already in root directory or having duplicate names.";
-                    }
-                    else if (skippedDueToLocation.Count > 0)
-                    {
-                        noValidMessage += " All folders were skipped because they are already within the current root directory.";
-                    }
-                    else if (skippedDueToNameDuplication.Count > 0)
-                    {
-                        noValidMessage += " All folders were skipped because folders with the same names already exist.";
-                    }
-                    else
-                    {
-                        noValidMessage += " Folders must be outside the current root directory and have unique names.";
-                    }
-
-                    MessageBox.Show(noValidMessage,
-                        "No Valid Folders", MessageBoxButton.OK, MessageBoxImage.Information);
+                    StatusMessage = "Import cancelled.";
                     return;
                 }
 
-                // Prepare skip information for the dialog with detailed path information
-                var skipInfo = new Dictionary<string, string>();
-                foreach (var folder in skippedDueToLocation)
+                string destinationPath = importDialog.DestinationPath;
+
+                if (string.IsNullOrEmpty(destinationPath))
                 {
-                    skipInfo[folder] = "Already in root directory";
-                }
-                foreach (var kvp in skippedDueToNameDuplication)
-                {
-                    skipInfo[kvp.Key] = $"Duplicate name - existing folder: {kvp.Value}";
+                    StatusMessage = "Import cancelled - no destination selected.";
+                    return;
                 }
 
-                // Show import dialog with valid folders only and skip information
-                var importDialog = new ImportFolderDialog(
-                    validFolders,
-                    AppSettings.Instance.DefaultRootDirectory,
-                    _allLoadedFolders.ToList(),
-                    _tagService,
-                    skipInfo.Count > 0 ? skipInfo : null)
-                {
-                    Owner = Application.Current.MainWindow
-                };
+                // ©¤©¤ Pre-check: resolve folder-level conflicts (UI thread) ©¤©¤
+                //
+                // For every source folder whose name already exists at the
+                // destination we ask: Merge / Skip / Cancel All.
+                // Each conflicting folder is asked independently so the user
+                // can apply different decisions to different folders.
+                //
+                // Key   = source folder path
+                // Value = true  ¡ú merge into existing destination folder
+                //         false ¡ú plain copy (destination does not exist yet,
+                //                 or user chose Skip ¡ª handled separately)
+                var mergeDecisions = new Dictionary<string, bool>(
+                    StringComparer.OrdinalIgnoreCase);
 
-                if (importDialog.ShowDialog() == true && importDialog.DialogConfirmed)
+                // Tracks which source folders were skipped by the user.
+                var skippedFolders = new HashSet<string>(
+                    StringComparer.OrdinalIgnoreCase);
+
+                bool cancelAll = false;
+                int total = sourceFolders.Count;
+
+                foreach (var sourceFolderPath in sourceFolders)
                 {
-                    // Update status to show final import count
-                    var totalSkipped = skippedDueToLocation.Count + skippedDueToNameDuplication.Count;
-                    if (totalSkipped > 0)
+                    string folderName = Path.GetFileName(sourceFolderPath);
+
+                    string finalDest = (total == 1)
+                        ? destinationPath
+                        : Path.Combine(destinationPath, folderName);
+
+                    if (Directory.Exists(finalDest))
                     {
-                        StatusMessage = $"Importing {validFolders.Count} folder(s). {totalSkipped} folder(s) were skipped.";
+                        var mergeDlg = new ImportMergeFolderDialog(folderName, finalDest)
+                        {
+                            Owner = Application.Current.MainWindow
+                        };
+
+                        bool? result = mergeDlg.ShowDialog();
+
+                        if (result != true ||
+                            mergeDlg.Resolution == ImportFolderMergeResolution.CancelAll)
+                        {
+                            cancelAll = true;
+                            break;
+                        }
+
+                        if (mergeDlg.Resolution == ImportFolderMergeResolution.Skip)
+                        {
+                            skippedFolders.Add(sourceFolderPath);
+                        }
+                        else // Merge
+                        {
+                            mergeDecisions[sourceFolderPath] = true;
+                        }
                     }
                     else
                     {
-                        StatusMessage = $"Importing {validFolders.Count} folder(s)...";
+                        mergeDecisions[sourceFolderPath] = false; // plain copy
                     }
-
-                    await ProcessFolderImportAsync(validFolders, importDialog.DestinationPath);
                 }
-                else
+
+                if (cancelAll)
                 {
-                    StatusMessage = "Import cancelled by user.";
+                    StatusMessage = "Import cancelled.";
+                    return;
                 }
-            }
-            catch (Exception ex)
-            {
-                StatusMessage = $"Error during import: {ex.Message}";
-                MessageBox.Show($"An error occurred during folder import:\n\n{ex.Message}",
-                    "Import Error", MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-        }
 
+                // Filter out skipped folders
+                var foldersToProcess = sourceFolders
+                    .Where(p => !skippedFolders.Contains(p))
+                    .ToList();
 
+                if (foldersToProcess.Count == 0)
+                {
+                    StatusMessage = "Import skipped ¡ª all folders were skipped.";
+                    return;
+                }
 
-        /// <summary>
-        /// Processes the actual folder import operation
-        /// </summary>
-        /// <param name="sourceFolders">List of source folder paths to import</param>
-        /// <param name="destinationPath">Destination path for the import</param>
-        private async Task ProcessFolderImportAsync(List<string> sourceFolders, string destinationPath)
-        {
-            try
-            {
-                StatusMessage = $"Importing {sourceFolders.Count} folder(s)...";
+                // ©¤©¤ Copy / merge phase (background thread + progress dialog) ©¤
+                StatusMessage = $"Importing {foldersToProcess.Count} folder(s)...";
 
-                // Create progress dialog for the import operation
                 var progressDialog = new ProgressDialog(
                     "Importing Folders",
-                    $"Importing {sourceFolders.Count} folder(s)...")
-                {
-                    Owner = Application.Current.MainWindow
-                };
+                    $"Importing {foldersToProcess.Count} folder(s)...");
+                progressDialog.Owner = Application.Current.MainWindow;
 
+                int processCount = foldersToProcess.Count;
                 var importResults = new List<FolderImportResult>();
 
-                // Perform the import operation
                 var importTask = Task.Run(async () =>
                 {
                     int processed = 0;
-                    int total = sourceFolders.Count;
+                    bool importCancelledByUser = false;
 
-                    foreach (var sourceFolderPath in sourceFolders)
+                    foreach (var sourceFolderPath in foldersToProcess)
                     {
+                        if (importCancelledByUser) break;
+
                         var result = new FolderImportResult
                         {
                             SourcePath = sourceFolderPath,
@@ -1023,67 +981,117 @@ namespace ImageFolderManager.ViewModels
 
                         try
                         {
-                            // Update progress
-                            var progressStart = (double)processed / total;
-                            progressDialog.UpdateProgress(progressStart, $"Starting import: {result.FolderName}");
+                            var progressStart = (double)processed / processCount;
+                            progressDialog.UpdateProgress(
+                                progressStart,
+                                $"Starting import: {result.FolderName}");
 
                             // Determine final destination path
-                            string finalDestinationPath;
-                            if (sourceFolders.Count == 1)
+                            string finalDestinationPath = (sourceFolders.Count == 1)
+                                ? destinationPath
+                                : Path.Combine(destinationPath, result.FolderName);
+
+                            double baseProgress = (double)processed / processCount;
+                            double progressWeight = 1.0 / processCount;
+
+                            bool shouldMerge = mergeDecisions.TryGetValue(
+                                sourceFolderPath, out bool mergeFlag) && mergeFlag;
+
+                            if (shouldMerge)
                             {
-                                // For single folder import, use the exact destination path from dialog
-                                finalDestinationPath = destinationPath;
+                                // ©¤©¤ Merge path ©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤
+                                // Per-folder "apply to all" accumulator and
+                                // cancellation flag.
+                                ImportFileConflictResolution? fileApplyAll = null;
+                                bool cancelImport = false;
+
+                                int processedFiles = 0;
+                                var allFiles = Directory.GetFiles(
+                                    sourceFolderPath, "*",
+                                    SearchOption.AllDirectories);
+                                int totalFiles = allFiles.Length;
+
+                                MergeDirectoryWithConflictHandling(
+                                    sourceFolderPath,
+                                    finalDestinationPath,
+                                    progressDialog,
+                                    baseProgress,
+                                    progressWeight,
+                                    ref processedFiles,
+                                    totalFiles,
+                                    ref fileApplyAll,
+                                    ref cancelImport);
+
+                                if (cancelImport)
+                                {
+                                    importCancelledByUser = true;
+                                    result.Success = false;
+                                    result.Message = "Import cancelled by user.";
+                                }
+                                else
+                                {
+                                    result.DestinationPath = finalDestinationPath;
+                                    result.Success = true;
+                                    result.Message = "Merged successfully";
+
+                                    progressDialog.UpdateProgress(
+                                        (double)(processed + 1) / processCount,
+                                        $"Completed: {result.FolderName}");
+
+                                    // Remove source after successful merge
+                                    try
+                                    {
+                                       // Directory.Delete(sourceFolderPath, recursive: true);
+                                        DeleteDirectoryRobust(sourceFolderPath);
+                                    }
+                                    catch (Exception deleteEx)
+                                    {
+                                        System.Diagnostics.Debug.WriteLine(
+                                            $"[Import] Failed to delete source '{sourceFolderPath}': {deleteEx.Message}");
+                                        result.Message =
+                                            "Merged successfully (source folder could not be removed automatically).";
+                                    }
+                                }
                             }
                             else
                             {
-                                // For multiple folder import, create subfolder in destination
-                                finalDestinationPath = Path.Combine(destinationPath, result.FolderName);
-                            }
+                                // ©¤©¤ Plain copy path ©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤
+                                await CopyDirectoryAsync(
+                                    sourceFolderPath,
+                                    finalDestinationPath,
+                                    progressDialog,
+                                    baseProgress,
+                                    progressWeight);
 
-                            // Ensure destination doesn't already exist, create unique name if needed
-                            if (Directory.Exists(finalDestinationPath))
-                            {
-                                finalDestinationPath = PathService.GetUniqueDirectoryPath(
-                                    Path.GetDirectoryName(finalDestinationPath),
-                                    Path.GetFileName(finalDestinationPath));
-                            }
+                                result.DestinationPath = finalDestinationPath;
 
-                            // Calculate progress parameters for this folder
-                            double baseProgress = (double)processed / total;
-                            double progressWeight = 1.0 / total;
-
-                            // Perform the copy operation
-                            await CopyDirectoryAsync(sourceFolderPath, finalDestinationPath, progressDialog, baseProgress, progressWeight);
-
-                            result.DestinationPath = finalDestinationPath;
-                            result.Success = true;
-
-                            // Verify the copy was successful
-                            if (Directory.Exists(finalDestinationPath))
-                            {
-                                result.Message = "Import completed successfully";
-
-                                // Update progress to show completion of this folder
-                                var progressEnd = (double)(processed + 1) / total;
-                                progressDialog.UpdateProgress(progressEnd, $"Completed: {result.FolderName}");
-
-                                // Delete the source folder after successful copy (move semantics)
-                                try
+                                if (Directory.Exists(finalDestinationPath))
                                 {
-                                    Directory.Delete(sourceFolderPath, recursive: true);
+                                    result.Success = true;
+                                    result.Message = "Import completed successfully";
+
+                                    progressDialog.UpdateProgress(
+                                        (double)(processed + 1) / processCount,
+                                        $"Completed: {result.FolderName}");
+
+                                    try
+                                    {
+                                       // Directory.Delete(sourceFolderPath, recursive: true);
+                                        DeleteDirectoryRobust(sourceFolderPath);
+                                    }
+                                    catch (Exception deleteEx)
+                                    {
+                                        System.Diagnostics.Debug.WriteLine(
+                                            $"[Import] Failed to delete source '{sourceFolderPath}': {deleteEx.Message}");
+                                        result.Message =
+                                            "Imported successfully (source folder could not be removed automatically).";
+                                    }
                                 }
-                                catch (Exception deleteEx)
+                                else
                                 {
-                                    // Non-fatal: log the failure but keep the import result as success
-                                    System.Diagnostics.Debug.WriteLine(
-                                        $"[Import] Failed to delete source '{sourceFolderPath}': {deleteEx.Message}");
-                                    result.Message = "Imported successfully (source folder could not be removed automatically).";
+                                    result.Success = false;
+                                    result.Message = "Import failed - destination folder not created";
                                 }
-                            }
-                            else
-                            {
-                                result.Success = false;
-                                result.Message = "Import failed - destination folder not created";
                             }
                         }
                         catch (Exception ex)
@@ -1099,25 +1107,149 @@ namespace ImageFolderManager.ViewModels
                     return importResults;
                 });
 
-                // Show progress dialog and wait for completion
+                // Show progress dialog (blocks UI; background thread can still
+                // invoke dialogs via Dispatcher since WPF runs a nested message
+                // pump inside ShowDialog).
                 progressDialog.ShowDialog();
 
                 var results = await importTask;
 
-                // Update progress to complete
                 progressDialog.UpdateProgress(1.0, "Import operation completed");
-                await Task.Delay(500); // Brief pause to show completion
-
-                // Close progress dialog
+                await Task.Delay(500);
                 progressDialog.Close();
 
-                // Process results and update UI
                 await ProcessImportResultsAsync(results);
             }
             catch (Exception ex)
             {
                 StatusMessage = $"Import failed: {ex.Message}";
                 throw;
+            }
+        }
+
+        /// <summary>
+        /// Merges <paramref name="sourcePath"/> into an already-existing
+        /// <paramref name="destinationPath"/>, asking the user what to do
+        /// whenever a file conflict is detected.
+        ///
+        /// <para>
+        /// <paramref name="fileApplyAll"/> is a per-folder "apply to all"
+        /// accumulator.  Pass it by reference so the same decision persists
+        /// across recursive calls for subdirectories of the same root merge.
+        /// </para>
+        /// </summary>
+        /// <param name="cancelImport">Set to true when the user clicks Cancel Import.</param>
+        private void MergeDirectoryWithConflictHandling(
+            string sourcePath,
+            string destinationPath,
+            ProgressDialog progressDialog,
+            double baseProgress,
+            double progressWeight,
+            ref int processedFiles,
+            int totalFiles,
+            ref ImportFileConflictResolution? fileApplyAll,
+            ref bool cancelImport)
+        {
+            Directory.CreateDirectory(destinationPath);
+
+            // ©¤©¤ Files ©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤
+            foreach (var file in Directory.GetFiles(sourcePath))
+            {
+                if (cancelImport) return;
+
+                string fileName = Path.GetFileName(file);
+                string destFile = Path.Combine(destinationPath, fileName);
+
+                if (File.Exists(destFile))
+                {
+                    ImportFileConflictResolution resolution;
+
+                    if (fileApplyAll.HasValue)
+                    {
+                        resolution = fileApplyAll.Value;
+                    }
+                    else
+                    {
+                        // Must show dialog on UI thread while progress dialog is open.
+                        // WPF's nested message loop (ShowDialog) allows Dispatcher.Invoke
+                        // to be processed without a deadlock.
+                        ImportFileConflictResolution chosen = ImportFileConflictResolution.Skip;
+                        bool applyToAll = false;
+                        bool userCancelled = false;
+
+                        Application.Current.Dispatcher.Invoke(() =>
+                        {
+                            var dlg = new ImportFileConflictDialog(fileName, destinationPath)
+                            {
+                                Owner = Application.Current.MainWindow
+                            };
+
+                            bool? result = dlg.ShowDialog();
+
+                            if (result != true || dlg.Resolution == ImportFileConflictResolution.CancelImport)
+                            {
+                                userCancelled = true;
+                            }
+                            else
+                            {
+                                chosen = dlg.Resolution;
+                                applyToAll = dlg.ApplyToAll;
+                            }
+                        });
+
+                        if (userCancelled)
+                        {
+                            cancelImport = true;
+                            return;
+                        }
+
+                        resolution = chosen;
+                        if (applyToAll)
+                            fileApplyAll = resolution;
+                    }
+
+                    if (resolution == ImportFileConflictResolution.Overwrite)
+                        File.Copy(file, destFile, overwrite: true);
+                    // Skip: do nothing
+                }
+                else
+                {
+                    File.Copy(file, destFile, overwrite: false);
+                }
+
+                processedFiles++;
+                if (progressDialog != null && totalFiles > 0)
+                {
+                    double currentProgress = baseProgress +
+                        (progressWeight * processedFiles / totalFiles);
+                    progressDialog.UpdateProgress(
+                        Math.Min(currentProgress, baseProgress + progressWeight),
+                        $"Merging: {fileName}");
+                }
+            }
+
+            // ©¤©¤ Subdirectories (recurse) ©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤
+            foreach (var subDir in Directory.GetDirectories(sourcePath))
+            {
+                if (cancelImport) return;
+
+                string dirName = Path.GetFileName(subDir);
+                string destSubDir = Path.Combine(destinationPath, dirName);
+
+                if (progressDialog != null && totalFiles > 0)
+                {
+                    double currentProgress = baseProgress +
+                        (progressWeight * processedFiles / totalFiles);
+                    progressDialog.UpdateProgress(
+                        Math.Min(currentProgress, baseProgress + progressWeight),
+                        $"Merging folder: {dirName}");
+                }
+
+                MergeDirectoryWithConflictHandling(
+                    subDir, destSubDir,
+                    progressDialog, baseProgress, progressWeight,
+                    ref processedFiles, totalFiles,
+                    ref fileApplyAll, ref cancelImport);
             }
         }
 
@@ -1222,6 +1354,35 @@ namespace ImageFolderManager.ViewModels
                 string destDir = Path.Combine(destinationPath, dirName);
                 CopyDirectorySync(subdirectory, destDir);
             }
+        }
+
+        /// <summary>
+        /// Deletes a directory and all its contents, forcibly clearing ReadOnly / Hidden
+        /// attributes first so that Directory.Delete does not throw UnauthorizedAccessException
+        /// on metadata files (e.g. .folderTags) or other protected files.
+        /// </summary>
+        private static void DeleteDirectoryRobust(string path)
+        {
+            if (!Directory.Exists(path))
+                return;
+
+            // Strip ReadOnly / Hidden from every file so Delete cannot be blocked
+            foreach (string file in Directory.GetFiles(path, "*", SearchOption.AllDirectories))
+            {
+                try
+                {
+                    FileAttributes attrs = File.GetAttributes(file);
+                    if ((attrs & (FileAttributes.ReadOnly | FileAttributes.Hidden)) != 0)
+                        File.SetAttributes(file, attrs & ~FileAttributes.ReadOnly & ~FileAttributes.Hidden);
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine(
+                        $"[Import] Could not clear attributes on '{file}': {ex.Message}");
+                }
+            }
+
+            Directory.Delete(path, recursive: true);
         }
 
         /// <summary>
@@ -1469,7 +1630,7 @@ namespace ImageFolderManager.ViewModels
         private bool CanExecutePasteCommand() => HasClipboardContent();
         private void ExecutePasteCommand()
         {
-            if(_shellTreeView != null)
+            if (_shellTreeView != null)
             {
                 _shellTreeView.Paste_Click(this, new RoutedEventArgs());
             }
@@ -1667,7 +1828,7 @@ namespace ImageFolderManager.ViewModels
             return (stats.totalFolders, stats.duplicateGroups, stats.duplicateFolders);
         }
 
-       
+
 
 
         private void OnSelectedFolderChanged()
@@ -1881,10 +2042,10 @@ namespace ImageFolderManager.ViewModels
             // Subscribe to folder operation events for incremental refresh
             if (FolderOperations != null)
             {
-                 // Unsubscribe any existing handlers first
-                FolderOperations.FolderOperationCompleted -= OnFolderOperationCompleted;        
+                // Unsubscribe any existing handlers first
+                FolderOperations.FolderOperationCompleted -= OnFolderOperationCompleted;
                 FolderOperations.FolderOperationCompleted += OnFolderOperationCompleted;
-             }
+            }
             else
             {
                 Debug.WriteLine($"Instance #{_instanceId}: ERROR: FolderOperations is NULL - cannot subscribe to events");
@@ -1969,7 +2130,7 @@ namespace ImageFolderManager.ViewModels
                         await ExecuteFolderOperationOnUIThread(e);
                     });
                 }
-           
+
             }
             catch (Exception)
             {
@@ -1991,7 +2152,7 @@ namespace ImageFolderManager.ViewModels
             {
                 if (e.Success && _shellTreeView != null)
                 {
-                    
+
                     // Validate TreeView state before operation
                     if (!ValidateTreeViewState("folder operation"))
                     {
@@ -2078,12 +2239,12 @@ namespace ImageFolderManager.ViewModels
                     // Handle operation failure
                     string operationName = e.IsUndoOperation ? $"Undo {e.Operation}" : e.Operation.ToString();
                     StatusMessage = $"{operationName} failed: {e.ErrorMessage}";
-           
+
                 }
             }
             catch (Exception)
             {
-              
+
                 // Fallback to full refresh on error
                 try
                 {
@@ -2122,7 +2283,7 @@ namespace ImageFolderManager.ViewModels
             return true;
         }
 
-      
+
         /// <summary>
         /// Maps existing FolderOperation enum to new FolderOperationType enum
         /// </summary>
@@ -2150,7 +2311,7 @@ namespace ImageFolderManager.ViewModels
 
         public void DebugCheckFolderOperationsState()
         {
-          
+
             if (FolderOperations != null)
             {
                 // Check if we can access the event
@@ -2161,7 +2322,7 @@ namespace ImageFolderManager.ViewModels
                 }
                 catch (Exception)
                 {
-                
+
                 }
             }
         }

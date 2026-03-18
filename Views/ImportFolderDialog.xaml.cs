@@ -237,10 +237,6 @@ namespace ImageFolderManager.Views
             }
         }
 
-        /// <summary>
-        /// Pure function: given basePath, author, and source folderName, returns the
-        /// real import destination path using the composition rules described above.
-        /// </summary>
         private string ComputeFinalDestination(string basePath, string author, string folderName)
         {
             if (string.IsNullOrEmpty(basePath))
@@ -252,20 +248,12 @@ namespace ImageFolderManager.Views
                 if (!string.IsNullOrEmpty(author) && !_existingAuthorFolderFound)
                 {
                     // basePath \ [author] \ folderName
-                    string authorFolder = $"[{author}]";
-                    string candidate = Path.Combine(basePath, authorFolder, folderName);
-                    if (Directory.Exists(candidate))
-                        candidate = PathService.GetUniqueDirectoryPath(
-                            Path.Combine(basePath, authorFolder), folderName);
-                    return candidate;
+                    return Path.Combine(basePath, $"[{author}]", folderName);
                 }
                 else
                 {
                     // basePath \ folderName  (existing author folder OR no author)
-                    string candidate = Path.Combine(basePath, folderName);
-                    if (Directory.Exists(candidate))
-                        candidate = PathService.GetUniqueDirectoryPath(basePath, folderName);
-                    return candidate;
+                    return Path.Combine(basePath, folderName);
                 }
             }
             else
@@ -518,9 +506,17 @@ namespace ImageFolderManager.Views
             if (bracketMatch.Success)
                 return bracketMatch.Groups[1].Value.Trim();
 
-            var dashMatch = Regex.Match(folderName, @"^(.*?)\s*-");
+            var parenMatch = Regex.Match(folderName, @"^\((.*?)\)");
+            if (parenMatch.Success)
+                return parenMatch.Groups[1].Value.Trim();
+
+            var dashMatch = Regex.Match(folderName, @"^(.+?)\s+-\s+");
             if (dashMatch.Success)
                 return dashMatch.Groups[1].Value.Trim();
+
+            var spaceMatch = Regex.Match(folderName, @"^(\S+)\s+\S");
+            if (spaceMatch.Success)
+                return spaceMatch.Groups[1].Value.Trim();
 
             return string.Empty;
         }
