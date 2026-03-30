@@ -10,6 +10,10 @@
 //------------------------------------------------------------------------------
 
 using ImageFolderManager.Controls;
+using ImageFolderManager.Converters;
+using ImageFolderManager.Services;
+using ImageFolderManager.ViewModels;
+using ImageFolderManager.Views;
 using Microsoft.WindowsAPICodePack.Shell;
 using System;
 using System.Diagnostics;
