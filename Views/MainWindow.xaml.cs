@@ -268,16 +268,38 @@ namespace ImageFolderManager
                 return;
             }
 
-            // Regular image handling for double-click
+            // Open in internal image viewer on double-click
             if (e.ClickCount == 2 && sender is Image img && img.Tag is string filePath)
             {
                 try
                 {
-                    Process.Start(new ProcessStartInfo(filePath) { UseShellExecute = true });
+                    var imagePaths = ViewModel.Images
+                        .Select(x => x.FilePath)
+                        .Where(path => !string.IsNullOrWhiteSpace(path) && File.Exists(path))
+                        .ToList();
+
+                    if (imagePaths.Count == 0)
+                    {
+                        return;
+                    }
+
+                    var selectedIndex = imagePaths.FindIndex(path =>
+                        string.Equals(path, filePath, StringComparison.OrdinalIgnoreCase));
+
+                    if (selectedIndex < 0)
+                    {
+                        selectedIndex = 0;
+                    }
+
+                    var viewerWindow = new ImageViewerWindow(imagePaths, selectedIndex)
+                    {
+                        Owner = this
+                    };
+                    viewerWindow.ShowDialog();
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show($"Unable to open image: {ex.Message}");
+                    MessageBox.Show($"Unable to open image viewer: {ex.Message}");
                 }
             }
         }
