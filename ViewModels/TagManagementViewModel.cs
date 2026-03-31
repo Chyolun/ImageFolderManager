@@ -21,6 +21,7 @@ namespace ImageFolderManager.ViewModels
         #region Properties
 
         private FolderTagService _tagService;
+        private readonly IDialogService _dialogService;
        
         private readonly TagCloudViewModel _tagCloud;
         private ObservableCollection<string> _folderTags = new ObservableCollection<string>();
@@ -112,11 +113,16 @@ namespace ImageFolderManager.ViewModels
 
         #endregion
 
-        public TagManagementViewModel(FolderTagService tagService, TagCloudViewModel tagCloud, FolderOperationCoordinator coordinator = null)
+        public TagManagementViewModel(
+            FolderTagService tagService,
+            TagCloudViewModel tagCloud,
+            FolderOperationCoordinator coordinator = null,
+            IDialogService dialogService = null)
         {
             _tagService = tagService ?? throw new ArgumentNullException(nameof(tagService));
             _tagCloud = tagCloud ?? throw new ArgumentNullException(nameof(tagCloud));
             _coordinator = coordinator;
+            _dialogService = dialogService ?? new WpfDialogService();
             // Initialize commands
             SaveTagsCommand = new AsyncRelayCommand(SaveFolderTagsAsync);
             SetRatingCommand = new RelayCommand<int>(SaveRatingImmediately);
@@ -218,7 +224,7 @@ namespace ImageFolderManager.ViewModels
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Error during batch tag operation: {ex.Message}",
+                _dialogService.Show($"Error during batch tag operation: {ex.Message}",
                     "Operation Failed", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
@@ -235,7 +241,7 @@ namespace ImageFolderManager.ViewModels
 
                 if (folderPaths == null || !folderPaths.Any())
                 {
-                    MessageBox.Show(
+                    _dialogService.Show(
                         "No folders available to search for tags. Please ensure folders are indexed.",
                         "Error",
                         MessageBoxButton.OK,
@@ -273,7 +279,7 @@ namespace ImageFolderManager.ViewModels
             }
             catch (Exception ex)
             {
-                MessageBox.Show(
+                _dialogService.Show(
                     $"Error renaming tag: {ex.Message}",
                     "Error",
                     MessageBoxButton.OK,

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -21,6 +21,7 @@ namespace ImageFolderManager.ViewModels
     public class FolderOperationsViewModel : ViewModelBase
     {
         private readonly UnifiedFolderService _folderService;
+        private readonly IDialogService _dialogService;
 
         // ── Clipboard state ───────────────────────────────────────────────
         private List<FolderInfo> _clipboardFolders = new List<FolderInfo>();
@@ -65,10 +66,11 @@ namespace ImageFolderManager.ViewModels
 
         // ─────────────────────────────────────────────────────────────────
 
-        public FolderOperationsViewModel(UnifiedFolderService folderService)
+        public FolderOperationsViewModel(UnifiedFolderService folderService, IDialogService dialogService = null)
         {
             _folderService = folderService
                 ?? throw new ArgumentNullException(nameof(folderService));
+            _dialogService = dialogService ?? new WpfDialogService();
 
             // Create the undo manager and wire its events
             UndoManager = new UndoManager(folderService);
@@ -183,13 +185,13 @@ namespace ImageFolderManager.ViewModels
                 }
                 else
                 {
-                    MessageBox.Show($"Failed to create folder '{folderName}'.",
+                    _dialogService.Show($"Failed to create folder '{folderName}'.",
                         "Operation Failed", MessageBoxButton.OK, MessageBoxImage.Error);
                 }
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Error creating folder: {ex.Message}",
+                _dialogService.Show($"Error creating folder: {ex.Message}",
                     "Error", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
@@ -229,7 +231,7 @@ namespace ImageFolderManager.ViewModels
                 }
                 else
                 {
-                    MessageBox.Show($"Failed to delete folder '{folder.Name}'.",
+                    _dialogService.Show($"Failed to delete folder '{folder.Name}'.",
                         "Operation Failed", MessageBoxButton.OK, MessageBoxImage.Error);
                 }
 
@@ -237,7 +239,7 @@ namespace ImageFolderManager.ViewModels
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Error deleting folder: {ex.Message}",
+                _dialogService.Show($"Error deleting folder: {ex.Message}",
                     "Error", MessageBoxButton.OK, MessageBoxImage.Error);
                 return false;
             }
@@ -372,14 +374,14 @@ namespace ImageFolderManager.ViewModels
                 }
                 else
                 {
-                    MessageBox.Show($"Failed to rename folder to '{newName}'.",
+                    _dialogService.Show($"Failed to rename folder to '{newName}'.",
                         "Operation Failed", MessageBoxButton.OK, MessageBoxImage.Error);
                     return false;
                 }
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Error renaming folder: {ex.Message}",
+                _dialogService.Show($"Error renaming folder: {ex.Message}",
                     "Error", MessageBoxButton.OK, MessageBoxImage.Error);
                 return false;
             }
@@ -489,7 +491,7 @@ namespace ImageFolderManager.ViewModels
 
                 if (Directory.Exists(destPath))
                 {
-                    MessageBox.Show(
+                    _dialogService.Show(
                         $"A folder named '{sourceFolder.Name}' already exists in the destination.",
                         "Operation Failed", MessageBoxButton.OK, MessageBoxImage.Warning);
                     return false;
@@ -509,7 +511,7 @@ namespace ImageFolderManager.ViewModels
                 }
                 else
                 {
-                    MessageBox.Show($"Failed to move folder '{sourceFolder.Name}'.",
+                    _dialogService.Show($"Failed to move folder '{sourceFolder.Name}'.",
                         "Operation Failed", MessageBoxButton.OK, MessageBoxImage.Error);
                 }
 
@@ -517,7 +519,7 @@ namespace ImageFolderManager.ViewModels
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Error moving folder: {ex.Message}",
+                _dialogService.Show($"Error moving folder: {ex.Message}",
                     "Error", MessageBoxButton.OK, MessageBoxImage.Error);
                 return false;
             }

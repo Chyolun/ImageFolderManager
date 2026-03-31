@@ -13,7 +13,6 @@ using ImageFolderManager.Models;
 using ImageFolderManager.Services;
 using ImageFolderManager.Views;
 using ImageFolderManager.Controls;
-using MessageBox = System.Windows.MessageBox;
 using Application = System.Windows.Application;
 using Microsoft.WindowsAPICodePack.Dialogs;
 using static ImageFolderManager.Controls.ShellTreeView;
@@ -48,6 +47,7 @@ namespace ImageFolderManager.ViewModels
         private readonly UnifiedFolderService _unifiedFolderService;
         private readonly FolderTagService _tagService;
         private readonly List<FolderInfo> _allLoadedFolders;
+        private readonly IDialogService _dialogService;
 
         // Operation synchronization mechanism
         private readonly SemaphoreSlim _folderOperationSemaphore = new SemaphoreSlim(1, 1);
@@ -175,9 +175,11 @@ namespace ImageFolderManager.ViewModels
         public IAsyncRelayCommand UndoCommand => FolderOperations.UndoCommand;
         #endregion
 
-        public MainViewModel()
+        public MainViewModel(IDialogService dialogService = null)
         {
             _instanceId = ++_instanceCounter;
+            _dialogService = dialogService ?? new WpfDialogService();
+            AppSettings.DialogService = _dialogService;
             // Initialize shared category service
             var categoryService = new TagCategoryService();
             // Initialize services
@@ -187,13 +189,13 @@ namespace ImageFolderManager.ViewModels
             _allLoadedFolders = new List<FolderInfo>();
             _unifiedFolderService = new UnifiedFolderService(_tagService, _nodeManager);
             // Initialize sub-ViewModels with enhanced TagCloudViewModel
-            FolderOperations = new FolderOperationsViewModel(_unifiedFolderService);
+            FolderOperations = new FolderOperationsViewModel(_unifiedFolderService, _dialogService);
             Search = new SearchViewModel(_unifiedFolderService, _allLoadedFolders);
             ImageLoading = new ImageLoadingViewModel(_unifiedFolderService);
 
             var tagCloud = new TagCloudViewModel(categoryService);
             _coordinator = new FolderOperationCoordinator(_unifiedFolderService, _tagService, tagCloud, _nodeManager);
-            TagManagement = new TagManagementViewModel(_tagService, tagCloud, _coordinator);
+            TagManagement = new TagManagementViewModel(_tagService, tagCloud, _coordinator, _dialogService);
 
             _cutCommand = new RelayCommand(ExecuteCutCommand, CanExecuteCutCommand);
             _copyCommand = new RelayCommand(ExecuteCopyCommand, CanExecuteCopyCommand);
@@ -709,7 +711,7 @@ namespace ImageFolderManager.ViewModels
                         // Show warning for any invalid selections
                         if (invalidFolders.Count > 0)
                         {
-                            MessageBox.Show(
+                            _dialogService.Show(
                                 $"The following selected items are not valid folders and will be ignored:\n\n" +
                                 string.Join("\n", invalidFolders.Select(f => $"- {Path.GetFileName(f)}")),
                                 "Invalid Selections",
@@ -745,7 +747,7 @@ namespace ImageFolderManager.ViewModels
             {
                 // Log the error and fallback to legacy dialog
                 System.Diagnostics.Debug.WriteLine($"Error using CommonOpenFileDialog: {ex.Message}");
-                MessageBox.Show(
+                _dialogService.Show(
                     "Unable to use modern folder selection dialog. Falling back to legacy method.",
                     "Dialog Error",
                     MessageBoxButton.OK,
@@ -777,7 +779,7 @@ namespace ImageFolderManager.ViewModels
                     selectedFolders.Add(dialog.SelectedPath);
 
                     // Ask if user wants to select more folders
-                    var result = MessageBox.Show(
+                    var result = _dialogService.Show(
                         $"Selected: {Path.GetFileName(dialog.SelectedPath)}\n\nDo you want to select additional folders for batch import?",
                         "Select More Folders?",
                         MessageBoxButton.YesNo,
@@ -799,7 +801,7 @@ namespace ImageFolderManager.ViewModels
                                     {
                                         selectedFolders.Add(additionalDialog.SelectedPath);
 
-                                        var continueResult = MessageBox.Show(
+                                        var continueResult = _dialogService.Show(
                                             $"Selected {selectedFolders.Count} folders total.\n\nSelect another folder?",
                                             "Select More Folders?",
                                             MessageBoxButton.YesNo,
@@ -810,7 +812,7 @@ namespace ImageFolderManager.ViewModels
                                     }
                                     else
                                     {
-                                        MessageBox.Show("This folder has already been selected.",
+                                        _dialogService.Show("This folder has already been selected.",
                                             "Duplicate Selection", MessageBoxButton.OK, MessageBoxImage.Information);
                                     }
                                 }
@@ -839,7 +841,7 @@ namespace ImageFolderManager.ViewModels
                     !Directory.Exists(AppSettings.Instance.DefaultRootDirectory))
                 {
                     StatusMessage = "Please set a valid root directory first.";
-                    MessageBox.Show(
+                    _dialogService.Show(
                         "Please set a valid root directory in Settings before importing folders.",
                         "No Root Directory", MessageBoxButton.OK, MessageBoxImage.Warning);
                     return;
@@ -1411,7 +1413,7 @@ namespace ImageFolderManager.ViewModels
                 var errorMessage = "The following folders failed to import:\n\n";
                 errorMessage += string.Join("\n", failedFolders.Select(f => $"- {f.FolderName}: {f.Message}"));
 
-                MessageBox.Show(errorMessage, "Import Errors", MessageBoxButton.OK, MessageBoxImage.Warning);
+                _dialogService.Show(errorMessage, "Import Errors", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
 
             // Refresh the folder tree to show imported folders
@@ -1497,7 +1499,7 @@ namespace ImageFolderManager.ViewModels
             catch (Exception ex)
             {
                 StatusMessage = $"Error refreshing folder data: {ex.Message}";
-                MessageBox.Show($"Error refreshing folder data: {ex.Message}",
+                _dialogService.Show($"Error refreshing folder data: {ex.Message}",
                     "Error", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }

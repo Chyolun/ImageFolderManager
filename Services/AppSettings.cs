@@ -4,6 +4,8 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.CompilerServices;
+using System.Threading;
+using System.Threading.Tasks;
 using System.Windows;
 using ImageFolderManager.Models;
 using Newtonsoft.Json;
@@ -15,10 +17,13 @@ namespace ImageFolderManager.Services
     /// </summary>
     public class AppSettings : INotifyPropertyChanged
     {
+        public static IDialogService DialogService { get; set; } = new WpfDialogService();
+
         private static readonly string SettingsFilePath = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
             "ImageFolderManager",
             "settings.json");
+        private const int SaveDebounceMilliseconds = 400;
 
         #region Property Definitions
 
@@ -40,6 +45,9 @@ namespace ImageFolderManager.Services
         private bool _enableDuplicateFilters = false;
         private int _minFolderNameLength = 3;
         private List<string> _excludedFolderNames = new List<string>();
+        private readonly object _saveLock = new object();
+        private readonly SemaphoreSlim _saveSemaphore = new SemaphoreSlim(1, 1);
+        private int _saveVersion = 0;
 
         public string DefaultRootDirectory
         {
@@ -264,28 +272,18 @@ namespace ImageFolderManager.Services
 
                     if (loadedSettings != null)
                     {
-                        // Copy properties to new instance to ensure validators are applied
-                        settings.DefaultRootDirectory = loadedSettings.DefaultRootDirectory;
-                        settings.PreviewWidth = loadedSettings.PreviewWidth;
-                        settings.PreviewHeight = loadedSettings.PreviewHeight;
-                        settings.AutoExpandFolders = loadedSettings.AutoExpandFolders;
-                        settings.MaxRecentFolders = loadedSettings.MaxRecentFolders;
-                        settings.MaxCacheSize = loadedSettings.MaxCacheSize;
-                        settings.ParallelThreadCount = loadedSettings.ParallelThreadCount;
-                        settings.RecentFolders = loadedSettings.RecentFolders ?? new List<string>();
-
-                        // Load duplicate filter settings
-                        settings.EnableDuplicateFilters = loadedSettings.EnableDuplicateFilters;
-                        settings.MinFolderNameLength = loadedSettings.MinFolderNameLength;
-                        settings.ExcludedFolderNames = loadedSettings.ExcludedFolderNames ?? new List<string>();
+                        settings.ApplyLoadedSettings(loadedSettings);
                     }
                 }
             }
             catch (Exception ex)
             {
                 Debug.WriteLine($"Error loading settings: {ex.Message}");
-                MessageBox.Show($"Error loading settings: {ex.Message}. Default settings will be used.",
-                    "Settings Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                DialogService?.Show(
+                    $"Error loading settings: {ex.Message}. Default settings will be used.",
+                    "Settings Error",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
             }
             return settings;
         }
@@ -295,29 +293,85 @@ namespace ImageFolderManager.Services
         /// </summary>
         public void Save()
         {
+            QueueDebouncedSave();
+        }
+
+        private void ApplyLoadedSettings(AppSettings loadedSettings)
+        {
+            _defaultRootDirectory = loadedSettings.DefaultRootDirectory ?? string.Empty;
+            _previewWidth = ValidateRange(loadedSettings.PreviewWidth, 100, 1000);
+            _previewHeight = ValidateRange(loadedSettings.PreviewHeight, 100, 1000);
+            _autoExpandFolders = loadedSettings.AutoExpandFolders;
+            _maxRecentFolders = ValidateRange(loadedSettings.MaxRecentFolders, 1, 20);
+            _maxCacheSize = ValidateRange(loadedSettings.MaxCacheSize, 100, 2000);
+            _parallelThreadCount = ValidateRange(loadedSettings.ParallelThreadCount, 1, 16);
+            _recentFolders = loadedSettings.RecentFolders ?? new List<string>();
+            _enableDuplicateFilters = loadedSettings.EnableDuplicateFilters;
+            _minFolderNameLength = ValidateRange(loadedSettings.MinFolderNameLength, 1, 50);
+            _excludedFolderNames = loadedSettings.ExcludedFolderNames ?? new List<string>();
+        }
+
+        private void QueueDebouncedSave()
+        {
+            int targetVersion = Interlocked.Increment(ref _saveVersion);
+            _ = DebouncedSaveAsync(targetVersion);
+        }
+
+        private async Task DebouncedSaveAsync(int targetVersion)
+        {
             try
             {
+                await Task.Delay(SaveDebounceMilliseconds).ConfigureAwait(false);
+
+                // Newer updates already scheduled another save, skip this one.
+                if (targetVersion != Volatile.Read(ref _saveVersion))
+                    return;
+
+                await SaveToDiskAsync().ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                HandleSaveException(ex);
+            }
+        }
+
+        private async Task SaveToDiskAsync()
+        {
+            bool lockAcquired = false;
+            try
+            {
+                await _saveSemaphore.WaitAsync().ConfigureAwait(false);
+                lockAcquired = true;
+
                 string directory = Path.GetDirectoryName(SettingsFilePath);
                 if (!Directory.Exists(directory))
                 {
                     Directory.CreateDirectory(directory);
                 }
 
-                string json = JsonConvert.SerializeObject(this, Formatting.Indented);
-                File.WriteAllText(SettingsFilePath, json);
+                string json = CreateSerializedSnapshot();
+                await File.WriteAllTextAsync(SettingsFilePath, json).ConfigureAwait(false);
             }
-            catch (Exception ex)
+            finally
             {
-                Debug.WriteLine($"Error saving settings: {ex.Message}");
-
-                // Only show message box in UI context
-                if (Application.Current?.Dispatcher != null &&
-                    Application.Current.Dispatcher.CheckAccess())
+                if (lockAcquired)
                 {
-                    MessageBox.Show($"Error saving settings: {ex.Message}",
-                        "Settings Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                    _saveSemaphore.Release();
                 }
             }
+        }
+
+        private string CreateSerializedSnapshot()
+        {
+            lock (_saveLock)
+            {
+                return JsonConvert.SerializeObject(this, Formatting.Indented);
+            }
+        }
+
+        private void HandleSaveException(Exception ex)
+        {
+            Debug.WriteLine($"Error saving settings: {ex.Message}");
         }
 
         /// <summary>
@@ -415,8 +469,11 @@ namespace ImageFolderManager.Services
             catch (Exception ex)
             {
                 Debug.WriteLine($"Error clearing thumbnail cache: {ex.Message}");
-                MessageBox.Show($"Error clearing thumbnail cache: {ex.Message}",
-                    "Cache Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                DialogService?.Show(
+                    $"Error clearing thumbnail cache: {ex.Message}",
+                    "Cache Error",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
             }
         }
 
