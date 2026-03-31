@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using System.Threading.Tasks;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
@@ -423,13 +424,13 @@ namespace ImageFolderManager.Views
 
             // Add "Rename Tag" menu item
             var renameItem = new MenuItem { Header = "Rename Tag" };
-            renameItem.Click += (s, args) => ShowRenameTagDialog(tag.Tag);
+            renameItem.Click += (s, args) => _ = ShowRenameTagDialogAsync(tag.Tag);
             contextMenu.Items.Add(renameItem);
 
             contextMenu.Items.Add(new Separator());
             // Add "Delete Tag" menu item (new)
             var deleteItem = new MenuItem { Header = "Delete Tag" };
-            deleteItem.Click += (s, args) => DeleteTagPrompt(tag.Tag);
+            deleteItem.Click += (s, args) => _ = DeleteTagPromptAsync(tag.Tag);
             contextMenu.Items.Add(deleteItem);
 
             // Show context menu
@@ -538,7 +539,7 @@ namespace ImageFolderManager.Views
             }
         }
 
-        private async void ShowRenameTagDialog(string currentTag)
+        private async Task ShowRenameTagDialogAsync(string currentTag)
         {
             try
             {
@@ -592,7 +593,7 @@ namespace ImageFolderManager.Views
             }
         }
 
-        private async void DeleteTagPrompt(string tag)
+        private async Task DeleteTagPromptAsync(string tag)
         {
             if (string.IsNullOrEmpty(tag))
                 return;

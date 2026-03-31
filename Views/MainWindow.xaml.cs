@@ -45,7 +45,7 @@ namespace ImageFolderManager
             viewModel.SetShellTreeView(ShellTreeViewControl);
             this.Loaded += MainWindow_Loaded;
             this.Closing += MainWindow_Closing;
-            LoadDefaultRootDirectoryAsync();
+            _ = LoadDefaultRootDirectoryAsync();
         }
 
         // ADD THIS METHOD: Initialize debug monitoring when window is fully loaded
@@ -60,7 +60,7 @@ namespace ImageFolderManager
 
         }
 
-        private async void LoadDefaultRootDirectoryAsync()
+        private async Task LoadDefaultRootDirectoryAsync()
         {
             if (!string.IsNullOrEmpty(AppSettings.Instance.DefaultRootDirectory))
             {
@@ -213,10 +213,7 @@ namespace ImageFolderManager
                         // Change root directory in ShellTreeView
                         if (ShellTreeViewControl != null)
                         {
-                            // Ensure UI updates happen on UI thread
-                            Application.Current.Dispatcher.Invoke(() => {
-                                ShellTreeViewControl.ChangeRootDirectory(newRootDir);
-                            });
+                            await ShellTreeViewControl.ChangeRootDirectoryAsync(newRootDir);
                         }
                         else
                         {
@@ -380,7 +377,7 @@ namespace ImageFolderManager
                 IAsyncRelayCommand cmd = ViewModel?.UndoCommand;
                 if (cmd != null && cmd.CanExecute(null))
                 {
-                    ExecuteUndoSafeAsync(cmd);
+                    _ = ExecuteUndoSafeAsync(cmd);
                     e.Handled = true;
                 }
             }
@@ -616,7 +613,7 @@ namespace ImageFolderManager
         /// Safely executes the undo command and surfaces any exception as a
         /// MessageBox rather than crashing the UI thread.
         /// </summary>
-        private async void ExecuteUndoSafeAsync(CommunityToolkit.Mvvm.Input.IAsyncRelayCommand cmd)
+        private async Task ExecuteUndoSafeAsync(CommunityToolkit.Mvvm.Input.IAsyncRelayCommand cmd)
         {
             try
             {
@@ -894,10 +891,10 @@ namespace ImageFolderManager
 
         private void UserGuide_Click(object sender, RoutedEventArgs e)
         {
-            ShowHelpWindow("User Guide", GetHelpContent());
+            _ = ShowHelpWindowAsync("User Guide", GetHelpContent());
         }
 
-        private async void ShowHelpWindow(string title, string content)
+        private async Task ShowHelpWindowAsync(string title, string content)
         {
             var helpWindow = new Window
             {

@@ -122,7 +122,7 @@ namespace ImageFolderManager.Controls
                         PathService.DirectoryExists(AppSettings.Instance.DefaultRootDirectory) &&
                         _rootDirectory != AppSettings.Instance.DefaultRootDirectory)
                     {
-                        ChangeRootDirectory(AppSettings.Instance.DefaultRootDirectory);
+                        _ = ChangeRootDirectoryAsync(AppSettings.Instance.DefaultRootDirectory);
                     }
                 }
                 else
@@ -136,7 +136,7 @@ namespace ImageFolderManager.Controls
             };
             //ViewModel.FolderOperations.FolderOperationCompleted += FolderOperations_FolderOperationCompleted;
             // Initialize with default root directory
-            LoadDefaultRootDirectoryAsync();
+            _ = LoadDefaultRootDirectoryAsync();
 
         }
 
@@ -549,7 +549,7 @@ namespace ImageFolderManager.Controls
             }
         }
 
-        private async void LoadDefaultRootDirectoryAsync()
+        private async Task LoadDefaultRootDirectoryAsync()
         {
             _isInitializing = true;
             try
@@ -617,7 +617,7 @@ namespace ImageFolderManager.Controls
             Debug.WriteLine($"InitializeShellTreeAsync complete: {_rootDirectory}");
         }
 
-        public async void ChangeRootDirectory(string newRootDirectory)
+        public async Task ChangeRootDirectoryAsync(string newRootDirectory)
         {
             try
             {
@@ -660,6 +660,11 @@ namespace ImageFolderManager.Controls
                 HideLoadingIndicator();
                 HandleException("Error changing root directory", ex);
             }
+        }
+
+        public void ChangeRootDirectory(string newRootDirectory)
+        {
+            _ = ChangeRootDirectoryAsync(newRootDirectory);
         }
 
         #endregion
@@ -1723,16 +1728,9 @@ namespace ImageFolderManager.Controls
             }
         }
 
-        public List<string> FindFoldersByName(string keyword)
+        public Task<List<string>> FindFoldersByName(string keyword)
         {
-            try
-            {
-                return FindFoldersByNameAsync(keyword, CancellationToken.None).GetAwaiter().GetResult();
-            }
-            catch
-            {
-                return new List<string>();
-            }
+            return FindFoldersByNameAsync(keyword, CancellationToken.None);
         }
 
         /// <summary>
@@ -1762,7 +1760,7 @@ namespace ImageFolderManager.Controls
 
                     if (result == MessageBoxResult.Yes)
                     {
-                        ChangeRootDirectory(normalizedPath);
+                        await ChangeRootDirectoryAsync(normalizedPath);
                         return true;
                     }
 

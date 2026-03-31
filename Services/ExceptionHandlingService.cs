@@ -229,15 +229,24 @@ namespace ImageFolderManager.Services
             }
         }
 
-        private async void FlushLogs(object state)
+        private void FlushLogs(object state)
+        {
+            _ = FlushLogsAsync();
+        }
+
+        private async Task FlushLogsAsync()
         {
             if (_disposed) return;
 
-            if (await _flushSemaphore.WaitAsync(100)) // Don't block if busy
+            if (await _flushSemaphore.WaitAsync(100).ConfigureAwait(false)) // Don't block if busy
             {
                 try
                 {
-                    await FlushLogsToFile();
+                    await FlushLogsToFile().ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"Error in FlushLogsAsync: {ex.Message}");
                 }
                 finally
                 {
@@ -266,6 +275,27 @@ namespace ImageFolderManager.Services
             {
                 // Avoid recursive logging - just output to Debug
                 Debug.WriteLine($"Failed to write logs to file: {ex.Message}");
+            }
+        }
+
+        private void FlushLogsToFileSync()
+        {
+            if (_logQueue.IsEmpty) return;
+
+            try
+            {
+                using var writer = new StreamWriter(_logFilePath, append: true);
+
+                while (_logQueue.TryDequeue(out var entry))
+                {
+                    writer.WriteLine(FormatLogEntry(entry));
+                }
+
+                writer.Flush();
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Failed to write logs to file (sync): {ex.Message}");
             }
         }
 
@@ -305,8 +335,22 @@ namespace ImageFolderManager.Services
             {
                 _flushTimer?.Dispose();
 
-                // Final flush
-                Task.Run(async () => await FlushAllLogsAsync()).Wait(TimeSpan.FromSeconds(2));
+                // Final flush (best-effort, synchronous, avoids Task.Wait deadlock risk)
+                if (_flushSemaphore.Wait(TimeSpan.FromSeconds(2)))
+                {
+                    try
+                    {
+                        FlushLogsToFileSync();
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"Error during final log flush: {ex.Message}");
+                    }
+                    finally
+                    {
+                        _flushSemaphore.Release();
+                    }
+                }
 
                 _flushSemaphore?.Dispose();
                 _disposed = true;

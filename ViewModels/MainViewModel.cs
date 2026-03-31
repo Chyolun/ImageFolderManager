@@ -1527,7 +1527,7 @@ namespace ImageFolderManager.ViewModels
         {
             try
             {
-                _unifiedFolderService?.StopMonitoringAsync().Wait(2000);
+                _ = _unifiedFolderService?.StopMonitoringAsync();
                 _unifiedFolderService?.Dispose();
                 ImageLoading?.CancelCurrentLoading();
                 _nodeManager?.Dispose();

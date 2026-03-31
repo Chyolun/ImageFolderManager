@@ -29,10 +29,10 @@ namespace ImageFolderManager.Views
             ThreadCountUpDown.Value = AppSettings.Instance.ParallelThreadCount;
 
             // Calculate cache folder size
-            CalculateCacheSizeAsync();
+            _ = CalculateCacheSizeAsync();
         }
 
-        private async void CalculateCacheSizeAsync()
+        private async Task CalculateCacheSizeAsync()
         {
             if (_isCalculatingCacheSize)
                 return;
@@ -128,7 +128,7 @@ namespace ImageFolderManager.Views
 
                     // Recalculate cache size
                     await Task.Delay(500); // Small delay to ensure files are deleted
-                    CalculateCacheSizeAsync();
+                    _ = CalculateCacheSizeAsync();
                 }
                 catch (Exception ex)
                 {

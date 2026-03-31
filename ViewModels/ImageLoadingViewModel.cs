@@ -205,43 +205,42 @@ namespace ImageFolderManager.ViewModels
                 var batch = imageFiles.Skip(startIndex).Take(batchSize).ToList();
                 var batchResults = new List<ImageInfo>();
 
-                var options = new ParallelOptions
+                using var throttler = new SemaphoreSlim(parallelism, parallelism);
+                var loadTasks = batch.Select(async file =>
                 {
-                    MaxDegreeOfParallelism = parallelism,
-                    CancellationToken = cancellationToken
-                };
-
-                await Task.Run(() =>
-                {
-                    Parallel.ForEach(batch, options, file =>
+                    await throttler.WaitAsync(cancellationToken);
+                    try
                     {
-                        try
-                        {
-                            var imageInfo = new ImageInfo { FilePath = file };
-                            bool success = imageInfo.LoadThumbnailAsync(cancellationToken).GetAwaiter().GetResult();
+                        var imageInfo = new ImageInfo { FilePath = file };
+                        bool success = await imageInfo.LoadThumbnailAsync(cancellationToken);
 
-                            if (success && !cancellationToken.IsCancellationRequested)
+                        if (success && !cancellationToken.IsCancellationRequested)
+                        {
+                            lock (batchResults)
                             {
-                                lock (batchResults)
-                                {
-                                    batchResults.Add(imageInfo);
-                                }
-                            }
-                            else if (!success)
-                            {
-                                imageInfo.Dispose();
+                                batchResults.Add(imageInfo);
                             }
                         }
-                        catch (OperationCanceledException)
+                        else if (!success)
                         {
-                            // Expected when cancelling
+                            imageInfo.Dispose();
                         }
-                        catch (Exception ex)
-                        {
-                            System.Diagnostics.Debug.WriteLine($"Error loading image: {ex.Message}");
-                        }
-                    });
-                }, cancellationToken);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        // Expected when cancelling
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"Error loading image: {ex.Message}");
+                    }
+                    finally
+                    {
+                        throttler.Release();
+                    }
+                }).ToList();
+
+                await Task.WhenAll(loadTasks);
 
                 processedImages += batch.Count;
                 double progress = (double)processedImages / totalImages;

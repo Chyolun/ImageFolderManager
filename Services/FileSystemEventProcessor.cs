@@ -136,9 +136,14 @@ namespace ImageFolderManager.Services
         /// <summary>
         /// Process pending events in batches
         /// </summary>
-        private async void ProcessBatch(object state)
+        private void ProcessBatch(object state)
         {
-            if (_disposed || !await _processingLock.WaitAsync(100))
+            _ = ProcessBatchAsync();
+        }
+
+        private async Task ProcessBatchAsync()
+        {
+            if (_disposed || !await _processingLock.WaitAsync(100).ConfigureAwait(false))
                 return;
 
             try
@@ -156,13 +161,17 @@ namespace ImageFolderManager.Services
                 {
                     try
                     {
-                        await EventsProcessed(processedEvents);
+                        await EventsProcessed(processedEvents).ConfigureAwait(false);
                     }
                     catch (Exception ex)
                     {
                         Debug.WriteLine($"Error processing file system events: {ex.Message}");
                     }
                 }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Unhandled error in ProcessBatchAsync: {ex.Message}");
             }
             finally
             {
