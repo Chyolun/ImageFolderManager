@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Diagnostics;
 using System.IO;
 using System.Reflection;
@@ -16,7 +16,6 @@ using MahApps.Metro.Controls;
 using MahApps.Metro.Controls.Dialogs;
 using Microsoft.Web.WebView2.Wpf;
 using CommunityToolkit.Mvvm.Input;
-using System.Web;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Linq;

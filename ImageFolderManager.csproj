@@ -1,290 +1,31 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
-<Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
-  <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
+﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
-    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
-    <ProjectGuid>{ABD71D31-4877-48D3-91B8-46D8182AB4E1}</ProjectGuid>
     <OutputType>WinExe</OutputType>
-    <RootNamespace>ImageFolderManager</RootNamespace>
-    <AssemblyName>ImageFolderManager</AssemblyName>
-    <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
-    <FileAlignment>512</FileAlignment>
-    <ProjectTypeGuids>{60dc8134-eba5-43b8-bcc9-bb4bc16c2548};{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}</ProjectTypeGuids>
-    <WarningLevel>4</WarningLevel>
-    <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
-    <Deterministic>true</Deterministic>
+    <TargetFramework>net8.0-windows10.0.17763.0</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
     <LangVersion>latest</LangVersion>
-    <RestoreProjectStyle>PackageReference</RestoreProjectStyle>
-  </PropertyGroup>
-  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
     <PlatformTarget>AnyCPU</PlatformTarget>
-    <DebugSymbols>true</DebugSymbols>
-    <DebugType>full</DebugType>
-    <Optimize>false</Optimize>
-    <OutputPath>bin\Debug\</OutputPath>
-    <DefineConstants>DEBUG;TRACE</DefineConstants>
-    <ErrorReport>prompt</ErrorReport>
-    <WarningLevel>4</WarningLevel>
   </PropertyGroup>
-  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
-    <PlatformTarget>AnyCPU</PlatformTarget>
-    <DebugType>pdbonly</DebugType>
-    <Optimize>true</Optimize>
-    <OutputPath>bin\Release\</OutputPath>
-    <DefineConstants>TRACE</DefineConstants>
-    <ErrorReport>prompt</ErrorReport>
-    <WarningLevel>4</WarningLevel>
-  </PropertyGroup>
-  <ItemGroup>
-    <Reference Include="CustomMarshalers" />
-    <Reference Include="Microsoft.VisualBasic" />
-    <Reference Include="System" />
-    <Reference Include="System.ComponentModel.DataAnnotations" />
-    <Reference Include="System.Configuration" />
-    <Reference Include="System.Data" />
-    <Reference Include="System.Drawing" />
-    <Reference Include="System.Numerics" />
-    <Reference Include="System.Web" />
-    <Reference Include="System.Web.Extensions" />
-    <Reference Include="System.Windows.Forms" />
-    <Reference Include="System.Xml" />
-    <Reference Include="Microsoft.CSharp" />
-    <Reference Include="System.Core" />
-    <Reference Include="System.Xml.Linq" />
-    <Reference Include="System.Data.DataSetExtensions" />
-    <Reference Include="System.Net.Http" />
-    <Reference Include="System.Xaml">
-      <RequiredTargetFramework>4.0</RequiredTargetFramework>
-    </Reference>
-    <Reference Include="WindowsBase" />
-    <Reference Include="PresentationCore" />
-    <Reference Include="PresentationFramework" />
-    <Reference Include="WindowsFormsIntegration" />
-  </ItemGroup>
-  <ItemGroup>
-    <ApplicationDefinition Include="App.xaml">
-      <Generator>MSBuild:Compile</Generator>
-      <SubType>Designer</SubType>
-    </ApplicationDefinition>
-    <Compile Include="Commands\BaseFolderCommand.cs" />
-    <Compile Include="Commands\BatchOperationCommand.cs" />
-    <Compile Include="Commands\CommandExecutor.cs" />
-    <Compile Include="Commands\CopyFolderCommand.cs" />
-    <Compile Include="Commands\CreateFolderCommand.cs" />
-    <Compile Include="Commands\DeleteFolderCommand.cs" />
-    <Compile Include="Commands\IFolderCommand.cs" />
-    <Compile Include="Commands\MoveFolderCommand.cs" />
-    <Compile Include="Commands\RenameFolderCommand.cs" />
-    <Compile Include="Controls\FolderNode.cs" />
-    <Compile Include="Controls\FolderTreeItemFactory.cs" />
-    <Compile Include="Models\TagDisplayInfo.cs" />
-    <Compile Include="Services\AppSettings.cs" />
-    <Compile Include="Services\CommandSystemConfiguration.cs" />
-    <Compile Include="Services\CommandSystemInitializer.cs" />
-    <Compile Include="Services\ExceptionHandlingService.cs" />
-    <Compile Include="Services\FileSystemEventProcessor.cs" />
-    <Compile Include="Services\FolderOperationCoordinator.cs" />
-    <Compile Include="Services\HierarchicalNodeManager.cs" />
-    <Compile Include="Services\ImageCompressionService.cs" />
-    <Compile Include="Services\PathLockManager.cs" />
-    <Compile Include="Services\PathNormalizationService.cs" />
-    <Compile Include="Services\PathService.cs" />
-    <Compile Include="Services\TagCategoryService.cs" />
-    <Compile Include="Services\TagHelper.cs" />
-    <Compile Include="Services\UnifiedFolderService.cs" />
-    <Compile Include="Services\WindowsNaturalStringComparer.cs" />
-    <Compile Include="StateMachine\FolderState.cs" />
-    <Compile Include="StateMachine\FolderStateMachine.cs" />
-    <Compile Include="ViewModels\CommandIntegrationHelper.cs" />
-    <Compile Include="ViewModels\FolderOperationsViewModel.cs" />
-    <Compile Include="ViewModels\ImageLoadingViewModel.cs" />
-    <Compile Include="ViewModels\SearchViewModel.cs" />
-    <Compile Include="ViewModels\TagManagementViewModel.cs" />
-    <Compile Include="ViewModels\UndoManager.cs" />
-    <Compile Include="ViewModels\ViewModelBase.cs" />
-    <Compile Include="ViewModels\ViewModelHelper.cs" />
-    <Compile Include="Views\BatchTagsDialog.xaml.cs">
-      <DependentUpon>BatchTagsDialog.xaml</DependentUpon>
-    </Compile>
-    <Compile Include="Converters\Converter.cs" />
-    <Compile Include="Views\CopyConflictDialog.xaml.cs">
-      <DependentUpon>CopyConflictDialog.xaml</DependentUpon>
-    </Compile>
-    <Compile Include="Views\CreateFolderDialog.xaml.cs">
-      <DependentUpon>CreateFolderDialog.xaml</DependentUpon>
-    </Compile>
-    <Compile Include="Views\DeleteConfirmDialog.xaml.cs">
-      <DependentUpon>DeleteConfirmDialog.xaml</DependentUpon>
-    </Compile>
-    <Compile Include="Views\DuplicateFilterSettingsDialog.xaml.cs">
-      <DependentUpon>DuplicateFilterSettingsDialog.xaml</DependentUpon>
-    </Compile>
-    <Compile Include="Views\DuplicateFoldersDialog.xaml.cs">
-      <DependentUpon>DuplicateFoldersDialog.xaml</DependentUpon>
-    </Compile>
-    <Compile Include="Views\ImageCompressionDialog.xaml.cs">
-      <DependentUpon>ImageCompressionDialog.xaml</DependentUpon>
-    </Compile>
-    <Compile Include="Views\ImportFileConflictDialog.xaml.cs">
-      <DependentUpon>ImportFileConflictDialog.xaml</DependentUpon>
-    </Compile>
-    <Compile Include="Views\ImportFolderDialog.xaml.cs">
-      <DependentUpon>ImportFolderDialog.xaml</DependentUpon>
-    </Compile>
-    <Compile Include="Views\ImportMergeFolderDialog.xaml.cs">
-      <DependentUpon>ImportMergeFolderDialog.xaml</DependentUpon>
-    </Compile>
-    <Compile Include="Views\PreviewSizeDialog.xaml.cs">
-      <DependentUpon>PreviewSizeDialog.xaml</DependentUpon>
-    </Compile>
-    <Compile Include="Views\ProgressDialog.xaml.cs">
-      <DependentUpon>ProgressDialog.xaml</DependentUpon>
-    </Compile>
-    <Compile Include="Views\RenameFolderDialog.xaml.cs">
-      <DependentUpon>RenameFolderDialog.xaml</DependentUpon>
-    </Compile>
-    <Compile Include="Views\RenameTagDialog.xaml.cs">
-      <DependentUpon>RenameTagDialog.xaml</DependentUpon>
-    </Compile>
-    <Compile Include="Controls\ShellTreeView.xaml.cs">
-      <DependentUpon>ShellTreeView.xaml</DependentUpon>
-    </Compile>
-    <Compile Include="Views\TagCloudWindow.xaml.cs">
-      <DependentUpon>TagCloudWindow.xaml</DependentUpon>
-    </Compile>
-    <Page Include="Views\BatchTagsDialog.xaml">
-      <SubType>Designer</SubType>
-      <Generator>MSBuild:Compile</Generator>
-    </Page>
-    <Page Include="Views\CopyConflictDialog.xaml">
-      <Generator>MSBuild:Compile</Generator>
-      <SubType>Designer</SubType>
-    </Page>
-    <Page Include="Views\CreateFolderDialog.xaml">
-      <Generator>MSBuild:Compile</Generator>
-      <SubType>Designer</SubType>
-    </Page>
-    <Page Include="Views\DeleteConfirmDialog.xaml">
-      <Generator>MSBuild:Compile</Generator>
-      <SubType>Designer</SubType>
-    </Page>
-    <Page Include="Views\DuplicateFilterSettingsDialog.xaml">
-      <SubType>Designer</SubType>
-      <Generator>MSBuild:Compile</Generator>
-    </Page>
-    <Page Include="Views\DuplicateFoldersDialog.xaml">
-      <SubType>Designer</SubType>
-      <Generator>MSBuild:Compile</Generator>
-    </Page>
-    <Page Include="Views\ImageCompressionDialog.xaml">
-      <SubType>Designer</SubType>
-      <Generator>MSBuild:Compile</Generator>
-    </Page>
-    <Page Include="Views\ImportFileConflictDialog.xaml">
-      <Generator>MSBuild:Compile</Generator>
-      <SubType>Designer</SubType>
-    </Page>
-    <Page Include="Views\ImportFolderDialog.xaml">
-      <Generator>MSBuild:Compile</Generator>
-      <SubType>Designer</SubType>
-    </Page>
-    <Page Include="Views\ImportMergeFolderDialog.xaml">
-      <Generator>MSBuild:Compile</Generator>
-      <SubType>Designer</SubType>
-    </Page>
-    <Page Include="Views\MainWindow.xaml">
-      <Generator>MSBuild:Compile</Generator>
-      <SubType>Designer</SubType>
-    </Page>
-    <Compile Include="App.xaml.cs">
-      <DependentUpon>App.xaml</DependentUpon>
-      <SubType>Code</SubType>
-    </Compile>
-    <Compile Include="Models\FolderInfo.cs" />
-    <Compile Include="Services\FolderTagService.cs" />
-    <Compile Include="Models\ImageCache.cs" />
-    <Compile Include="Models\ImageInfo.cs" />
-    <Compile Include="Models\TagCloudItem.cs" />
-    <Compile Include="ViewModels\MainViewModel.cs" />
-    <Compile Include="ViewModels\TagCloudViewModel.cs" />
-    <Compile Include="Views\MainWindow.xaml.cs">
-      <DependentUpon>MainWindow.xaml</DependentUpon>
-      <SubType>Code</SubType>
-    </Compile>
-    <Page Include="Views\PreviewSizeDialog.xaml">
-      <SubType>Designer</SubType>
-      <Generator>MSBuild:Compile</Generator>
-    </Page>
-    <Page Include="Views\ProgressDialog.xaml">
-      <SubType>Designer</SubType>
-      <Generator>MSBuild:Compile</Generator>
-    </Page>
-    <Page Include="Views\RenameFolderDialog.xaml">
-      <Generator>MSBuild:Compile</Generator>
-      <SubType>Designer</SubType>
-    </Page>
-    <Page Include="Views\RenameTagDialog.xaml">
-      <SubType>Designer</SubType>
-      <Generator>MSBuild:Compile</Generator>
-    </Page>
-    <Page Include="Controls\ShellTreeView.xaml">
-      <SubType>Designer</SubType>
-      <Generator>MSBuild:Compile</Generator>
-    </Page>
-    <Page Include="Views\TagCloudWindow.xaml">
-      <SubType>Designer</SubType>
-      <Generator>MSBuild:Compile</Generator>
-    </Page>
-  </ItemGroup>
-  <ItemGroup>
-    <Compile Include="Properties\AssemblyInfo.cs">
-      <SubType>Code</SubType>
-    </Compile>
-    <Compile Include="Properties\Resources.Designer.cs">
-      <AutoGen>True</AutoGen>
-      <DesignTime>True</DesignTime>
-      <DependentUpon>Resources.resx</DependentUpon>
-    </Compile>
-    <Compile Include="Properties\Settings.Designer.cs">
-      <AutoGen>True</AutoGen>
-      <DependentUpon>Settings.settings</DependentUpon>
-      <DesignTimeSharedInput>True</DesignTimeSharedInput>
-    </Compile>
-    <EmbeddedResource Include="Properties\Resources.resx">
-      <Generator>ResXFileCodeGenerator</Generator>
-      <LastGenOutput>Resources.Designer.cs</LastGenOutput>
-    </EmbeddedResource>
-    <None Include="Properties\Settings.settings">
-      <Generator>SettingsSingleFileGenerator</Generator>
-      <LastGenOutput>Settings.Designer.cs</LastGenOutput>
-    </None>
-  </ItemGroup>
-  <ItemGroup>
-    <None Include="App.config" />
-  </ItemGroup>
+
   <ItemGroup>
     <EmbeddedResource Include="Resources\HelpDocumentation.html" />
   </ItemGroup>
-  <ItemGroup />
-  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+
   <ItemGroup>
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
     <PackageReference Include="ControlzEx" Version="4.4.0" />
-    <PackageReference Include="Magick.NET.Core" Version="14.10.3" />
-    <PackageReference Include="Magick.NET-Q8-AnyCPU" Version="14.10.3" />
+    <PackageReference Include="Magick.NET.Core" Version="14.11.1" />
+    <PackageReference Include="Magick.NET-Q8-AnyCPU" Version="14.11.1" />
     <PackageReference Include="MahApps.Metro" Version="2.4.11" />
-    <PackageReference Include="Microsoft.Bcl.AsyncInterfaces" Version="8.0.0" />
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3296.44" />
     <PackageReference Include="Microsoft.Xaml.Behaviors.Wpf" Version="1.1.19" />
     <PackageReference Include="Microsoft-WindowsAPICodePack-Core" Version="1.1.5" />
     <PackageReference Include="Microsoft-WindowsAPICodePack-Shell" Version="1.1.5" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
-    <PackageReference Include="System.Buffers" Version="4.6.1" />
-    <PackageReference Include="System.ComponentModel.Annotations" Version="5.0.0" />
-    <PackageReference Include="System.Memory" Version="4.6.3" />
-    <PackageReference Include="System.Numerics.Vectors" Version="4.6.1" />
-    <PackageReference Include="System.Runtime.CompilerServices.Unsafe" Version="6.1.2" />
-    <PackageReference Include="System.Threading.Tasks.Extensions" Version="4.6.3" />
+    <PackageReference Include="System.Configuration.ConfigurationManager" Version="8.0.0" />
   </ItemGroup>
 </Project>

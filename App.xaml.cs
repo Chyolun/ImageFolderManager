@@ -405,8 +405,8 @@ namespace ImageFolderManager
             Debug.WriteLine("Verbose logging enabled");
 
             // Add more detailed debug output
-            Debug.Listeners.Add(new TextWriterTraceListener(Console.Out));
-            Debug.AutoFlush = true;
+            Trace.Listeners.Add(new TextWriterTraceListener(Console.Out));
+            Trace.AutoFlush = true;
         }
 
         #endregion
