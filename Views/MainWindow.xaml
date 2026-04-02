@@ -6,7 +6,6 @@
         xmlns:views="clr-namespace:ImageFolderManager.Views"
         xmlns:controls="clr-namespace:ImageFolderManager.Controls"
         xmlns:converters="clr-namespace:ImageFolderManager.Converters"
-        xmlns:local="clr-namespace:ImageFolderManager.ViewModels"
         xmlns:mah="http://metro.mahapps.com/winfx/xaml/controls"
         mc:Ignorable="d"
         Title="Image Folder Manager"
@@ -17,10 +16,6 @@
         WindowStartupLocation="CenterScreen"
         Background="{DynamicResource MahApps.Brushes.Control.Background}">
 
-    <!-- Set the DataContext to MainViewModel -->
-    <mah:MetroWindow.DataContext>
-        <local:MainViewModel />
-    </mah:MetroWindow.DataContext>
     <Window.InputBindings>
         <KeyBinding Key="Z" Modifiers="Control" Command="{Binding UndoCommand}" />
         <KeyBinding Key="Left" Modifiers="Alt" Command="{Binding CollapseParentDirectoryCommand}" />
