@@ -135,10 +135,16 @@ namespace ImageFolderManager.Services
         /// </summary>
         internal async Task ReleaseLocksByIdAsync(string lockId)
         {
+            ReleaseLocksById(lockId);
+            await Task.CompletedTask;
+        }
+
+        internal void ReleaseLocksById(string lockId)
+        {
             if (_disposed || string.IsNullOrEmpty(lockId))
                 return;
 
-            await _lockManagerSemaphore.WaitAsync();
+            _lockManagerSemaphore.Wait();
 
             try
             {
@@ -354,7 +360,7 @@ namespace ImageFolderManager.Services
         {
             if (!_disposed && _lockManager != null)
             {
-                Task.Run(async () => await _lockManager.ReleaseLocksByIdAsync(_lockId));
+                _lockManager.ReleaseLocksById(_lockId);
                 _disposed = true;
             }
         }

@@ -26,6 +26,7 @@ namespace ImageFolderManager.ViewModels
         // ── Clipboard state ───────────────────────────────────────────────
         private List<FolderInfo> _clipboardFolders = new List<FolderInfo>();
         private bool _isCutOperation;
+        private readonly SemaphoreSlim _operationGate = new SemaphoreSlim(1, 1);
 
 
         // ── Undo ─────────────────────────────────────────────────────────
@@ -151,49 +152,52 @@ namespace ImageFolderManager.ViewModels
 
         public async Task CreateNewFolderAsync(FolderInfo parentFolder)
         {
-            if (parentFolder == null || !Directory.Exists(parentFolder.FolderPath))
-                return;
-
-            try
+            await ExecuteSerializedAsync(async () =>
             {
-                var dialog = new Views.CreateFolderDialog(parentFolder.FolderPath)
-                {
-                    Owner = Application.Current.MainWindow
-                };
-
-                if (dialog.ShowDialog() != true)
+                if (parentFolder == null || !Directory.Exists(parentFolder.FolderPath))
                     return;
 
-                string folderName = dialog.FolderName;
-
-                if (string.IsNullOrWhiteSpace(folderName))
-                    return;
-
-                bool success = await _folderService.CreateFolderAsync(
-                    parentFolder.FolderPath, folderName);
-
-                if (success)
+                try
                 {
-                    string newPath = Path.Combine(parentFolder.FolderPath, folderName);
+                    var dialog = new Views.CreateFolderDialog(parentFolder.FolderPath)
+                    {
+                        Owner = Application.Current.MainWindow
+                    };
 
-                    // ── Record for undo ───────────────────────────────────
-                    UndoManager.Push(UndoRecord.ForCreate(newPath));
+                    if (dialog.ShowDialog() != true)
+                        return;
 
-                    UpdateStatus($"Created folder '{folderName}'.");
-                    OnFolderOperationCompleted(FolderOperationEventArgs.CreateSuccess(
-                        FolderOperation.Create, newPath));
+                    string folderName = dialog.FolderName;
+
+                    if (string.IsNullOrWhiteSpace(folderName))
+                        return;
+
+                    bool success = await _folderService.CreateFolderAsync(
+                        parentFolder.FolderPath, folderName);
+
+                    if (success)
+                    {
+                        string newPath = Path.Combine(parentFolder.FolderPath, folderName);
+
+                        // ── Record for undo ───────────────────────────────────
+                        UndoManager.Push(UndoRecord.ForCreate(newPath));
+
+                        UpdateStatus($"Created folder '{folderName}'.");
+                        OnFolderOperationCompleted(FolderOperationEventArgs.CreateSuccess(
+                            FolderOperation.Create, newPath));
+                    }
+                    else
+                    {
+                        _dialogService.Show($"Failed to create folder '{folderName}'.",
+                            "Operation Failed", MessageBoxButton.OK, MessageBoxImage.Error);
+                    }
                 }
-                else
+                catch (Exception ex)
                 {
-                    _dialogService.Show($"Failed to create folder '{folderName}'.",
-                        "Operation Failed", MessageBoxButton.OK, MessageBoxImage.Error);
+                    _dialogService.Show($"Error creating folder: {ex.Message}",
+                        "Error", MessageBoxButton.OK, MessageBoxImage.Error);
                 }
-            }
-            catch (Exception ex)
-            {
-                _dialogService.Show($"Error creating folder: {ex.Message}",
-                    "Error", MessageBoxButton.OK, MessageBoxImage.Error);
-            }
+            });
         }
 
         #endregion
@@ -203,6 +207,11 @@ namespace ImageFolderManager.ViewModels
         // ─────────────────────────────────────────────────────────────────
 
         public async Task<bool> DeleteFolderAsync(FolderInfo folder)
+        {
+            return await ExecuteSerializedAsync(() => DeleteFolderCoreAsync(folder));
+        }
+
+        private async Task<bool> DeleteFolderCoreAsync(FolderInfo folder)
         {
             if (folder == null || !Directory.Exists(folder.FolderPath))
                 return false;
@@ -247,87 +256,119 @@ namespace ImageFolderManager.ViewModels
 
         public async Task<bool> DeleteFoldersAsync(IEnumerable<FolderInfo> folders)
         {
-            if (folders == null) return false;
-
-            var folderList = folders
-                .Where(f => f != null && Directory.Exists(f.FolderPath))
-                .ToList();
-
-            if (folderList.Count == 0) return false;
-            if (folderList.Count == 1)
-                return await DeleteFolderAsync(folderList[0]);
-
-            var confirm = Views.DeleteConfirmDialog.ForMultiple(
-                folderList.Select(f => f.FolderPath));
-            confirm.Owner = Application.Current.MainWindow;
-
-            if (confirm.ShowDialog() != true)
-                return false;
-
-            var progressDialog = new ProgressDialog(
-                "Deleting Folders",
-                $"Deleting {folderList.Count} folders...");
-            progressDialog.Owner = Application.Current.MainWindow;
-
-            bool overallSuccess = true;
-            int processed = 0;
-            int failedCount = 0;
-
-            var deleteTask = Task.Run(async () =>
+            return await ExecuteSerializedAsync(async () =>
             {
-                foreach (var folder in folderList)
+                if (folders == null) return false;
+
+                var folderList = folders
+                    .Where(f => f != null && Directory.Exists(f.FolderPath))
+                    .ToList();
+
+                if (folderList.Count == 0) return false;
+                if (folderList.Count == 1)
+                    return await DeleteFolderCoreAsync(folderList[0]);
+
+                var confirm = Views.DeleteConfirmDialog.ForMultiple(
+                    folderList.Select(f => f.FolderPath));
+                confirm.Owner = Application.Current.MainWindow;
+
+                if (confirm.ShowDialog() != true)
+                    return false;
+
+                var progressDialog = new ProgressDialog(
+                    "Deleting Folders",
+                    $"Deleting {folderList.Count} folders...");
+                progressDialog.Owner = Application.Current.MainWindow;
+
+                using var cts = new CancellationTokenSource();
+                progressDialog.CancelRequested += (_, __) => cts.Cancel();
+
+                bool overallSuccess = true;
+                bool wasCancelled = false;
+                int processed = 0;
+                int failedCount = 0;
+
+                var deleteTask = Task.Run(async () =>
                 {
-                    try
+                    foreach (var folder in folderList)
                     {
-                        double progress = (double)processed / folderList.Count;
-                        Application.Current.Dispatcher.Invoke(() =>
-                            progressDialog.UpdateProgress(progress, $"Deleting: {folder.Name}"));
-
-                        bool success = await _folderService.DeleteFolderAsync(
-                            folder.FolderPath, useRecycleBin: true);
-
-                        if (!success)
+                        if (cts.Token.IsCancellationRequested)
                         {
+                            wasCancelled = true;
+                            break;
+                        }
+
+                        try
+                        {
+                            double progress = folderList.Count == 0 ? 0 : (double)processed / folderList.Count;
+                            Application.Current.Dispatcher.Invoke(() =>
+                                progressDialog.UpdateProgress(progress, $"Deleting: {folder.Name}"));
+
+                            bool success = await _folderService.DeleteFolderAsync(
+                                folder.FolderPath, useRecycleBin: true);
+
+                            if (!success)
+                            {
+                                overallSuccess = false;
+                                Interlocked.Increment(ref failedCount);
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Debug.WriteLine($"Error deleting {folder.FolderPath}: {ex.Message}");
                             overallSuccess = false;
                             Interlocked.Increment(ref failedCount);
                         }
-                    }
-                    catch (Exception ex)
-                    {
-                        Debug.WriteLine($"Error deleting {folder.FolderPath}: {ex.Message}");
-                        overallSuccess = false;
-                        Interlocked.Increment(ref failedCount);
+
+                        Interlocked.Increment(ref processed);
                     }
 
-                    Interlocked.Increment(ref processed);
+                    Application.Current.Dispatcher.Invoke(() =>
+                        progressDialog.UpdateProgress(1.0, wasCancelled ? "Delete cancelled" : "Delete completed"));
+                }, cts.Token);
+
+                // Show the progress dialog (blocking the UI) first, and then wait for the task to complete
+                progressDialog.ShowDialog();
+
+                if (progressDialog.IsCancelled && !cts.IsCancellationRequested)
+                {
+                    cts.Cancel();
                 }
 
-                Application.Current.Dispatcher.Invoke(() =>
-                    progressDialog.UpdateProgress(1.0, "Delete completed"));
-            });
-
-            // Show the progress dialog (blocking the UI) first, and then wait for the task to complete
-            progressDialog.ShowDialog();
-            await deleteTask;
-
-            // When the task is complete, a refresh event is triggered on the UI thread
-            int successCount = folderList.Count - failedCount;
-            if (successCount > 0)
-            {
-                OnFolderOperationCompleted(new FolderOperationEventArgs
+                try
                 {
-                    Operation = FolderOperation.Refresh,
-                    Success = true,
-                    AffectedItemCount = successCount,
-                    Timestamp = DateTime.Now
-                });
-            }
+                    await deleteTask;
+                }
+                catch (OperationCanceledException)
+                {
+                    wasCancelled = true;
+                }
 
-            UpdateStatus(overallSuccess
-                ? $"Deleted {folderList.Count} folders."
-                : $"Deleted {successCount} of {folderList.Count} folders, {failedCount} failed.");
+                // When the task is complete, a refresh event is triggered on the UI thread
+                int successCount = processed - failedCount;
+                if (successCount > 0)
+                {
+                    OnFolderOperationCompleted(new FolderOperationEventArgs
+                    {
+                        Operation = FolderOperation.Refresh,
+                        Success = true,
+                        AffectedItemCount = successCount,
+                        Timestamp = DateTime.Now
+                    });
+                }
 
-            return overallSuccess;
+                if (wasCancelled)
+                {
+                    UpdateStatus($"Delete cancelled. Deleted {successCount} of {folderList.Count} folders.");
+                    return false;
+                }
+
+                UpdateStatus(overallSuccess
+                    ? $"Deleted {folderList.Count} folders."
+                    : $"Deleted {successCount} of {folderList.Count} folders, {failedCount} failed.");
+
+                return overallSuccess;
+            });
         }
 
         #endregion
@@ -338,53 +379,56 @@ namespace ImageFolderManager.ViewModels
 
         public async Task<bool> RenameFolderAsync(FolderInfo folder)
         {
-            if (folder == null || !Directory.Exists(folder.FolderPath))
-                return false;
-
-            try
+            return await ExecuteSerializedAsync(async () =>
             {
-                var dialog = new Views.RenameFolderDialog(folder.Name)
-                {
-                    Owner = Application.Current.MainWindow
-                };
-
-                if (dialog.ShowDialog() != true)
+                if (folder == null || !Directory.Exists(folder.FolderPath))
                     return false;
 
-                string newName = dialog.NewName;
-
-                if (string.IsNullOrWhiteSpace(newName) || newName == folder.Name)
-                    return false;
-
-                string oldPath = folder.FolderPath;
-                bool success = await _folderService.RenameFolderAsync(oldPath, newName);
-
-                if (success)
+                try
                 {
-                    string newPath = Path.Combine(
-                        Path.GetDirectoryName(oldPath) ?? string.Empty, newName);
+                    var dialog = new Views.RenameFolderDialog(folder.Name)
+                    {
+                        Owner = Application.Current.MainWindow
+                    };
 
-                    // ── Record for undo ───────────────────────────────────
-                    UndoManager.Push(UndoRecord.ForRename(oldPath, newPath));
+                    if (dialog.ShowDialog() != true)
+                        return false;
 
-                    UpdateStatus($"Renamed '{folder.Name}' → '{newName}'.");
-                    OnFolderOperationCompleted(FolderOperationEventArgs.CreateSuccess(
-                        FolderOperation.Rename, oldPath, newPath));
-                    return true;
+                    string newName = dialog.NewName;
+
+                    if (string.IsNullOrWhiteSpace(newName) || newName == folder.Name)
+                        return false;
+
+                    string oldPath = folder.FolderPath;
+                    bool success = await _folderService.RenameFolderAsync(oldPath, newName);
+
+                    if (success)
+                    {
+                        string newPath = Path.Combine(
+                            Path.GetDirectoryName(oldPath) ?? string.Empty, newName);
+
+                        // ── Record for undo ───────────────────────────────────
+                        UndoManager.Push(UndoRecord.ForRename(oldPath, newPath));
+
+                        UpdateStatus($"Renamed '{folder.Name}' → '{newName}'.");
+                        OnFolderOperationCompleted(FolderOperationEventArgs.CreateSuccess(
+                            FolderOperation.Rename, oldPath, newPath));
+                        return true;
+                    }
+                    else
+                    {
+                        _dialogService.Show($"Failed to rename folder to '{newName}'.",
+                            "Operation Failed", MessageBoxButton.OK, MessageBoxImage.Error);
+                        return false;
+                    }
                 }
-                else
+                catch (Exception ex)
                 {
-                    _dialogService.Show($"Failed to rename folder to '{newName}'.",
-                        "Operation Failed", MessageBoxButton.OK, MessageBoxImage.Error);
+                    _dialogService.Show($"Error renaming folder: {ex.Message}",
+                        "Error", MessageBoxButton.OK, MessageBoxImage.Error);
                     return false;
                 }
-            }
-            catch (Exception ex)
-            {
-                _dialogService.Show($"Error renaming folder: {ex.Message}",
-                    "Error", MessageBoxButton.OK, MessageBoxImage.Error);
-                return false;
-            }
+            });
         }
 
         #endregion
@@ -469,17 +513,20 @@ namespace ImageFolderManager.ViewModels
         public async Task<bool> MoveFoldersAsync(
             IEnumerable<FolderInfo> sourceFolders, FolderInfo targetFolder)
         {
-            if (sourceFolders == null || targetFolder == null) return false;
+            return await ExecuteSerializedAsync(async () =>
+            {
+                if (sourceFolders == null || targetFolder == null) return false;
 
-            var list = sourceFolders
-                .Where(f => f != null && Directory.Exists(f.FolderPath))
-                .ToList();
+                var list = sourceFolders
+                    .Where(f => f != null && Directory.Exists(f.FolderPath))
+                    .ToList();
 
-            if (list.Count == 0) return false;
+                if (list.Count == 0) return false;
 
-            return list.Count == 1
-                ? await MoveSingleFolderAsync(list[0], targetFolder)
-                : await MoveMultipleFoldersAsync(list, targetFolder);
+                return list.Count == 1
+                    ? await MoveSingleFolderAsync(list[0], targetFolder)
+                    : await MoveMultipleFoldersAsync(list, targetFolder);
+            });
         }
 
         private async Task<bool> MoveSingleFolderAsync(
@@ -533,7 +580,11 @@ namespace ImageFolderManager.ViewModels
                 $"Moving {folderList.Count} folders...");
             progressDialog.Owner = Application.Current.MainWindow;
 
+            using var cts = new CancellationTokenSource();
+            progressDialog.CancelRequested += (_, __) => cts.Cancel();
+
             bool overallSuccess = true;
+            bool wasCancelled = false;
             int  processed      = 0;
 
             // Collect successful source paths for a single MultiMove undo record          
@@ -543,6 +594,12 @@ namespace ImageFolderManager.ViewModels
             {
                 foreach (var folder in folderList)
                 {
+                    if (cts.Token.IsCancellationRequested)
+                    {
+                        wasCancelled = true;
+                        break;
+                    }
+
                     try
                     {
                         double progress = (double)processed / folderList.Count;
@@ -574,11 +631,24 @@ namespace ImageFolderManager.ViewModels
                 }
 
                 Application.Current.Dispatcher.Invoke(() =>
-                    progressDialog.UpdateProgress(1.0, "Move completed"));
-            });
+                    progressDialog.UpdateProgress(1.0, wasCancelled ? "Move cancelled" : "Move completed"));
+            }, cts.Token);
 
             progressDialog.ShowDialog();
-            await moveTask;
+
+            if (progressDialog.IsCancelled && !cts.IsCancellationRequested)
+            {
+                cts.Cancel();
+            }
+
+            try
+            {
+                await moveTask;
+            }
+            catch (OperationCanceledException)
+            {
+                wasCancelled = true;
+            }
 
             if (movedSources.Count > 0)
             {
@@ -604,6 +674,12 @@ namespace ImageFolderManager.ViewModels
             }
 
             CommandManager.InvalidateRequerySuggested();
+            if (wasCancelled)
+            {
+                UpdateStatus($"Move cancelled. Moved {movedSources.Count} of {folderList.Count} folders.");
+                return false;
+            }
+
             return overallSuccess;
         }
 
@@ -614,6 +690,12 @@ namespace ImageFolderManager.ViewModels
         // ─────────────────────────────────────────────────────────────────
 
         public async Task<bool> CopyFoldersAsync(
+             IEnumerable<FolderInfo> sourceFolders, FolderInfo targetFolder)
+        {
+            return await ExecuteSerializedAsync(() => CopyFoldersCoreAsync(sourceFolders, targetFolder));
+        }
+
+        private async Task<bool> CopyFoldersCoreAsync(
              IEnumerable<FolderInfo> sourceFolders, FolderInfo targetFolder)
         {
             if (sourceFolders == null || targetFolder == null) return false;
@@ -717,12 +799,21 @@ namespace ImageFolderManager.ViewModels
             progressDialog.Owner = Application.Current.MainWindow;
 
             bool overallSuccess = true;
+            bool wasCancelled = false;
             int processed = 0;
+            using var cts = new CancellationTokenSource();
+            progressDialog.CancelRequested += (_, __) => cts.Cancel();
 
-            var copyTask = Task.Run(() =>
+            var copyTask = Task.Run(async () =>
             {
                 foreach (var sourceFolder in toProcess)
                 {
+                    if (cts.Token.IsCancellationRequested)
+                    {
+                        wasCancelled = true;
+                        break;
+                    }
+
                     try
                     {
                         double progress = (double)processed / toProcess.Count;
@@ -734,10 +825,18 @@ namespace ImageFolderManager.ViewModels
                         // Handle Overwrite: delete existing folder first
                         if (Directory.Exists(destPath))
                         {
-                            Directory.Delete(destPath, recursive: true);
+                            bool deleted = await _folderService.DeleteFolderAsync(destPath, useRecycleBin: false);
+                            if (!deleted && Directory.Exists(destPath))
+                            {
+                                throw new IOException($"Failed to overwrite destination folder: {destPath}");
+                            }
                         }
 
-                        CopyDirectoryInternal(sourceFolder.FolderPath, destPath);
+                        bool copied = await _folderService.CopyFolderAsync(sourceFolder.FolderPath, destPath);
+                        if (!copied)
+                        {
+                            throw new IOException($"Failed to copy folder to destination: {destPath}");
+                        }
 
                         // ── Record for undo & fire TreeView event ─────────
                         Application.Current.Dispatcher.Invoke(() =>
@@ -762,11 +861,30 @@ namespace ImageFolderManager.ViewModels
                 }
 
                 Application.Current.Dispatcher.Invoke(() =>
-                    progressDialog.UpdateProgress(1.0, "Copy completed"));
-            });
+                    progressDialog.UpdateProgress(1.0, wasCancelled ? "Copy cancelled" : "Copy completed"));
+            }, cts.Token);
 
             progressDialog.ShowDialog();
-            await copyTask;
+
+            if (progressDialog.IsCancelled && !cts.IsCancellationRequested)
+            {
+                cts.Cancel();
+            }
+
+            try
+            {
+                await copyTask;
+            }
+            catch (OperationCanceledException)
+            {
+                wasCancelled = true;
+            }
+
+            if (wasCancelled)
+            {
+                UpdateStatus($"Copy cancelled. Copied {processed} of {toProcess.Count} folder(s).");
+                return false;
+            }
 
             UpdateStatus(overallSuccess
                 ? $"Copied {toProcess.Count} folder(s)."
@@ -827,23 +945,6 @@ namespace ImageFolderManager.ViewModels
             }
         }
 
-        /// <summary>Recursive directory copy (runs on a thread-pool thread).</summary>
-        private void CopyDirectoryInternal(string source, string destination)
-        {
-            var dir = new DirectoryInfo(source);
-            if (!dir.Exists)
-                throw new DirectoryNotFoundException($"Source not found: {source}");
-
-            Directory.CreateDirectory(destination);
-
-            foreach (var file in dir.GetFiles())
-                file.CopyTo(Path.Combine(destination, file.Name), overwrite: false);
-
-            foreach (var subDir in dir.GetDirectories())
-                CopyDirectoryInternal(subDir.FullName, Path.Combine(destination, subDir.Name));
-        }
-
-
         #endregion
 
         // ─────────────────────────────────────────────────────────────────
@@ -861,6 +962,32 @@ namespace ImageFolderManager.ViewModels
         // ─────────────────────────────────────────────────────────────────
         #region Helpers
         // ─────────────────────────────────────────────────────────────────
+
+        private async Task ExecuteSerializedAsync(Func<Task> operation)
+        {
+            await _operationGate.WaitAsync();
+            try
+            {
+                await operation();
+            }
+            finally
+            {
+                _operationGate.Release();
+            }
+        }
+
+        private async Task<T> ExecuteSerializedAsync<T>(Func<Task<T>> operation)
+        {
+            await _operationGate.WaitAsync();
+            try
+            {
+                return await operation();
+            }
+            finally
+            {
+                _operationGate.Release();
+            }
+        }
 
         private void UpdateStatus(string message) =>
             StatusMessageChanged?.Invoke(this, message);

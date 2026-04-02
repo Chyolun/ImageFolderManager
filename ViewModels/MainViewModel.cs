@@ -52,6 +52,9 @@ namespace ImageFolderManager.ViewModels
         // Operation synchronization mechanism
         private readonly SemaphoreSlim _folderOperationSemaphore = new SemaphoreSlim(1, 1);
         private readonly SemaphoreSlim _initializationSemaphore = new SemaphoreSlim(1, 1);
+        private readonly SemaphoreSlim _importOperationSemaphore = new SemaphoreSlim(1, 1);
+        private readonly object _importCtsLock = new object();
+        private CancellationTokenSource _currentImportCts;
 
         // State tracking
         private volatile bool _isTreeViewInitialized = false;

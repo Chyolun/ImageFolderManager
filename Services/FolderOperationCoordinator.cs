@@ -131,47 +131,7 @@ namespace ImageFolderManager.Services
             try
             {
                 var normalizedPath = PathNormalizationService.GetCanonicalPath(folderPath);
-
-                var result = new OperationResult
-                {
-                    OperationType = OperationType.FolderRefresh,
-                    Data = { ["FolderPath"] = normalizedPath }
-                };
-
-                OperationStarted?.Invoke(this, result);
-
-                // Check if we can transition to refreshing state
-                if (await _nodeManager.TryTransitionToRefreshing(normalizedPath))
-                {
-                    try
-                    {
-                        // Refresh folder in service
-                        await _folderService.RefreshFolderAsync(normalizedPath);
-
-                        // Mark refresh complete
-                        await _nodeManager.CompleteRefresh(normalizedPath, true);
-
-                        result.Success = true;
-                        result.Message = "Folder refreshed successfully";
-                    }
-                    catch (Exception)
-                    {
-                        await _nodeManager.CompleteRefresh(normalizedPath, false);
-                        throw;
-                    }
-                }
-                else
-                {
-                    result.Success = false;
-                    result.Message = "Cannot refresh - folder is busy";
-                }
-
-                if (result.Success)
-                    OperationCompleted?.Invoke(this, result);
-                else
-                    OperationFailed?.Invoke(this, result);
-
-                return result;
+                return await ExecuteFolderRefreshCoreAsync(normalizedPath, publishEvents: true);
             }
             catch (Exception ex)
             {
@@ -189,6 +149,59 @@ namespace ImageFolderManager.Services
             {
                 _coordinationLock.Release();
             }
+        }
+
+        /// <summary>
+        /// Core refresh logic. Must only be called while coordination lock is already held.
+        /// </summary>
+        private async Task<OperationResult> ExecuteFolderRefreshCoreAsync(string normalizedPath, bool publishEvents)
+        {
+            var result = new OperationResult
+            {
+                OperationType = OperationType.FolderRefresh,
+                Data = { ["FolderPath"] = normalizedPath }
+            };
+
+            if (publishEvents)
+            {
+                OperationStarted?.Invoke(this, result);
+            }
+
+            // Check if we can transition to refreshing state
+            if (await _nodeManager.TryTransitionToRefreshing(normalizedPath))
+            {
+                try
+                {
+                    // Refresh folder in service
+                    await _folderService.RefreshFolderAsync(normalizedPath);
+
+                    // Mark refresh complete
+                    await _nodeManager.CompleteRefresh(normalizedPath, true);
+
+                    result.Success = true;
+                    result.Message = "Folder refreshed successfully";
+                }
+                catch (Exception)
+                {
+                    await _nodeManager.CompleteRefresh(normalizedPath, false);
+                    throw;
+                }
+            }
+            else
+            {
+                result.Success = false;
+                result.Message = "Cannot refresh - folder is busy";
+            }
+
+            if (publishEvents)
+            {
+                if (result.Success)
+                    OperationCompleted?.Invoke(this, result);
+                else
+                    OperationFailed?.Invoke(this, result);
+            }
+
+            return result;
         }
 
         /// <summary>
@@ -276,7 +289,9 @@ namespace ImageFolderManager.Services
 
             if (currentState == NodeLoadingState.Loaded)
             {
-                await ExecuteFolderRefreshAsync(normalizedParent);
+                // We are already inside ExecuteFolderMoveAsync while holding the coordination lock.
+                // Re-entering ExecuteFolderRefreshAsync would try to take the same lock again.
+                await ExecuteFolderRefreshCoreAsync(normalizedParent, publishEvents: false);
             }
         }
 

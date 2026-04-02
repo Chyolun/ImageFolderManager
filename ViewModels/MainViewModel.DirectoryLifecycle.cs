@@ -289,6 +289,13 @@ namespace ImageFolderManager.ViewModels
         {
             try
             {
+                lock (_importCtsLock)
+                {
+                    _currentImportCts?.Cancel();
+                    _currentImportCts?.Dispose();
+                    _currentImportCts = null;
+                }
+
                 if (_unifiedFolderService != null)
                 {
                     await _unifiedFolderService.StopMonitoringAsync();
@@ -310,6 +317,13 @@ namespace ImageFolderManager.ViewModels
         {
             try
             {
+                lock (_importCtsLock)
+                {
+                    _currentImportCts?.Cancel();
+                    _currentImportCts?.Dispose();
+                    _currentImportCts = null;
+                }
+
                 _ = _unifiedFolderService?.StopMonitoringAsync();
                 _unifiedFolderService?.Dispose();
                 ImageLoading?.CancelCurrentLoading();

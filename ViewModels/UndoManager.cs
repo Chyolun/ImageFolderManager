@@ -170,6 +170,7 @@ namespace ImageFolderManager.ViewModels
         private const int MaxHistory = 50;
 
         private readonly Stack<UndoRecord> _stack = new Stack<UndoRecord>();
+        private readonly object _stackLock = new object();
         private readonly UnifiedFolderService _folderService;
 
         // ── Events ────────────────────────────────────────────────────────
@@ -183,14 +184,40 @@ namespace ImageFolderManager.ViewModels
         // ── Properties ────────────────────────────────────────────────────
 
         /// <summary>True when there is at least one undoable operation.</summary>
-        public bool CanUndo => _stack.Count > 0;
+        public bool CanUndo
+        {
+            get
+            {
+                lock (_stackLock)
+                {
+                    return _stack.Count > 0;
+                }
+            }
+        }
 
         /// <summary>Number of operations currently in the stack.</summary>
-        public int Count => _stack.Count;
+        public int Count
+        {
+            get
+            {
+                lock (_stackLock)
+                {
+                    return _stack.Count;
+                }
+            }
+        }
 
         /// <summary>Description of the next operation to undo, or null.</summary>
-        public string NextUndoDescription =>
-            _stack.Count > 0 ? _stack.Peek().Description : null;
+        public string NextUndoDescription
+        {
+            get
+            {
+                lock (_stackLock)
+                {
+                    return _stack.Count > 0 ? _stack.Peek().Description : null;
+                }
+            }
+        }
 
         // ── Constructor ───────────────────────────────────────────────────
 
@@ -207,17 +234,20 @@ namespace ImageFolderManager.ViewModels
         {
             if (record == null) throw new ArgumentNullException(nameof(record));
 
-            _stack.Push(record);
-
-            // Trim history to prevent unbounded growth
-            while (_stack.Count > MaxHistory)
+            lock (_stackLock)
             {
-                // Stack doesn't support remove-from-bottom directly;
-                // rebuild without the oldest entry.
-                var items = _stack.ToArray();          // newest first
-                _stack.Clear();
-                foreach (var item in items.Take(MaxHistory).Reverse())
-                    _stack.Push(item);
+                _stack.Push(record);
+
+                // Trim history to prevent unbounded growth
+                while (_stack.Count > MaxHistory)
+                {
+                    // Stack doesn't support remove-from-bottom directly;
+                    // rebuild without the oldest entry.
+                    var items = _stack.ToArray();          // newest first
+                    _stack.Clear();
+                    foreach (var item in items.Take(MaxHistory).Reverse())
+                        _stack.Push(item);
+                }
             }
 
             Debug.WriteLine($"[UndoManager] Pushed: {record}");
@@ -232,10 +262,15 @@ namespace ImageFolderManager.ViewModels
         /// </summary>
         public async Task<UndoResult> UndoLastAsync()
         {
-            if (_stack.Count == 0)
-                return new UndoResult(false, "Nothing to undo.", UndoOperationType.Move);
+            UndoRecord record;
+            lock (_stackLock)
+            {
+                if (_stack.Count == 0)
+                    return new UndoResult(false, "Nothing to undo.", UndoOperationType.Move);
 
-            var record = _stack.Pop();
+                record = _stack.Pop();
+            }
+
             RaiseStateChanged();
 
             try
@@ -246,7 +281,10 @@ namespace ImageFolderManager.ViewModels
             }
             catch (Exception ex)
             {
-                _stack.Push(record);
+                lock (_stackLock)
+                {
+                    _stack.Push(record);
+                }
                 RaiseStateChanged();
                 string errorMsg = $"Undo failed: {ex.Message}";
                 RaiseStatus(errorMsg);
@@ -259,7 +297,10 @@ namespace ImageFolderManager.ViewModels
         /// <summary>Clears the entire undo history.</summary>
         public void Clear()
         {
-            _stack.Clear();
+            lock (_stackLock)
+            {
+                _stack.Clear();
+            }
             RaiseStateChanged();
         }
 

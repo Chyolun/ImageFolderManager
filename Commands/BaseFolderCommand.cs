@@ -13,30 +13,40 @@ namespace ImageFolderManager.Commands
     {
         private static int _nextCommandId = 1;
         private readonly object _executionLock = new object();
+        private const int ExecutionStateReady = 0;
+        private const int ExecutionStateExecuting = 1;
+        private const int ExecutionStateExecuted = 2;
+        private int _executionState = ExecutionStateReady;
 
         protected BaseFolderCommand(FolderCommandType commandType)
         {
             CommandId = $"{commandType}_{Interlocked.Increment(ref _nextCommandId)}_{DateTime.Now.Ticks}";
             CommandType = commandType;
             CreatedAt = DateTime.Now;
-            IsExecuted = false;
         }
 
         public string CommandId { get; }
         public FolderCommandType CommandType { get; protected set; }
         public virtual bool CanUndo => true;
-        public bool IsExecuted { get; private set; }
+        public bool IsExecuted => Volatile.Read(ref _executionState) == ExecutionStateExecuted;
         public DateTime CreatedAt { get; }
         public DateTime? ExecutedAt { get; private set; }
 
         public async Task<CommandResult> ExecuteAsync(CancellationToken cancellationToken = default)
         {
-            lock (_executionLock)
+            var originalState = Interlocked.CompareExchange(
+                ref _executionState,
+                ExecutionStateExecuting,
+                ExecutionStateReady);
+
+            if (originalState == ExecutionStateExecuting)
             {
-                if (IsExecuted)
-                {
-                    return CommandResult.CreateFailure($"Command {CommandId} has already been executed");
-                }
+                return CommandResult.CreateFailure($"Command {CommandId} is currently executing");
+            }
+
+            if (originalState == ExecutionStateExecuted)
+            {
+                return CommandResult.CreateFailure($"Command {CommandId} has already been executed");
             }
 
             try
@@ -54,13 +64,18 @@ namespace ImageFolderManager.Commands
                 // Execute the actual command
                 var result = await ExecuteInternalAsync(cancellationToken);
 
-                lock (_executionLock)
+                if (result.Success)
                 {
-                    if (result.Success)
+                    lock (_executionLock)
                     {
-                        IsExecuted = true;
                         ExecutedAt = DateTime.Now;
                     }
+
+                    Interlocked.Exchange(ref _executionState, ExecutionStateExecuted);
+                }
+                else
+                {
+                    Interlocked.Exchange(ref _executionState, ExecutionStateReady);
                 }
 
                 // Log command completion
@@ -70,11 +85,13 @@ namespace ImageFolderManager.Commands
             }
             catch (OperationCanceledException)
             {
+                Interlocked.Exchange(ref _executionState, ExecutionStateReady);
                 LogCommand($"Command execution cancelled: {CommandId}");
                 return CommandResult.CreateFailure("Operation was cancelled");
             }
             catch (Exception ex)
             {
+                Interlocked.Exchange(ref _executionState, ExecutionStateReady);
                 LogException($"Error executing command {CommandId}", ex);
                 return CommandResult.CreateFailure($"Command execution failed: {ex.Message}", ex);
             }
@@ -87,7 +104,10 @@ namespace ImageFolderManager.Commands
                 return CommandResult.CreateFailure($"Command {CommandId} does not support undo");
             }
 
-            if (!IsExecuted)
+            if (Interlocked.CompareExchange(
+                    ref _executionState,
+                    ExecutionStateExecuting,
+                    ExecutionStateExecuted) != ExecutionStateExecuted)
             {
                 return CommandResult.CreateFailure($"Command {CommandId} has not been executed yet");
             }
@@ -102,9 +122,14 @@ namespace ImageFolderManager.Commands
                 {
                     lock (_executionLock)
                     {
-                        IsExecuted = false;
                         ExecutedAt = null;
                     }
+
+                    Interlocked.Exchange(ref _executionState, ExecutionStateReady);
+                }
+                else
+                {
+                    Interlocked.Exchange(ref _executionState, ExecutionStateExecuted);
                 }
 
                 LogCommand($"Command undo {(result.Success ? "completed" : "failed")}: {CommandId}");
@@ -113,11 +138,13 @@ namespace ImageFolderManager.Commands
             }
             catch (OperationCanceledException)
             {
+                Interlocked.Exchange(ref _executionState, ExecutionStateExecuted);
                 LogCommand($"Command undo cancelled: {CommandId}");
                 return CommandResult.CreateFailure("Undo operation was cancelled");
             }
             catch (Exception ex)
             {
+                Interlocked.Exchange(ref _executionState, ExecutionStateExecuted);
                 LogException($"Error undoing command {CommandId}", ex);
                 return CommandResult.CreateFailure($"Command undo failed: {ex.Message}", ex);
             }

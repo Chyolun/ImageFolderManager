@@ -236,9 +236,12 @@ namespace ImageFolderManager.Services
                     case FolderCommandType.Move:
                         if (command is MoveFolderCommand moveCmd)
                         {
+                            var actualDestination = string.IsNullOrWhiteSpace(moveCmd.ActualDestinationPath)
+                                ? moveCmd.DestinationPath
+                                : moveCmd.ActualDestinationPath;
                             RemoveFolderFromIndexSafe(moveCmd.SourcePath);
-                            await AddFolderToIndexSafe(moveCmd.DestinationPath);
-                            FolderRenamed?.Invoke(moveCmd.SourcePath, moveCmd.DestinationPath);
+                            await AddFolderToIndexSafe(actualDestination);
+                            FolderRenamed?.Invoke(moveCmd.SourcePath, actualDestination);
                         }
                         break;
 
@@ -248,6 +251,17 @@ namespace ImageFolderManager.Services
                             RemoveFolderFromIndexSafe(renameCmd.OldPath);
                             await AddFolderToIndexSafe(renameCmd.NewPath);
                             FolderRenamed?.Invoke(renameCmd.OldPath, renameCmd.NewPath);
+                        }
+                        break;
+
+                    case FolderCommandType.Copy:
+                        if (command is CopyFolderCommand copyCmd)
+                        {
+                            var actualCopyDestination = string.IsNullOrWhiteSpace(copyCmd.ActualDestinationPath)
+                                ? copyCmd.DestinationPath
+                                : copyCmd.ActualDestinationPath;
+                            await AddFolderToIndexSafe(actualCopyDestination);
+                            FolderCreated?.Invoke(actualCopyDestination);
                         }
                         break;
                 }
@@ -510,6 +524,45 @@ namespace ImageFolderManager.Services
             }
 
 
+        }
+
+        /// <summary>
+        /// Copy a folder (uses command system if available)
+        /// </summary>
+        public async Task<bool> CopyFolderAsync(string sourcePath, string destinationPath)
+        {
+            if (_commandSystemEnabled && _commandExecutor != null)
+            {
+                var command = new CopyFolderCommand(sourcePath, destinationPath);
+                var result = await _commandExecutor.ExecuteCommandAsync(command);
+                return result.Success;
+            }
+            else
+            {
+                try
+                {
+                    if (!Directory.Exists(sourcePath))
+                    {
+                        return false;
+                    }
+
+                    if (Directory.Exists(destinationPath))
+                    {
+                        return false;
+                    }
+
+                    CopyDirectoryRecursive(sourcePath, destinationPath);
+                    await AddFolderToIndexSafe(destinationPath);
+                    FolderCreated?.Invoke(destinationPath);
+
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"Error copying folder: {ex.Message}");
+                    return false;
+                }
+            }
         }
 
         /// <summary>
@@ -780,6 +833,7 @@ namespace ImageFolderManager.Services
                     };
 
                     _folderIndex.AddOrUpdate(normalizedPath, indexEntry, (key, existing) => indexEntry);
+                    AddToNameIndex(normalizedPath);
                 }
             }
             finally
@@ -806,7 +860,10 @@ namespace ImageFolderManager.Services
             _loadingStates.TryRemove(normalizedPath, out _);
 
             // Remove from index
-            _folderIndex.TryRemove(normalizedPath, out _);
+            if (_folderIndex.TryRemove(normalizedPath, out _))
+            {
+                RemoveFromNameIndex(normalizedPath);
+            }
         }
 
         // Add safe folder info creation:
@@ -964,11 +1021,35 @@ namespace ImageFolderManager.Services
                     _folderIndex.AddOrUpdate(folder.FolderPath, indexEntry, (key, existing) => indexEntry);
                 }
 
+                RebuildNameIndex();
                 IndexRebuilt?.Invoke(folders.Select(f => f.FolderPath).ToList());
             }
             finally
             {
                 IsIndexing = false;
+            }
+        }
+
+        private static void CopyDirectoryRecursive(string sourceDir, string destinationDir)
+        {
+            var sourceInfo = new DirectoryInfo(sourceDir);
+            if (!sourceInfo.Exists)
+            {
+                throw new DirectoryNotFoundException($"Source directory not found: {sourceDir}");
+            }
+
+            Directory.CreateDirectory(destinationDir);
+
+            foreach (var file in sourceInfo.GetFiles())
+            {
+                var destinationFile = Path.Combine(destinationDir, file.Name);
+                file.CopyTo(destinationFile, overwrite: false);
+            }
+
+            foreach (var subDirectory in sourceInfo.GetDirectories())
+            {
+                var nestedDestination = Path.Combine(destinationDir, subDirectory.Name);
+                CopyDirectoryRecursive(subDirectory.FullName, nestedDestination);
             }
         }
 

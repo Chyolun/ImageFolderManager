@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Forms;
@@ -221,6 +222,14 @@ namespace ImageFolderManager.ViewModels
         /// </summary>
         public async Task ImportFolderAsync()
         {
+            await ExecuteSerializedImportAsync(async operationToken =>
+            {
+                await ImportFolderCoreAsync(operationToken);
+            });
+        }
+
+        private async Task ImportFolderCoreAsync(CancellationToken operationToken)
+        {
             try
             {
                 // ©¤©¤ Guard: root directory must be set ©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤
@@ -288,6 +297,7 @@ namespace ImageFolderManager.ViewModels
 
                 foreach (var sourceFolderPath in sourceFolders)
                 {
+                    operationToken.ThrowIfCancellationRequested();
                     string folderName = Path.GetFileName(sourceFolderPath);
 
                     string finalDest = (total == 1)
@@ -352,6 +362,8 @@ namespace ImageFolderManager.ViewModels
 
                 int processCount = foldersToProcess.Count;
                 var importResults = new List<FolderImportResult>();
+                using var importCts = CancellationTokenSource.CreateLinkedTokenSource(operationToken);
+                progressDialog.CancelRequested += (_, __) => importCts.Cancel();
 
                 var importTask = Task.Run(async () =>
                 {
@@ -360,7 +372,11 @@ namespace ImageFolderManager.ViewModels
 
                     foreach (var sourceFolderPath in foldersToProcess)
                     {
-                        if (importCancelledByUser) break;
+                        if (importCancelledByUser || importCts.Token.IsCancellationRequested)
+                        {
+                            importCancelledByUser = true;
+                            break;
+                        }
 
                         var result = new FolderImportResult
                         {
@@ -409,7 +425,8 @@ namespace ImageFolderManager.ViewModels
                                     ref processedFiles,
                                     totalFiles,
                                     ref fileApplyAll,
-                                    ref cancelImport);
+                                    ref cancelImport,
+                                    importCts.Token);
 
                                 if (cancelImport)
                                 {
@@ -450,7 +467,8 @@ namespace ImageFolderManager.ViewModels
                                     finalDestinationPath,
                                     progressDialog,
                                     baseProgress,
-                                    progressWeight);
+                                    progressWeight,
+                                    importCts.Token);
 
                                 result.DestinationPath = finalDestinationPath;
 
@@ -494,20 +512,47 @@ namespace ImageFolderManager.ViewModels
                     }
 
                     return importResults;
-                });
+                }, importCts.Token);
 
                 // Show progress dialog (blocks UI; background thread can still
                 // invoke dialogs via Dispatcher since WPF runs a nested message
                 // pump inside ShowDialog).
                 progressDialog.ShowDialog();
 
-                var results = await importTask;
+                if (progressDialog.IsCancelled && !importCts.IsCancellationRequested)
+                {
+                    importCts.Cancel();
+                }
 
-                progressDialog.UpdateProgress(1.0, "Import operation completed");
-                await Task.Delay(500);
-                progressDialog.Close();
+                List<FolderImportResult> results;
+                try
+                {
+                    results = await importTask;
+                }
+                catch (OperationCanceledException)
+                {
+                    StatusMessage = "Import cancelled.";
+                    return;
+                }
+
+                if (importCts.IsCancellationRequested)
+                {
+                    StatusMessage = "Import cancelled.";
+                    return;
+                }
+
+                if (progressDialog.IsVisible)
+                {
+                    progressDialog.UpdateProgress(1.0, "Import operation completed");
+                    await Task.Delay(500);
+                    progressDialog.Close();
+                }
 
                 await ProcessImportResultsAsync(results);
+            }
+            catch (OperationCanceledException)
+            {
+                StatusMessage = "Import cancelled.";
             }
             catch (Exception ex)
             {
@@ -537,14 +582,21 @@ namespace ImageFolderManager.ViewModels
             ref int processedFiles,
             int totalFiles,
             ref ImportFileConflictResolution? fileApplyAll,
-            ref bool cancelImport)
+            ref bool cancelImport,
+            CancellationToken operationToken)
         {
+            operationToken.ThrowIfCancellationRequested();
             Directory.CreateDirectory(destinationPath);
 
             // ©¤©¤ Files ©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤
             foreach (var file in Directory.GetFiles(sourcePath))
             {
-                if (cancelImport) return;
+                operationToken.ThrowIfCancellationRequested();
+
+                if (cancelImport)
+                {
+                    return;
+                }
 
                 string fileName = Path.GetFileName(file);
                 string destFile = Path.Combine(destinationPath, fileName);
@@ -620,7 +672,12 @@ namespace ImageFolderManager.ViewModels
             // ©¤©¤ Subdirectories (recurse) ©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤
             foreach (var subDir in Directory.GetDirectories(sourcePath))
             {
-                if (cancelImport) return;
+                operationToken.ThrowIfCancellationRequested();
+
+                if (cancelImport)
+                {
+                    return;
+                }
 
                 string dirName = Path.GetFileName(subDir);
                 string destSubDir = Path.Combine(destinationPath, dirName);
@@ -638,7 +695,8 @@ namespace ImageFolderManager.ViewModels
                     subDir, destSubDir,
                     progressDialog, baseProgress, progressWeight,
                     ref processedFiles, totalFiles,
-                    ref fileApplyAll, ref cancelImport);
+                    ref fileApplyAll, ref cancelImport,
+                    operationToken);
             }
         }
 
@@ -650,10 +708,18 @@ namespace ImageFolderManager.ViewModels
         /// <param name="progressDialog">Progress dialog for status updates</param>
         /// <param name="baseProgress">Base progress value for this operation</param>
         /// <param name="progressWeight">Weight of this operation in overall progress</param>
-        private async Task CopyDirectoryAsync(string sourcePath, string destinationPath, ProgressDialog progressDialog = null, double baseProgress = 0.0, double progressWeight = 1.0)
+        private async Task CopyDirectoryAsync(
+            string sourcePath,
+            string destinationPath,
+            ProgressDialog progressDialog = null,
+            double baseProgress = 0.0,
+            double progressWeight = 1.0,
+            CancellationToken operationToken = default)
         {
             await Task.Run(() =>
             {
+                operationToken.ThrowIfCancellationRequested();
+
                 // Create destination directory
                 Directory.CreateDirectory(destinationPath);
 
@@ -665,22 +731,44 @@ namespace ImageFolderManager.ViewModels
                     int processedFiles = 0;
 
                     // Copy files recursively with progress tracking
-                    CopyDirectoryWithProgress(sourcePath, destinationPath, progressDialog, baseProgress, progressWeight, ref processedFiles, totalFiles);
+                    CopyDirectoryWithProgress(
+                        sourcePath,
+                        destinationPath,
+                        progressDialog,
+                        baseProgress,
+                        progressWeight,
+                        ref processedFiles,
+                        totalFiles,
+                        operationToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
                 }
                 catch (Exception)
                 {
                     // If counting fails, fall back to simple copy
-                    progressDialog?.UpdateProgress(baseProgress + (progressWeight * 0.5), $"Copying contents of {Path.GetFileName(sourcePath)}...");
-                    CopyDirectorySync(sourcePath, destinationPath);
-                    progressDialog?.UpdateProgress(baseProgress + progressWeight, $"Completed copying {Path.GetFileName(sourcePath)}");
+                    progressDialog?.UpdateProgress(baseProgress + (progressWeight * 0.5),
+                        $"Copying contents of {Path.GetFileName(sourcePath)}...");
+                    CopyDirectorySync(sourcePath, destinationPath, operationToken);
+                    progressDialog?.UpdateProgress(baseProgress + progressWeight,
+                        $"Completed copying {Path.GetFileName(sourcePath)}");
                 }
-            });
+            }, operationToken);
         }
 
         /// <summary>
         /// Helper method to copy directory with progress tracking
         /// </summary>
-        private void CopyDirectoryWithProgress(string sourcePath, string destinationPath, ProgressDialog progressDialog, double baseProgress, double progressWeight, ref int processedFiles, int totalFiles)
+        private void CopyDirectoryWithProgress(
+            string sourcePath,
+            string destinationPath,
+            ProgressDialog progressDialog,
+            double baseProgress,
+            double progressWeight,
+            ref int processedFiles,
+            int totalFiles,
+            CancellationToken operationToken)
         {
             // Ensure destination directory exists
             Directory.CreateDirectory(destinationPath);
@@ -689,6 +777,8 @@ namespace ImageFolderManager.ViewModels
             var files = Directory.GetFiles(sourcePath);
             foreach (var file in files)
             {
+                operationToken.ThrowIfCancellationRequested();
+
                 string fileName = Path.GetFileName(file);
                 string destFile = Path.Combine(destinationPath, fileName);
                 File.Copy(file, destFile, true);
@@ -697,7 +787,8 @@ namespace ImageFolderManager.ViewModels
                 if (progressDialog != null && totalFiles > 0)
                 {
                     double currentProgress = baseProgress + (progressWeight * processedFiles / totalFiles);
-                    progressDialog.UpdateProgress(Math.Min(currentProgress, baseProgress + progressWeight), $"Copying: {fileName}");
+                    progressDialog.UpdateProgress(Math.Min(currentProgress, baseProgress + progressWeight),
+                        $"Copying: {fileName}");
                 }
             }
 
@@ -705,17 +796,21 @@ namespace ImageFolderManager.ViewModels
             var subdirectories = Directory.GetDirectories(sourcePath);
             foreach (var subdirectory in subdirectories)
             {
+                operationToken.ThrowIfCancellationRequested();
+
                 string dirName = Path.GetFileName(subdirectory);
                 string destDir = Path.Combine(destinationPath, dirName);
 
                 if (progressDialog != null)
                 {
                     double currentProgress = baseProgress + (progressWeight * processedFiles / totalFiles);
-                    progressDialog.UpdateProgress(Math.Min(currentProgress, baseProgress + progressWeight), $"Copying folder: {dirName}");
+                    progressDialog.UpdateProgress(Math.Min(currentProgress, baseProgress + progressWeight),
+                        $"Copying folder: {dirName}");
                 }
 
                 // Recursive call
-                CopyDirectoryWithProgress(subdirectory, destDir, progressDialog, baseProgress, progressWeight, ref processedFiles, totalFiles);
+                CopyDirectoryWithProgress(subdirectory, destDir, progressDialog, baseProgress,
+                    progressWeight, ref processedFiles, totalFiles, operationToken);
             }
         }
 
@@ -724,13 +819,16 @@ namespace ImageFolderManager.ViewModels
         /// </summary>
         /// <param name="sourcePath">Source directory path</param>
         /// <param name="destinationPath">Destination directory path</param>
-        private void CopyDirectorySync(string sourcePath, string destinationPath)
+        private void CopyDirectorySync(string sourcePath, string destinationPath, CancellationToken operationToken)
         {
+            operationToken.ThrowIfCancellationRequested();
             Directory.CreateDirectory(destinationPath);
 
             // Copy files
             foreach (var file in Directory.GetFiles(sourcePath))
             {
+                operationToken.ThrowIfCancellationRequested();
+
                 string fileName = Path.GetFileName(file);
                 string destFile = Path.Combine(destinationPath, fileName);
                 File.Copy(file, destFile, true);
@@ -739,9 +837,11 @@ namespace ImageFolderManager.ViewModels
             // Copy subdirectories
             foreach (var subdirectory in Directory.GetDirectories(sourcePath))
             {
+                operationToken.ThrowIfCancellationRequested();
+
                 string dirName = Path.GetFileName(subdirectory);
                 string destDir = Path.Combine(destinationPath, dirName);
-                CopyDirectorySync(subdirectory, destDir);
+                CopyDirectorySync(subdirectory, destDir, operationToken);
             }
         }
 
@@ -849,5 +949,37 @@ namespace ImageFolderManager.ViewModels
                 StatusMessage += $" Warning: Failed to refresh folder tree - {ex.Message}";
             }
         }
-    }
+    
+        private async Task ExecuteSerializedImportAsync(Func<CancellationToken, Task> operation)
+        {
+            await _importOperationSemaphore.WaitAsync();
+            CancellationTokenSource operationCts;
+
+            lock (_importCtsLock)
+            {
+                _currentImportCts?.Cancel();
+                _currentImportCts?.Dispose();
+                _currentImportCts = new CancellationTokenSource();
+                operationCts = _currentImportCts;
+            }
+
+            try
+            {
+                await operation(operationCts.Token);
+            }
+            finally
+            {
+                lock (_importCtsLock)
+                {
+                    if (ReferenceEquals(_currentImportCts, operationCts))
+                    {
+                        _currentImportCts = null;
+                    }
+                }
+
+                operationCts.Dispose();
+                _importOperationSemaphore.Release();
+            }
+        }
+}
 }
