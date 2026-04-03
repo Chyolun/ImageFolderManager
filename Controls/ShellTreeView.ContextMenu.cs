@@ -253,14 +253,7 @@ namespace ImageFolderManager.Controls
 
                     if (ViewModel.HasClipboardContent())
                     {
-                        // Get the source directory before the paste operation
-                        string sourceDir = ViewModel.GetClipboardSourceDirectory();
-
-                        // Execute paste operation
-                        _ = ViewModel.PasteFolders(folderInfo).ContinueWith(t =>
-                        {
-                            if (t.Exception != null) HandleException("Paste failed", t.Exception);
-                        });
+                        _ = ExecutePasteAsync(folderInfo);
 
 
                     }
@@ -368,8 +361,7 @@ namespace ImageFolderManager.Controls
                 if (ViewModel != null)
                 {
                     // Execute delete command through ViewModel
-                    // ViewModel.DeleteFolderCommand.Execute(folderInfo);
-                    _ = Task.Run(async () => await ViewModel.DeleteFolders(new[] { folderInfo }));
+                    _ = ViewModel.DeleteFolders(new[] { folderInfo });
                 }
                 else
                 {
@@ -464,5 +456,17 @@ namespace ImageFolderManager.Controls
         }
 
         #endregion
+
+        private async Task ExecutePasteAsync(FolderInfo targetFolder)
+        {
+            try
+            {
+                await ViewModel.PasteFolders(targetFolder);
+            }
+            catch (Exception ex)
+            {
+                HandleException("Paste failed", ex);
+            }
+        }
     }
 }

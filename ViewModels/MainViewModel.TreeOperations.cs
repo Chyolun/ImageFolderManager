@@ -31,7 +31,10 @@ namespace ImageFolderManager.ViewModels
                 var newFolder = await _unifiedFolderService.CreateFolderInfoWithoutImagesAsync(folderPath);
                 if (newFolder != null)
                 {
-                    _allLoadedFolders.Add(newFolder);
+                    lock (_allLoadedFoldersLock)
+                    {
+                        _allLoadedFolders.Add(newFolder);
+                    }
                     Search.InvalidateSearchIndex();
                     await Search.PerformSilentSearchAsync();
                     await UpdateTagCloudAsync();
@@ -52,9 +55,12 @@ namespace ImageFolderManager.ViewModels
         {
             try
             {
-                _allLoadedFolders.RemoveAll(f =>
-                    PathService.PathsEqual(f.FolderPath, folderPath) ||
-                    PathService.IsPathWithin(folderPath, f.FolderPath));
+                lock (_allLoadedFoldersLock)
+                {
+                    _allLoadedFolders.RemoveAll(f =>
+                        PathService.PathsEqual(f.FolderPath, folderPath) ||
+                        PathService.IsPathWithin(folderPath, f.FolderPath));
+                }
                 Search.InvalidateSearchIndex();
                 await Search.PerformSilentSearchAsync();
                 await UpdateTagCloudAsync();
@@ -77,16 +83,19 @@ namespace ImageFolderManager.ViewModels
                 // Collect items to modify first
                 var itemsToUpdate = new List<(FolderInfo folder, string newPath)>();
 
-                for (int i = 0; i < _allLoadedFolders.Count; i++)
+                lock (_allLoadedFoldersLock)
                 {
-                    var folder = _allLoadedFolders[i];
-                    if (folder.FolderPath == oldPath)
+                    for (int i = 0; i < _allLoadedFolders.Count; i++)
                     {
-                        itemsToUpdate.Add((folder, newPath));
-                    }
-                    else if (PathService.IsPathWithin(oldPath, folder.FolderPath))
-                    {
-                        itemsToUpdate.Add((folder, newPath + folder.FolderPath.Substring(oldPath.Length)));
+                        var folder = _allLoadedFolders[i];
+                        if (folder.FolderPath == oldPath)
+                        {
+                            itemsToUpdate.Add((folder, newPath));
+                        }
+                        else if (PathService.IsPathWithin(oldPath, folder.FolderPath))
+                        {
+                            itemsToUpdate.Add((folder, newPath + folder.FolderPath.Substring(oldPath.Length)));
+                        }
                     }
                 }
 
@@ -117,7 +126,7 @@ namespace ImageFolderManager.ViewModels
             {
                 StatusMessage = "Rebuilding folder cache from index...";
 
-                _allLoadedFolders.Clear();
+                var rebuiltFolders = new List<FolderInfo>();
                 foreach (var folderPath in allFolders)
                 {
                     try
@@ -125,13 +134,19 @@ namespace ImageFolderManager.ViewModels
                         var folder = await _unifiedFolderService.CreateFolderInfoWithoutImagesAsync(folderPath);
                         if (folder != null)
                         {
-                            _allLoadedFolders.Add(folder);
+                            rebuiltFolders.Add(folder);
                         }
                     }
                     catch (Exception ex)
                     {
                         Debug.WriteLine($"Error creating FolderInfo for {folderPath}: {ex.Message}");
                     }
+                }
+
+                lock (_allLoadedFoldersLock)
+                {
+                    _allLoadedFolders.Clear();
+                    _allLoadedFolders.AddRange(rebuiltFolders);
                 }
 
                 Search.InvalidateSearchIndex();
@@ -156,7 +171,7 @@ namespace ImageFolderManager.ViewModels
         /// Sets the ShellTreeView reference for direct tree operations
         /// </summary>
         /// <param name="shellTreeView">The ShellTreeView control instance</param>
-        public void SetShellTreeView(ShellTreeView shellTreeView)
+        public void SetShellTreeView(IShellTreeViewAdapter shellTreeView)
         {
             _shellTreeView = shellTreeView;
 
@@ -400,7 +415,7 @@ namespace ImageFolderManager.ViewModels
                 return false;
             }
 
-            if (_shellTreeView._pathToTreeViewItem == null || _shellTreeView._pathToTreeViewItem.Count == 0)
+            if (!_shellTreeView.HasPathMappings)
             {
                 Debug.WriteLine($"TreeView not initialized for {operationContext}");
                 return false;

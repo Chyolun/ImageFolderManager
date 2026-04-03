@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
@@ -86,6 +87,8 @@ namespace ImageFolderManager.ViewModels
 
         private TagCategoryService _categoryService;
         private FolderOperationCoordinator _coordinator;
+        private readonly object _metadataLoadSync = new object();
+        private long _metadataLoadRequestId;
 
         private FolderInfo _currentFolder;
         public FolderInfo CurrentFolder
@@ -136,7 +139,32 @@ namespace ImageFolderManager.ViewModels
 
         #region Public Methods
 
-        public async Task LoadFolderMetadataAsync(FolderInfo folder)
+        internal long BeginMetadataLoadRequest(FolderInfo folder)
+        {
+            lock (_metadataLoadSync)
+            {
+                _metadataLoadRequestId++;
+                CurrentFolder = folder;
+                return _metadataLoadRequestId;
+            }
+        }
+
+        internal bool IsMetadataLoadRequestCurrent(long requestId, FolderInfo folder)
+        {
+            lock (_metadataLoadSync)
+            {
+                if (folder == null)
+                    return false;
+
+                if (requestId != _metadataLoadRequestId)
+                    return false;
+
+                return CurrentFolder != null &&
+                       PathService.PathsEqual(CurrentFolder.FolderPath, folder.FolderPath);
+            }
+        }
+
+        public async Task LoadFolderMetadataAsync(FolderInfo folder, CancellationToken cancellationToken = default)
         {
             if (folder == null)
             {
@@ -144,21 +172,32 @@ namespace ImageFolderManager.ViewModels
                 return;
             }
 
-            CurrentFolder = folder;
+            long requestId = BeginMetadataLoadRequest(folder);
             System.Diagnostics.Debug.WriteLine($"Loading metadata for folder: {folder.FolderPath}");
 
             try
             {
                 // Load tags and rating from file
                 int rating = await _tagService.GetRatingForFolderAsync(folder.FolderPath);
-                var tags = await _tagService.GetTagsForFolderAsync(folder.FolderPath);
-                var tagsWithCategories = await _tagService.GetTagsWithCategoriesForFolderAsync(folder.FolderPath);
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var tagsTask = _tagService.GetTagsForFolderAsync(folder.FolderPath);
+                var tagsWithCategoriesTask = _tagService.GetTagsWithCategoriesForFolderAsync(folder.FolderPath);
+                await Task.WhenAll(tagsTask, tagsWithCategoriesTask);
+
+                var tags = tagsTask.Result;
+                var tagsWithCategories = tagsWithCategoriesTask.Result;
+                cancellationToken.ThrowIfCancellationRequested();
 
                 System.Diagnostics.Debug.WriteLine($"Loaded {tags.Count} tags and {tagsWithCategories.Count} categorized tags for folder: {folder.Name}");
 
                 // Update UI on the dispatcher thread
-                await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
+                var dispatcher = System.Windows.Application.Current?.Dispatcher ?? System.Windows.Threading.Dispatcher.CurrentDispatcher;
+                await dispatcher.InvokeAsync(() =>
                 {
+                    if (cancellationToken.IsCancellationRequested || !IsMetadataLoadRequestCurrent(requestId, folder))
+                        return;
+
                     Rating = rating;
 
                     // Update tags collection
@@ -186,7 +225,11 @@ namespace ImageFolderManager.ViewModels
                     OnPropertyChanged(nameof(FolderTags));
                     OnPropertyChanged(nameof(DisplayTagLine));
 
-                });
+                }, System.Windows.Threading.DispatcherPriority.Background, cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                System.Diagnostics.Debug.WriteLine($"Load folder metadata canceled for: {folder.FolderPath}");
             }
             catch (Exception ex)
             {
@@ -455,7 +498,9 @@ namespace ImageFolderManager.ViewModels
             await _tagService.DeleteTagFromAllFoldersAsync(tagToDelete, folderPaths);
 
             // Reload metadata for current folder if needed
-            if (CurrentFolder != null && folderPaths.Any(p => p.Equals(CurrentFolder.FolderPath, StringComparison.OrdinalIgnoreCase)))
+            if (CurrentFolder != null &&
+                folderPaths != null &&
+                folderPaths.Any(p => p.Equals(CurrentFolder.FolderPath, StringComparison.OrdinalIgnoreCase)))
             {
                 await LoadFolderMetadataAsync(CurrentFolder);
 
@@ -552,10 +597,21 @@ namespace ImageFolderManager.ViewModels
                                 int rating = await _tagService.GetRatingForFolderAsync(folder.FolderPath);
 
                                 // Save updated tags
-                                await _tagService.SetTagsAndRatingForFolderAsync(
-                                    folder.FolderPath,
-                                    updatedTags,
-                                    rating);
+                                if (_coordinator != null)
+                                {
+                                    var result = await _coordinator.ExecuteTagUpdateAsync(folder.FolderPath, updatedTags, rating);
+                                    if (!result.Success)
+                                    {
+                                        throw new InvalidOperationException(result.Message);
+                                    }
+                                }
+                                else
+                                {
+                                    await _tagService.SetTagsAndRatingForFolderAsync(
+                                        folder.FolderPath,
+                                        updatedTags,
+                                        rating);
+                                }
 
                                 // Update folder object
                                 folder.Tags = new ObservableCollection<string>(updatedTags);

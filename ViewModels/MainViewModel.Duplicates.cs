@@ -18,7 +18,7 @@ namespace ImageFolderManager.ViewModels
             try
             {
                 // Return a copy of the list to prevent external modification
-                return _allLoadedFolders?.ToList() ?? new List<FolderInfo>();
+                return GetAllLoadedFoldersSnapshot();
             }
             catch (Exception ex)
             {
@@ -34,7 +34,7 @@ namespace ImageFolderManager.ViewModels
         /// <returns>Number of currently loaded folders</returns>
         public int GetLoadedFolderCount()
         {
-            return _allLoadedFolders?.Count ?? 0;
+            return GetAllLoadedFoldersSnapshot().Count;
         }
 
         /// <summary>

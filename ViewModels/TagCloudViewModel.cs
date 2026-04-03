@@ -91,6 +91,8 @@ namespace ImageFolderManager.ViewModels
         private Dictionary<string, TagCloudItemData> _cachedTagData = new Dictionary<string, TagCloudItemData>(StringComparer.OrdinalIgnoreCase);
         private bool _isFullUpdateNeeded = true;
         private int _lastFolderCount = 0;
+        private readonly object _cacheSync = new object();
+        private long _latestUpdateRequestId;
         
         // Dispatcher for UI thread updates
         private readonly Dispatcher _dispatcher;
@@ -141,6 +143,9 @@ namespace ImageFolderManager.ViewModels
             if (allFolders == null)
                 return;
 
+            long updateRequestId = Interlocked.Increment(ref _latestUpdateRequestId);
+            var folderSnapshot = CreateFolderSnapshot(allFolders);
+
             try
             {
                 await Task.Run(async () =>
@@ -149,22 +154,27 @@ namespace ImageFolderManager.ViewModels
                     {
                         cancellationToken.ThrowIfCancellationRequested();
 
+                        if (!IsLatestUpdateRequest(updateRequestId))
+                            return;
+
                         // Determine if we need a full update
-                        bool shouldPerformFullUpdate = ShouldPerformFullUpdate(allFolders);
+                        bool shouldPerformFullUpdate = ShouldPerformFullUpdate(folderSnapshot.Count);
 
                         // Get tag data with categories
-                        var tagData = await GetTagDataWithCategoriesAsync(allFolders, shouldPerformFullUpdate);
+                        var tagData = await GetTagDataWithCategoriesAsync(folderSnapshot, shouldPerformFullUpdate);
 
                         cancellationToken.ThrowIfCancellationRequested();
+                        if (!IsLatestUpdateRequest(updateRequestId))
+                            return;
 
                         // Create updated tag items with categories
                         var updatedTagsByCategory = await CreateCategorizedTagItemsAsync(tagData, cancellationToken);
 
-                        if (cancellationToken.IsCancellationRequested)
+                        if (cancellationToken.IsCancellationRequested || !IsLatestUpdateRequest(updateRequestId))
                             return;
 
                         // Update UI on dispatcher thread
-                        await UpdateCategorizedUIAsync(updatedTagsByCategory, cancellationToken);
+                        await UpdateCategorizedUIAsync(updatedTagsByCategory, cancellationToken, updateRequestId);
                     }
                     catch (OperationCanceledException)
                     {
@@ -190,7 +200,7 @@ namespace ImageFolderManager.ViewModels
         /// Gets tag data with category information
         /// </summary>
         private Task<Dictionary<string, TagCloudItemData>> GetTagDataWithCategoriesAsync(
-            IEnumerable<FolderInfo> allFolders, bool forceFullUpdate)
+            IReadOnlyCollection<FolderInfo> allFolders, bool forceFullUpdate)
         {
             if (forceFullUpdate)
             {
@@ -199,6 +209,9 @@ namespace ImageFolderManager.ViewModels
                 // Get all folder tags with category information
                 foreach (var folder in allFolders)
                 {
+                    if (folder?.Tags == null)
+                        continue;
+
                     foreach (var tag in folder.Tags)
                     {
                         if (string.IsNullOrWhiteSpace(tag)) continue;
@@ -224,16 +237,22 @@ namespace ImageFolderManager.ViewModels
                     }
                 }
 
-                _cachedTagData = tagData;
-                _isFullUpdateNeeded = false;
+                lock (_cacheSync)
+                {
+                    _cachedTagData = CloneTagData(tagData);
+                    _isFullUpdateNeeded = false;
+                }
 
                 Debug.WriteLine($"Performed full tag count with categories, found {tagData.Count} unique tags");
-                return Task.FromResult(tagData);
+                return Task.FromResult(CloneTagData(tagData));
             }
             else
             {
                 Debug.WriteLine("Using cached tag data");
-                return Task.FromResult(new Dictionary<string, TagCloudItemData>(_cachedTagData, StringComparer.OrdinalIgnoreCase));
+                lock (_cacheSync)
+                {
+                    return Task.FromResult(CloneTagData(_cachedTagData));
+                }
             }
         }
 
@@ -291,6 +310,7 @@ namespace ImageFolderManager.ViewModels
 
                 var tagItems = new List<TagCloudItem>();
 
+                var currentTagsSnapshot = _currentTags;
                 foreach (var tagDataItem in categoryTags)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
@@ -298,27 +318,19 @@ namespace ImageFolderManager.ViewModels
                     double fontSize = CalculateFontSize(tagDataItem.Count, minCount, maxCount);
                     string tagKey = $"{category}::{tagDataItem.Tag}";
 
-                    TagCloudItem item;
-                    if (_currentTags.TryGetValue(tagKey, out var existingItem))
+                    var color = currentTagsSnapshot.TryGetValue(tagKey, out var existingItem)
+                        ? existingItem.Color
+                        : GetRandomColor();
+
+                    // Always create a fresh item to avoid mutating UI-bound objects from worker threads.
+                    var item = new TagCloudItem
                     {
-                        // Update existing tag
-                        existingItem.Count = tagDataItem.Count;
-                        existingItem.FontSize = fontSize;
-                        existingItem.Category = category;
-                        item = existingItem;
-                    }
-                    else
-                    {
-                        // Create new tag
-                        item = new TagCloudItem
-                        {
-                            Tag = tagDataItem.Tag,
-                            Category = category,
-                            Count = tagDataItem.Count,
-                            FontSize = fontSize,
-                            Color = GetRandomColor()
-                        };
-                    }
+                        Tag = tagDataItem.Tag,
+                        Category = category,
+                        Count = tagDataItem.Count,
+                        FontSize = fontSize,
+                        Color = color
+                    };
 
                     tagItems.Add(item);
                 }
@@ -334,11 +346,13 @@ namespace ImageFolderManager.ViewModels
         /// </summary>
         private async Task UpdateCategorizedUIAsync(
             Dictionary<string, List<TagCloudItem>> updatedTagsByCategory,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            long updateRequestId)
         {
             await _dispatcher.InvokeAsync(() =>
             {
-                if (!cancellationToken.IsCancellationRequested)
+                if (!cancellationToken.IsCancellationRequested &&
+                    IsLatestUpdateRequest(updateRequestId))
                 {
                     UpdateCategoriesAndTags(updatedTagsByCategory);
                 }
@@ -655,14 +669,16 @@ namespace ImageFolderManager.ViewModels
 
         #region Existing Methods (updated for category support)
 
-        private bool ShouldPerformFullUpdate(IEnumerable<FolderInfo> allFolders)
+        private bool ShouldPerformFullUpdate(int folderCount)
         {
-            int folderCount = allFolders.Count();
-            bool forceFullUpdate = _isFullUpdateNeeded ||
-                                 Math.Abs(folderCount - _lastFolderCount) / (double)Math.Max(1, _lastFolderCount) > TAG_COUNT_THRESHOLD;
+            lock (_cacheSync)
+            {
+                bool forceFullUpdate = _isFullUpdateNeeded ||
+                                     Math.Abs(folderCount - _lastFolderCount) / (double)Math.Max(1, _lastFolderCount) > TAG_COUNT_THRESHOLD;
 
-            _lastFolderCount = folderCount;
-            return forceFullUpdate;
+                _lastFolderCount = folderCount;
+                return forceFullUpdate;
+            }
         }
 
         /// <summary>
@@ -670,7 +686,10 @@ namespace ImageFolderManager.ViewModels
         /// </summary>
         public void InvalidateCache()
         {
-            _isFullUpdateNeeded = true;
+            lock (_cacheSync)
+            {
+                _isFullUpdateNeeded = true;
+            }
         }
 
         private double CalculateFontSize(int count, int minCount, int maxCount)
@@ -695,6 +714,52 @@ namespace ImageFolderManager.ViewModels
             {
                 return _tagColors[_random.Next(_tagColors.Count)];
             }
+        }
+
+        private bool IsLatestUpdateRequest(long updateRequestId)
+            => updateRequestId == Volatile.Read(ref _latestUpdateRequestId);
+
+        private static Dictionary<string, TagCloudItemData> CloneTagData(
+            Dictionary<string, TagCloudItemData> source)
+        {
+            var clone = new Dictionary<string, TagCloudItemData>(StringComparer.OrdinalIgnoreCase);
+            if (source == null)
+                return clone;
+
+            foreach (var kvp in source)
+            {
+                if (kvp.Value == null)
+                    continue;
+
+                clone[kvp.Key] = new TagCloudItemData
+                {
+                    Tag = kvp.Value.Tag,
+                    Category = kvp.Value.Category,
+                    Count = kvp.Value.Count
+                };
+            }
+
+            return clone;
+        }
+
+        private static List<FolderInfo> CreateFolderSnapshot(IEnumerable<FolderInfo> allFolders)
+        {
+            if (allFolders == null)
+                return new List<FolderInfo>();
+
+            for (int attempt = 0; attempt < 3; attempt++)
+            {
+                try
+                {
+                    return allFolders.Where(f => f != null).ToList();
+                }
+                catch (InvalidOperationException) when (attempt < 2)
+                {
+                    Thread.Yield();
+                }
+            }
+
+            return new List<FolderInfo>();
         }
 
         #endregion

@@ -22,25 +22,25 @@ using Path = System.IO.Path;
 
 namespace ImageFolderManager.Controls
 {
-    public partial class ShellTreeView : UserControl
+    public partial class ShellTreeView : UserControl, IShellTreeViewAdapter
     {
         // Event to notify when a folder is selected
         public event Action<FolderInfo> FolderSelected;
 
-        // Reference to the main view model
-        private MainViewModel ViewModel
+        // Reference to the host view model contract
+        private IShellTreeHost ViewModel
         {
             get
             {
-                var vm = DataContext as MainViewModel;
+                var vm = DataContext as IShellTreeHost;
                 if (vm == null)
                 {
                     // Try to get ViewModel from application level
-                    if (Application.Current.MainWindow?.DataContext is MainViewModel mainVM)
+                    if (Application.Current.MainWindow?.DataContext is IShellTreeHost mainVM)
                     {
                         return mainVM;
                     }
-                    Debug.WriteLine("ERROR: ShellTreeView's DataContext is not MainViewModel");
+                    Debug.WriteLine("ERROR: ShellTreeView's DataContext does not implement IShellTreeHost");
                 }
                 return vm;
             }
@@ -61,6 +61,8 @@ namespace ImageFolderManager.Controls
         // Dictionary to map ShellObject paths to TreeViewItem
         public Dictionary<string, TreeViewItem> _pathToTreeViewItem =
                 new Dictionary<string, TreeViewItem>(StringComparer.OrdinalIgnoreCase);
+
+        public bool HasPathMappings => _pathToTreeViewItem != null && _pathToTreeViewItem.Count > 0;
 
         // Current root directory
         public string _rootDirectory;
@@ -110,12 +112,14 @@ namespace ImageFolderManager.Controls
                 Interval = TimeSpan.FromMilliseconds(100)
             };
             _loadingTimer.Tick += LoadingTimer_Tick;
+            _selectedItems.CollectionChanged += (_, __) => ViewModel?.RefreshEditCommands();
 
-            // Add DataContext change handler to ensure MainViewModel is always accessible
+            // Add DataContext change handler to ensure host contract is always accessible
             this.DataContextChanged += (s, e) => {
-                if (e.NewValue is MainViewModel)
+                if (e.NewValue is IShellTreeHost host)
                 {
-                    Debug.WriteLine("ShellTreeView received correct DataContext (MainViewModel)");
+                    Debug.WriteLine("ShellTreeView received DataContext implementing IShellTreeHost");
+                    host.RefreshEditCommands();
 
                     // Check if root directory has changed
                     if (!_isInitializing &&
@@ -127,9 +131,10 @@ namespace ImageFolderManager.Controls
                 }
                 else
                 {
-                    // If DataContext is not MainViewModel, try to get from MainWindow
-                    if (Application.Current.MainWindow?.DataContext is MainViewModel)
+                    // If DataContext does not implement IShellTreeHost, try MainWindow fallback
+                    if (Application.Current.MainWindow?.DataContext is IShellTreeHost fallbackHost)
                     {
+                        fallbackHost.RefreshEditCommands();
                         Debug.WriteLine("Using MainWindow's DataContext as fallback");
                     }
                 }
@@ -583,7 +588,7 @@ namespace ImageFolderManager.Controls
                 // Clear the flag so subsequent explicit root-directory changes
                 // (triggered by the user) are processed normally.
                 _isInitializing = false;
-                // ──────────────────────────────────────────────────────────────
+                // Keep initialization guard reset in finally.
             }
         }
 
@@ -600,7 +605,7 @@ namespace ImageFolderManager.Controls
                 return;
             }
 
-            // Build the root node (pure filesystem object �?no COM)
+            // Build the root node (pure filesystem object - no COM)
             _rootNode = new FolderNode(_rootDirectory);
 
             // Create the root TreeViewItem on the UI thread
@@ -1120,7 +1125,7 @@ namespace ImageFolderManager.Controls
             {
                 var copyIcon = new TextBlock
                 {
-                    Text = "📋",
+                    Text = "\uD83D\uDCCB",
                     FontSize = 16,
                     Foreground = new SolidColorBrush(Color.FromRgb(0, 255, 0)),
                     HorizontalAlignment = HorizontalAlignment.Right,
@@ -1253,33 +1258,12 @@ namespace ImageFolderManager.Controls
                         }
                     }
 
-                    Task.Run(async () =>
-                    {
-                        await Application.Current.Dispatcher.InvokeAsync(async () =>
-                        {
-                            if (isCopy)
-                            {
-                                ViewModel.CopyFolders(sourceFolders);
-                                await ViewModel.PasteFolders(targetFolder);
-                            }
-                            else
-                            {
-                                await ViewModel.MoveFolders(sourceFolders, targetFolder);
-                            }
-                        });
-
-
-                    });
-
-
-                    // After the operation completes, invalidate path cache again for the target folder
-                    PathService.InvalidatePathCache(targetPath, true);
-
-                    // Also invalidate path cache for all source parent paths
-                    foreach (var parentPath in sourceParentPaths)
-                    {
-                        PathService.InvalidatePathCache(parentPath, true);
-                    }
+                    _ = ExecuteDropOperationAsync(
+                        sourceFolders,
+                        targetFolder,
+                        targetPath,
+                        sourceParentPaths,
+                        isCopy);
 
 
                 }
@@ -1298,6 +1282,45 @@ namespace ImageFolderManager.Controls
             if (targetItem != null)
             {
                 ShowDropCompletionAnimation(targetItem);
+            }
+        }
+
+        private async Task ExecuteDropOperationAsync(
+            List<FolderInfo> sourceFolders,
+            FolderInfo targetFolder,
+            string targetPath,
+            HashSet<string> sourceParentPaths,
+            bool isCopy)
+        {
+            try
+            {
+                if (sourceFolders == null || sourceFolders.Count == 0 || ViewModel == null)
+                {
+                    return;
+                }
+
+                if (isCopy)
+                {
+                    ViewModel.CopyFolders(sourceFolders);
+                    await ViewModel.PasteFolders(targetFolder);
+                }
+                else
+                {
+                    await ViewModel.MoveFolders(sourceFolders, targetFolder);
+                }
+
+                // After the operation completes, invalidate path cache again for the target folder
+                PathService.InvalidatePathCache(targetPath, true);
+
+                // Also invalidate path cache for all source parent paths
+                foreach (var parentPath in sourceParentPaths)
+                {
+                    PathService.InvalidatePathCache(parentPath, true);
+                }
+            }
+            catch (Exception ex)
+            {
+                HandleException("Error during drag and drop operation", ex);
             }
         }
 
@@ -1378,6 +1401,16 @@ namespace ImageFolderManager.Controls
         public void SelectPath(string path)
         {
             _ = NavigateToPathAsync(path, CancellationToken.None, promptToChangeRoot: true);
+        }
+
+        public bool IsPathMapped(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path) || _pathToTreeViewItem == null)
+            {
+                return false;
+            }
+
+            return _pathToTreeViewItem.ContainsKey(PathService.NormalizePath(path));
         }
         private bool IsPathWithinTreeScope(string path)
         {
@@ -1570,3 +1603,4 @@ namespace ImageFolderManager.Controls
         }
     }
 }
+

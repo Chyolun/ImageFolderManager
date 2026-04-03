@@ -2,7 +2,6 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using ImageFolderManager.Services;
 using Newtonsoft.Json;
 
 namespace ImageFolderManager.Services
@@ -16,13 +15,16 @@ namespace ImageFolderManager.Services
         private readonly string _categoriesFilePath;
         private Dictionary<string, string> _tagCategoryMappings;
         private HashSet<string> _categories;
+        private readonly object _syncRoot = new object();
 
 
-        public TagCategoryService()
+        public TagCategoryService(string storageDirectory = null)
         {
-            string appDataPath = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                "ImageFolderManager");
+            string appDataPath = string.IsNullOrWhiteSpace(storageDirectory)
+                ? Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                    "ImageFolderManager")
+                : storageDirectory;
 
             _categoryMappingFilePath = Path.Combine(appDataPath, "tagCategories.json");
             _categoriesFilePath = Path.Combine(appDataPath, "categories.json");
@@ -42,12 +44,15 @@ namespace ImageFolderManager.Services
         /// </summary>
         public string GetTagCategory(string tag)
         {
-            if (string.IsNullOrWhiteSpace(tag))
-                return "Uncategorized";
+            lock (_syncRoot)
+            {
+                if (string.IsNullOrWhiteSpace(tag))
+                    return "Uncategorized";
 
-            return _tagCategoryMappings.ContainsKey(tag)
-                ? _tagCategoryMappings[tag]
-                : "Uncategorized";
+                return _tagCategoryMappings.ContainsKey(tag)
+                    ? _tagCategoryMappings[tag]
+                    : "Uncategorized";
+            }
         }
 
         /// <summary>
@@ -55,21 +60,24 @@ namespace ImageFolderManager.Services
         /// </summary>
         public void SetTagCategory(string tag, string category)
         {
-            if (string.IsNullOrWhiteSpace(tag))
-                return;
-
-            if (string.IsNullOrWhiteSpace(category))
-                category = "Uncategorized";
-
-            _tagCategoryMappings[tag] = category;
-
-            // Ensure category exists
-            if (!_categories.Contains(category))
+            lock (_syncRoot)
             {
-                AddCategory(category);
-            }
+                if (string.IsNullOrWhiteSpace(tag))
+                    return;
 
-            SaveMappings();
+                if (string.IsNullOrWhiteSpace(category))
+                    category = "Uncategorized";
+
+                _tagCategoryMappings[tag] = category;
+
+                // Ensure category exists
+                if (!_categories.Contains(category))
+                {
+                    AddCategory(category);
+                }
+
+                SaveMappings();
+            }
         }
 
         /// <summary>
@@ -77,13 +85,16 @@ namespace ImageFolderManager.Services
         /// </summary>
         public void AddCategory(string categoryName)
         {
-            if (string.IsNullOrWhiteSpace(categoryName))
-                return;
-
-            if (!_categories.Contains(categoryName))
+            lock (_syncRoot)
             {
-                _categories.Add(categoryName);
-                SaveCategories();
+                if (string.IsNullOrWhiteSpace(categoryName))
+                    return;
+
+                if (!_categories.Contains(categoryName))
+                {
+                    _categories.Add(categoryName);
+                    SaveCategories();
+                }
             }
         }
 
@@ -94,23 +105,27 @@ namespace ImageFolderManager.Services
         /// </summary>
         public void RemoveCategory(string categoryName)
         {
-            if (string.IsNullOrWhiteSpace(categoryName) || categoryName == "Uncategorized")
-                return;
-
-            // Reassign all tags in this category to "Uncategorized"
-            var tagsToReassign = _tagCategoryMappings
-                .Where(kvp => kvp.Value.Equals(categoryName, StringComparison.OrdinalIgnoreCase))
-                .Select(kvp => kvp.Key)
-                .ToList();
-
-            foreach (var tag in tagsToReassign)
+            lock (_syncRoot)
             {
-                _tagCategoryMappings[tag] = "Uncategorized";
-            }
+                if (string.IsNullOrWhiteSpace(categoryName) ||
+                    categoryName.Equals("Uncategorized", StringComparison.OrdinalIgnoreCase))
+                    return;
 
-            _categories.Remove(categoryName);
-            SaveMappings();
-            SaveCategories();
+                // Reassign all tags in this category to "Uncategorized"
+                var tagsToReassign = _tagCategoryMappings
+                    .Where(kvp => kvp.Value.Equals(categoryName, StringComparison.OrdinalIgnoreCase))
+                    .Select(kvp => kvp.Key)
+                    .ToList();
+
+                foreach (var tag in tagsToReassign)
+                {
+                    _tagCategoryMappings[tag] = "Uncategorized";
+                }
+
+                _categories.Remove(categoryName);
+                SaveMappings();
+                SaveCategories();
+            }
         }
 
         /// <summary>
@@ -118,33 +133,36 @@ namespace ImageFolderManager.Services
         /// </summary>
         public void RenameCategory(string oldName, string newName)
         {
-            if (string.IsNullOrWhiteSpace(oldName) || string.IsNullOrWhiteSpace(newName))
-                return;
-
-            if (oldName.Equals(newName, StringComparison.OrdinalIgnoreCase))
-                return;
-
-            // Don't allow renaming "Uncategorized"
-            if (oldName.Equals("Uncategorized", StringComparison.OrdinalIgnoreCase))
-                return;
-
-            // Update all tag mappings
-            var tagsToUpdate = _tagCategoryMappings
-                .Where(kvp => kvp.Value.Equals(oldName, StringComparison.OrdinalIgnoreCase))
-                .Select(kvp => kvp.Key)
-                .ToList();
-
-            foreach (var tag in tagsToUpdate)
+            lock (_syncRoot)
             {
-                _tagCategoryMappings[tag] = newName;
+                if (string.IsNullOrWhiteSpace(oldName) || string.IsNullOrWhiteSpace(newName))
+                    return;
+
+                if (oldName.Equals(newName, StringComparison.OrdinalIgnoreCase))
+                    return;
+
+                // Don't allow renaming "Uncategorized"
+                if (oldName.Equals("Uncategorized", StringComparison.OrdinalIgnoreCase))
+                    return;
+
+                // Update all tag mappings
+                var tagsToUpdate = _tagCategoryMappings
+                    .Where(kvp => kvp.Value.Equals(oldName, StringComparison.OrdinalIgnoreCase))
+                    .Select(kvp => kvp.Key)
+                    .ToList();
+
+                foreach (var tag in tagsToUpdate)
+                {
+                    _tagCategoryMappings[tag] = newName;
+                }
+
+                // Update categories
+                _categories.Remove(oldName);
+                _categories.Add(newName);
+
+                SaveMappings();
+                SaveCategories();
             }
-
-            // Update categories
-            _categories.Remove(oldName);
-            _categories.Add(newName);
-
-            SaveMappings();
-            SaveCategories();
         }
 
         /// <summary>
@@ -152,9 +170,12 @@ namespace ImageFolderManager.Services
         /// </summary>
         public List<string> GetAllCategories()
         {
-            return _categories.OrderBy(c => c == "Uncategorized" ? 0 : 1)
-                             .ThenBy(c => c)
-                             .ToList();
+            lock (_syncRoot)
+            {
+                return _categories.OrderBy(c => c == "Uncategorized" ? 0 : 1)
+                                 .ThenBy(c => c)
+                                 .ToList();
+            }
         }
 
         /// <summary>
@@ -162,14 +183,17 @@ namespace ImageFolderManager.Services
         /// </summary>
         public List<string> GetTagsInCategory(string categoryName)
         {
-            if (string.IsNullOrWhiteSpace(categoryName))
-                return new List<string>();
+            lock (_syncRoot)
+            {
+                if (string.IsNullOrWhiteSpace(categoryName))
+                    return new List<string>();
 
-            return _tagCategoryMappings
-                .Where(kvp => kvp.Value.Equals(categoryName, StringComparison.OrdinalIgnoreCase))
-                .Select(kvp => kvp.Key)
-                .OrderBy(tag => tag)
-                .ToList();
+                return _tagCategoryMappings
+                    .Where(kvp => kvp.Value.Equals(categoryName, StringComparison.OrdinalIgnoreCase))
+                    .Select(kvp => kvp.Key)
+                    .OrderBy(tag => tag)
+                    .ToList();
+            }
         }
 
         /// <summary>
@@ -177,30 +201,33 @@ namespace ImageFolderManager.Services
         /// </summary>
         public void MoveTagsToCategory(IEnumerable<string> tags, string newCategory)
         {
-            if (tags == null || string.IsNullOrWhiteSpace(newCategory))
-                return;
-
-            bool hasChanges = false;
-
-            foreach (var tag in tags)
+            lock (_syncRoot)
             {
-                if (string.IsNullOrWhiteSpace(tag))
-                    continue;
+                if (tags == null || string.IsNullOrWhiteSpace(newCategory))
+                    return;
 
-                _tagCategoryMappings[tag] = newCategory;
-                hasChanges = true;
+                bool hasChanges = false;
+
+                foreach (var tag in tags)
+                {
+                    if (string.IsNullOrWhiteSpace(tag))
+                        continue;
+
+                    _tagCategoryMappings[tag] = newCategory;
+                    hasChanges = true;
+                }
+
+                if (!hasChanges)
+                    return;
+
+                // Ensure category exists and persist once for batch operation
+                if (!_categories.Contains(newCategory))
+                {
+                    AddCategory(newCategory);
+                }
+
+                SaveMappings();
             }
-
-            if (!hasChanges)
-                return;
-
-            // Ensure category exists and persist once for batch operation
-            if (!_categories.Contains(newCategory))
-            {
-                AddCategory(newCategory);
-            }
-
-            SaveMappings();
         }
 
         /// <summary>
@@ -208,24 +235,27 @@ namespace ImageFolderManager.Services
         /// </summary>
         public void CleanupUnusedTagMappings(IEnumerable<string> existingTags)
         {
-            if (existingTags == null)
-                return;
-
-            var existingTagsSet = new HashSet<string>(existingTags, StringComparer.OrdinalIgnoreCase);
-            var mappingsToRemove = _tagCategoryMappings.Keys
-                .Where(tag => !existingTagsSet.Contains(tag))
-                .ToList();
-
-            bool hasChanges = false;
-            foreach (var tag in mappingsToRemove)
+            lock (_syncRoot)
             {
-                _tagCategoryMappings.Remove(tag);
-                hasChanges = true;
-            }
+                if (existingTags == null)
+                    return;
 
-            if (hasChanges)
-            {
-                SaveMappings();
+                var existingTagsSet = new HashSet<string>(existingTags, StringComparer.OrdinalIgnoreCase);
+                var mappingsToRemove = _tagCategoryMappings.Keys
+                    .Where(tag => !existingTagsSet.Contains(tag))
+                    .ToList();
+
+                bool hasChanges = false;
+                foreach (var tag in mappingsToRemove)
+                {
+                    _tagCategoryMappings.Remove(tag);
+                    hasChanges = true;
+                }
+
+                if (hasChanges)
+                {
+                    SaveMappings();
+                }
             }
         }
 
@@ -276,18 +306,23 @@ namespace ImageFolderManager.Services
 
         public Dictionary<string, string> GetExistingTagCategories(IEnumerable<string> tagNames)
         {
-            var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-
-            foreach (var tagName in tagNames)
+            lock (_syncRoot)
             {
-                if (string.IsNullOrWhiteSpace(tagName))
-                    continue;
+                var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                if (tagNames == null)
+                    return result;
 
-                string category = GetTagCategory(tagName);
-                result[tagName] = category;
+                foreach (var tagName in tagNames)
+                {
+                    if (string.IsNullOrWhiteSpace(tagName))
+                        continue;
+
+                    string category = GetTagCategory(tagName);
+                    result[tagName] = category;
+                }
+
+                return result;
             }
-
-            return result;
         }
 
         private void LoadCategories()

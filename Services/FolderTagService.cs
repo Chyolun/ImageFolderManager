@@ -25,6 +25,7 @@ namespace ImageFolderManager.Services
             = new ConcurrentDictionary<string, Tuple<List<TagWithCategory>, int, DateTime>>(StringComparer.OrdinalIgnoreCase);
 
         private readonly TagCategoryService _categoryService;
+        private readonly object _syncRoot = new object();
 
         public FolderTagService(TagCategoryService categoryService = null)
         {
@@ -51,13 +52,16 @@ namespace ImageFolderManager.Services
             {
                 try
                 {
-                    // Check cache first if enabled
-                    if (EnableCaching && TryGetCachedTags(folderPath, out var cachedTags))
-                        return cachedTags.Select(t => t.TagName).ToList();
+                    lock (_syncRoot)
+                    {
+                        // Check cache first if enabled
+                        if (EnableCaching && TryGetCachedTags(folderPath, out var cachedTags))
+                            return cachedTags.Select(t => t.TagName).ToList();
 
-                    // Load from file
-                    var tagsAndRating = LoadTagsAndRatingFromFile(folderPath);
-                    return tagsAndRating.Item1.Select(t => t.TagName).ToList();
+                        // Load from file
+                        var tagsAndRating = LoadTagsAndRatingFromFile(folderPath);
+                        return tagsAndRating.Item1.Select(t => t.TagName).ToList();
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -82,13 +86,16 @@ namespace ImageFolderManager.Services
             {
                 try
                 {
-                    // Check cache first if enabled
-                    if (EnableCaching && TryGetCachedTags(folderPath, out var cachedTags))
-                        return cachedTags;
+                    lock (_syncRoot)
+                    {
+                        // Check cache first if enabled
+                        if (EnableCaching && TryGetCachedTags(folderPath, out var cachedTags))
+                            return CloneTags(cachedTags);
 
-                    // Load from file
-                    var tagsAndRating = LoadTagsAndRatingFromFile(folderPath);
-                    return tagsAndRating.Item1;
+                        // Load from file
+                        var tagsAndRating = LoadTagsAndRatingFromFile(folderPath);
+                        return CloneTags(tagsAndRating.Item1);
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -100,13 +107,14 @@ namespace ImageFolderManager.Services
         /// <summary>
         /// Renames tags across all folders with explicit category preservation
         /// </summary>
-        public async Task RenameTagAsync(string oldTag, string newTag, IEnumerable<string> folderPaths, string category = null)
+        public Task RenameTagAsync(string oldTag, string newTag, IEnumerable<string> folderPaths, string category = null)
         {
             if (string.IsNullOrWhiteSpace(oldTag) || string.IsNullOrWhiteSpace(newTag) || oldTag == newTag)
-                return;
+                return Task.CompletedTask;
 
             oldTag = oldTag.Trim();
             newTag = newTag.Trim();
+            var pathsToProcess = folderPaths?.ToList() ?? new List<string>();
 
             // If no category specified, try to get the original tag's category
             if (string.IsNullOrEmpty(category))
@@ -114,99 +122,121 @@ namespace ImageFolderManager.Services
                 category = _categoryService.GetTagCategory(oldTag);
             }
 
-            foreach (var folderPath in folderPaths)
+            return Task.Run(() =>
             {
-                string normalizedPath = PathService.NormalizePath(folderPath);
-
-                // Skip if directory doesn't exist
-                if (!PathService.DirectoryExists(normalizedPath))
-                    continue;
-
-                // Get current tags with categories
-                var tags = await GetTagsWithCategoriesForFolderAsync(normalizedPath);
-                int rating = await GetRatingForFolderAsync(normalizedPath);
-
-                // Check if the folder has the old tag and update it
-                bool hasChanges = false;
-                for (int i = 0; i < tags.Count; i++)
+                try
                 {
-                    if (tags[i].TagName.Equals(oldTag, StringComparison.OrdinalIgnoreCase))
+                    lock (_syncRoot)
                     {
-                        // Create new tag with original category preserved
-                        tags[i] = new TagWithCategory
+                        foreach (var folderPath in pathsToProcess)
                         {
-                            TagName = newTag,
-                            Category = string.IsNullOrEmpty(category) ? tags[i].Category : category
-                        };
-                        hasChanges = true;
+                            string normalizedPath = PathService.NormalizePath(folderPath);
+
+                            // Skip if directory doesn't exist
+                            if (!PathService.DirectoryExists(normalizedPath))
+                                continue;
+
+                            // Get current tags with categories
+                            var tagsAndRating = LoadTagsAndRatingFromFile(normalizedPath);
+                            var tags = CloneTags(tagsAndRating.Item1);
+                            int rating = tagsAndRating.Item2;
+
+                            // Check if the folder has the old tag and update it
+                            bool hasChanges = false;
+                            for (int i = 0; i < tags.Count; i++)
+                            {
+                                if (tags[i].TagName.Equals(oldTag, StringComparison.OrdinalIgnoreCase))
+                                {
+                                    // Create new tag with original category preserved
+                                    tags[i] = new TagWithCategory
+                                    {
+                                        TagName = newTag,
+                                        Category = string.IsNullOrEmpty(category) ? tags[i].Category : category
+                                    };
+                                    hasChanges = true;
+                                }
+                            }
+
+                            if (hasChanges)
+                            {
+                                SaveTagsAndRatingForFolderInternal(normalizedPath, NormalizeTags(tags), rating);
+                            }
+                        }
+
+                        // Update category service mapping - preserve the category
+                        if (!string.IsNullOrEmpty(category))
+                        {
+                            _categoryService.SetTagCategory(newTag, category);
+                        }
+
+                        // Clear cache after global tag rename
+                        if (EnableCaching)
+                        {
+                            ClearCache();
+                        }
                     }
                 }
-
-                if (hasChanges)
+                catch (Exception ex)
                 {
-                    // Remove any duplicates that might have been created
-                    tags = tags.GroupBy(t => t.TagName, StringComparer.OrdinalIgnoreCase)
-                              .Select(g => g.First())
-                              .ToList();
-
-                    // Update the tags
-                    await SetTagsAndRatingForFolderAsync(normalizedPath, tags, rating);
+                    Debug.WriteLine($"Error renaming tag '{oldTag}' to '{newTag}': {ex.Message}");
                 }
-            }
-
-            // Update category service mapping - preserve the category
-            if (!string.IsNullOrEmpty(category))
-            {
-                _categoryService.SetTagCategory(newTag, category);
-            }
-
-            // Clear cache after global tag rename
-            if (EnableCaching)
-            {
-                ClearCache();
-            }
+            });
         }
 
 
-        public async Task DeleteTagFromAllFoldersAsync(string tagToDelete, IEnumerable<string> folderPaths)
+        public Task DeleteTagFromAllFoldersAsync(string tagToDelete, IEnumerable<string> folderPaths)
         {
             if (string.IsNullOrWhiteSpace(tagToDelete))
-                return;
+                return Task.CompletedTask;
 
+            // No need to explicitly remove from TagCategoryService,
+            // as TagCategoryService has a CleanupUnusedTagMappings method that will
+            // be called during the next tag cloud update.
             tagToDelete = tagToDelete.Trim();
+            var pathsToProcess = folderPaths?.ToList() ?? new List<string>();
 
-            foreach (var folderPath in folderPaths)
+            return Task.Run(() =>
             {
-                string normalizedPath = PathService.NormalizePath(folderPath);
-
-                // Skip if directory doesn't exist
-                if (!PathService.DirectoryExists(normalizedPath))
-                    continue;
-
-                // Get current tags with categories
-                var tags = await GetTagsWithCategoriesForFolderAsync(normalizedPath);
-                int rating = await GetRatingForFolderAsync(normalizedPath);
-
-                // Check if the folder has the tag to delete
-                int originalCount = tags.Count;
-                tags.RemoveAll(t => t.TagName.Equals(tagToDelete, StringComparison.OrdinalIgnoreCase));
-
-                // If we removed any tags, update the folder
-                if (tags.Count < originalCount)
+                try
                 {
-                    await SetTagsAndRatingForFolderAsync(normalizedPath, tags, rating);
+                    lock (_syncRoot)
+                    {
+                        foreach (var folderPath in pathsToProcess)
+                        {
+                            string normalizedPath = PathService.NormalizePath(folderPath);
+
+                            // Skip if directory doesn't exist
+                            if (!PathService.DirectoryExists(normalizedPath))
+                                continue;
+
+                            // Get current tags with categories
+                            var tagsAndRating = LoadTagsAndRatingFromFile(normalizedPath);
+                            var tags = CloneTags(tagsAndRating.Item1);
+                            int rating = tagsAndRating.Item2;
+
+                            // Check if the folder has the tag to delete
+                            int originalCount = tags.Count;
+                            tags.RemoveAll(t => t.TagName.Equals(tagToDelete, StringComparison.OrdinalIgnoreCase));
+
+                            // If we removed any tags, update the folder
+                            if (tags.Count < originalCount)
+                            {
+                                SaveTagsAndRatingForFolderInternal(normalizedPath, NormalizeTags(tags), rating);
+                            }
+                        }
+
+                        // Clear the cache after a global tag operation
+                        if (EnableCaching)
+                        {
+                            ClearCache();
+                        }
+                    }
                 }
-            }
-
-            // Clear the cache after a global tag operation
-            if (EnableCaching)
-            {
-                ClearCache();
-            }
-
-            // No need to explicitly remove from TagCategoryService, 
-            // as TagCategoryService has a CleanupUnusedTagMappings method that will 
-            // be called during the next tag cloud update
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"Error deleting tag '{tagToDelete}' from all folders: {ex.Message}");
+                }
+            });
         }
 
         /// <summary>
@@ -228,7 +258,7 @@ namespace ImageFolderManager.Services
             if (lastWriteTime > cachedData.Item3)
                 return false;
 
-            tags = new List<TagWithCategory>(cachedData.Item1);
+            tags = CloneTags(cachedData.Item1);
             return true;
         }
 
@@ -276,13 +306,13 @@ namespace ImageFolderManager.Services
                 if (EnableCaching)
                 {
                     _tagCache[folderPath] = new Tuple<List<TagWithCategory>, int, DateTime>(
-                        new List<TagWithCategory>(tags),
+                        CloneTags(tags),
                         rating,
                         File.GetLastWriteTime(filePath)
                     );
                 }
 
-                return new Tuple<List<TagWithCategory>, int>(tags, rating);
+                return new Tuple<List<TagWithCategory>, int>(CloneTags(tags), rating);
             }
             catch (Exception ex)
             {
@@ -343,22 +373,25 @@ namespace ImageFolderManager.Services
             {
                 try
                 {
-                    // Check cache
-                    if (EnableCaching && _tagCache.TryGetValue(folderPath, out var cachedData))
+                    lock (_syncRoot)
                     {
-                        string tagFilePath = Path.Combine(folderPath, TagFileName);
-                        if (File.Exists(tagFilePath))
+                        // Check cache
+                        if (EnableCaching && _tagCache.TryGetValue(folderPath, out var cachedData))
                         {
-                            DateTime lastWriteTime = File.GetLastWriteTime(tagFilePath);
-                            if (lastWriteTime <= cachedData.Item3)
+                            string tagFilePath = Path.Combine(folderPath, TagFileName);
+                            if (File.Exists(tagFilePath))
                             {
-                                return cachedData.Item2; // Return cached rating
+                                DateTime lastWriteTime = File.GetLastWriteTime(tagFilePath);
+                                if (lastWriteTime <= cachedData.Item3)
+                                {
+                                    return cachedData.Item2; // Return cached rating
+                                }
                             }
                         }
-                    }
 
-                    var tagsAndRating = LoadTagsAndRatingFromFile(folderPath);
-                    return tagsAndRating.Item2;
+                        var tagsAndRating = LoadTagsAndRatingFromFile(folderPath);
+                        return tagsAndRating.Item2;
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -373,13 +406,13 @@ namespace ImageFolderManager.Services
         /// </summary>
         public Task SetTagsAndRatingForFolderAsync(string folderPath, List<string> tags, int rating)
         {
-            var tagsWithCategories = tags
+            var tagsWithCategories = (tags ?? new List<string>())
                .Where(tag => !string.IsNullOrWhiteSpace(tag))
                 .Select(tag => TagHelper.ParseTagWithCategory(tag))
                 .Where(parsedTag => parsedTag != null && !string.IsNullOrWhiteSpace(parsedTag.TagName))
                 .Select(parsedTag => new TagWithCategory
                 {
-                TagName = parsedTag.TagName,
+                    TagName = parsedTag.TagName,
                     Category = parsedTag.Category
                 })
                 .ToList();
@@ -401,53 +434,15 @@ namespace ImageFolderManager.Services
             {
                 try
                 {
-                    // Normalize tags - remove duplicates and empty tags
-                    var normalizedTags = tags
-                        .Where(t => !string.IsNullOrWhiteSpace(t?.TagName))
-                        .GroupBy(t => t.TagName, StringComparer.OrdinalIgnoreCase)
-                        .Select(g => g.First()) // Take first occurrence to remove duplicates
-                        .ToList();
-
-                    // Ensure rating is within valid range (0-5)
-                    rating = Math.Max(0, Math.Min(5, rating));
-
-                    string tagFilePath = Path.Combine(folderPath, TagFileName);
-
-                    // Create content with category information
-                    var tagStrings = normalizedTags.Select(t =>
-                        string.IsNullOrWhiteSpace(t.Category) || t.Category == "Uncategorized"
-                            ? t.TagName
-                            : $"{t.Category}{CategorySeparator}{t.TagName}");
-
-                    string content = string.Join("#", tagStrings) + "|" + rating;
-
-                    // Ensure directory exists
-                    string directoryPath = Path.GetDirectoryName(tagFilePath);
-                    if (!PathService.DirectoryExists(directoryPath))
+                    lock (_syncRoot)
                     {
-                        Directory.CreateDirectory(directoryPath);
-                    }
+                        // Normalize tags - remove duplicates and empty tags
+                        var normalizedTags = NormalizeTags(tags);
 
-                    // Write to file
-                    File.WriteAllText(tagFilePath, content);
+                        // Ensure rating is within valid range (0-5)
+                        int sanitizedRating = Math.Max(0, Math.Min(5, rating));
 
-                    // Update category service with new mappings
-                    foreach (var tag in normalizedTags)
-                    {
-                        if (!string.IsNullOrWhiteSpace(tag.Category) && tag.Category != "Uncategorized")
-                        {
-                            _categoryService.SetTagCategory(tag.TagName, tag.Category);
-                        }
-                    }
-
-                    // Update cache if enabled
-                    if (EnableCaching)
-                    {
-                        _tagCache[folderPath] = new Tuple<List<TagWithCategory>, int, DateTime>(
-                            new List<TagWithCategory>(normalizedTags),
-                            rating,
-                            File.GetLastWriteTime(tagFilePath)
-                        );
+                        SaveTagsAndRatingForFolderInternal(folderPath, normalizedTags, sanitizedRating);
                     }
                 }
                 catch (Exception ex)
@@ -460,62 +455,75 @@ namespace ImageFolderManager.Services
         /// <summary>
         /// Renames tags across all folders with category support
         /// </summary>
-        public async Task RenameTagAsync(string oldTag, string newTag, IEnumerable<string> folderPaths)
+        public Task RenameTagAsync(string oldTag, string newTag, IEnumerable<string> folderPaths)
+            => RenameTagAsync(oldTag, newTag, folderPaths, category: null);
+
+        private List<TagWithCategory> NormalizeTags(IEnumerable<TagWithCategory> tags)
         {
-            if (string.IsNullOrWhiteSpace(oldTag) || string.IsNullOrWhiteSpace(newTag) || oldTag == newTag)
-                return;
+            return (tags ?? Enumerable.Empty<TagWithCategory>())
+                .Where(t => !string.IsNullOrWhiteSpace(t?.TagName))
+                .Select(t => new TagWithCategory
+                {
+                    TagName = t.TagName.Trim(),
+                    Category = string.IsNullOrWhiteSpace(t.Category) ? "Uncategorized" : t.Category.Trim()
+                })
+                .Where(t => !string.IsNullOrWhiteSpace(t.TagName))
+                .GroupBy(t => t.TagName, StringComparer.OrdinalIgnoreCase)
+                .Select(g => g.First())
+                .ToList();
+        }
 
-            oldTag = oldTag.Trim();
-            newTag = newTag.Trim();
+        private static List<TagWithCategory> CloneTags(IEnumerable<TagWithCategory> tags)
+        {
+            return (tags ?? Enumerable.Empty<TagWithCategory>())
+                .Where(t => t != null)
+                .Select(t => new TagWithCategory
+                {
+                    TagName = t.TagName,
+                    Category = t.Category
+                })
+                .ToList();
+        }
 
-            foreach (var folderPath in folderPaths)
+        private void SaveTagsAndRatingForFolderInternal(string folderPath, List<TagWithCategory> normalizedTags, int rating)
+        {
+            string tagFilePath = Path.Combine(folderPath, TagFileName);
+
+            // Create content with category information
+            var tagStrings = normalizedTags.Select(t =>
+                string.IsNullOrWhiteSpace(t.Category) || t.Category == "Uncategorized"
+                    ? t.TagName
+                    : $"{t.Category}{CategorySeparator}{t.TagName}");
+
+            string content = string.Join("#", tagStrings) + "|" + rating;
+
+            // Ensure directory exists
+            string directoryPath = Path.GetDirectoryName(tagFilePath);
+            if (!PathService.DirectoryExists(directoryPath))
             {
-                string normalizedPath = PathService.NormalizePath(folderPath);
+                Directory.CreateDirectory(directoryPath);
+            }
 
-                // Skip if directory doesn't exist
-                if (!PathService.DirectoryExists(normalizedPath))
-                    continue;
+            // Write to file
+            File.WriteAllText(tagFilePath, content);
 
-                // Get current tags with categories
-                var tags = await GetTagsWithCategoriesForFolderAsync(normalizedPath);
-                int rating = await GetRatingForFolderAsync(normalizedPath);
-
-                // Check if the folder has the old tag and update it
-                bool hasChanges = false;
-                for (int i = 0; i < tags.Count; i++)
+            // Update category service with new mappings
+            foreach (var tag in normalizedTags)
+            {
+                if (!string.IsNullOrWhiteSpace(tag.Category) && tag.Category != "Uncategorized")
                 {
-                    if (tags[i].TagName.Equals(oldTag, StringComparison.OrdinalIgnoreCase))
-                    {
-                        // Preserve the category when renaming
-                        tags[i] = new TagWithCategory
-                        {
-                            TagName = newTag,
-                            Category = tags[i].Category
-                        };
-                        hasChanges = true;
-                    }
-                }
-
-                if (hasChanges)
-                {
-                    // Remove any duplicates that might have been created
-                    tags = tags.GroupBy(t => t.TagName, StringComparer.OrdinalIgnoreCase)
-                              .Select(g => g.First())
-                              .ToList();
-
-                    // Update the tags
-                    await SetTagsAndRatingForFolderAsync(normalizedPath, tags, rating);
+                    _categoryService.SetTagCategory(tag.TagName, tag.Category);
                 }
             }
 
-            // Update category service mapping
-            string oldCategory = _categoryService.GetTagCategory(oldTag);
-            _categoryService.SetTagCategory(newTag, oldCategory);
-
-            // Clear cache after global tag rename
+            // Update cache if enabled
             if (EnableCaching)
             {
-                ClearCache();
+                _tagCache[folderPath] = new Tuple<List<TagWithCategory>, int, DateTime>(
+                    CloneTags(normalizedTags),
+                    rating,
+                    File.GetLastWriteTime(tagFilePath)
+                );
             }
         }
     }

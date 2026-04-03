@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
@@ -122,8 +124,7 @@ namespace ImageFolderManager.ViewModels
 
                     await Application.Current.Dispatcher.InvokeAsync(() =>
                     {
-                        if (_shellTreeView?._pathToTreeViewItem != null &&
-                            _shellTreeView._pathToTreeViewItem.ContainsKey(normalizedRootPath))
+                        if (_shellTreeView?.IsPathMapped(normalizedRootPath) == true)
                         {
                             isInitialized = true;
                             Debug.WriteLine($"TreeView initialization verified - root path mapped: {normalizedRootPath}");
@@ -204,7 +205,7 @@ namespace ImageFolderManager.ViewModels
             bool treeViewValid = false;
             await Application.Current.Dispatcher.InvokeAsync(() =>
             {
-                treeViewValid = _shellTreeView?._pathToTreeViewItem?.ContainsKey(PathService.NormalizePath(path)) == true;
+                treeViewValid = _shellTreeView?.IsPathMapped(path) == true;
             });
 
             if (!treeViewValid)
@@ -253,8 +254,13 @@ namespace ImageFolderManager.ViewModels
 
             //_allLoadedFolders.Clear();
             //_allLoadedFolders.AddRange(freshFolders);
+            List<FolderInfo> folderSnapshot;
+            lock (_allLoadedFoldersLock)
+            {
+                folderSnapshot = _allLoadedFolders.ToList();
+            }
 
-            await TagManagement.UpdateTagCloudAsync(_allLoadedFolders);
+            await TagManagement.UpdateTagCloudAsync(folderSnapshot);
         }
 
         public async Task RefreshAllFoldersDataAsync()
@@ -269,10 +275,14 @@ namespace ImageFolderManager.ViewModels
             {
                 StatusMessage = "Refreshing folder data...";
 
-                _allLoadedFolders.Clear();
                 var folders = await _unifiedFolderService.LoadFoldersRecursivelyAsync(
                     AppSettings.Instance.DefaultRootDirectory);
-                _allLoadedFolders.AddRange(folders);
+
+                lock (_allLoadedFoldersLock)
+                {
+                    _allLoadedFolders.Clear();
+                    _allLoadedFolders.AddRange(folders);
+                }
 
                 await UpdateTagCloudAsync();
                 StatusMessage = "Ready";
@@ -289,6 +299,8 @@ namespace ImageFolderManager.ViewModels
         {
             try
             {
+                CancelSelectedFolderMetadataLoad();
+
                 lock (_importCtsLock)
                 {
                     _currentImportCts?.Cancel();
@@ -317,6 +329,8 @@ namespace ImageFolderManager.ViewModels
         {
             try
             {
+                CancelSelectedFolderMetadataLoad();
+
                 lock (_importCtsLock)
                 {
                     _currentImportCts?.Cancel();

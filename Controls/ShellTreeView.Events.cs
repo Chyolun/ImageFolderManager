@@ -33,11 +33,11 @@ namespace ImageFolderManager.Controls
 
             e.Handled = true; // Don't bubble to parent items
 
-            // Fire and forget �?any exceptions are caught inside ExpandNodeAsync
+            // Fire-and-forget; exceptions are handled inside ExpandNodeAsync.
             _ = ExpandNodeAsync(item, node);
         }
 
-        // ── TreeViewItem_Collapsed (new �?wire to Collapsed event in XAML) ────
+        // TreeViewItem_Collapsed: wire this to the Collapsed event in XAML.
         // Cancels any in-flight load when the user collapses a node quickly.
 
         private void TreeViewItem_Collapsed(object sender, RoutedEventArgs e)
@@ -52,7 +52,7 @@ namespace ImageFolderManager.Controls
             }
         }
 
-        // ── Core expansion logic ──────────────────────────────────────────────
+        // Core expansion logic
 
         private async Task ExpandNodeAsync(TreeViewItem parentItem, FolderNode parentNode)
         {
@@ -267,7 +267,7 @@ namespace ImageFolderManager.Controls
                     // Check if we're in a multi-selection state
                     if (_selectedItems.Count <= 1)
                     {
-                        ViewModel.StatusMessage = $"Selected: {folderInfo.Name} ({path})";
+                        ViewModel.NotifyFolderSelected(folderInfo, loadImages: false);
                     }
                 }
 
@@ -303,10 +303,8 @@ namespace ImageFolderManager.Controls
                     // Check if we're in a multi-selection state before updating the status message
                     if (_selectedItems.Count <= 1)
                     {
-                        ViewModel.StatusMessage = $"Selected: {folderInfo.Name} ({path})";
+                        ViewModel.NotifyFolderSelected(folderInfo, loadImages: false);
                     }
-
-                    ViewModel.SetSelectedFolderWithoutLoading(folderInfo);
                 }
                 else
                 {
@@ -339,25 +337,17 @@ namespace ImageFolderManager.Controls
                     {
                         string path = folderNode.FullPath;
                         string lastFolderName = Path.GetFileName(path);
-
-                        // First clear the selected folder in ViewModel (this will trigger image clearing)
-                        ViewModel.SetSelectedFolderWithoutLoading(null);
-
-                        // Then update status message with our custom format - this will override "Images cleared"
-                        ViewModel.StatusMessage = $"A total of {_selectedItems.Count} folders, including {lastFolderName}, are selected.";
+                        ViewModel.NotifyMultiSelectionChanged(_selectedItems.Count, lastFolderName);
                     }
                     else
                     {
-                        // Fallback to original message if we can't get the last folder name
-                        ViewModel.SetSelectedFolderWithoutLoading(null);
-                        ViewModel.StatusMessage = $"Selected {_selectedItems.Count} folders";
+                        ViewModel.NotifyMultiSelectionChanged(_selectedItems.Count, lastFolderName: null);
                     }
                 }
                 else
                 {
                     // No items selected
-                    ViewModel.StatusMessage = "No folders selected";
-                    ViewModel.SetSelectedFolderWithoutLoading(null);
+                    ViewModel.NotifySelectionCleared();
                 }
             }
         }
@@ -368,8 +358,7 @@ namespace ImageFolderManager.Controls
 
             if (ViewModel != null)
             {
-                // Call the ViewModel method to load images
-                _ = ViewModel.LoadImagesForSelectedFolderAsync();
+                ViewModel.NotifyFolderSelected(folder, loadImages: true);
             }
             else
             {
@@ -426,7 +415,7 @@ namespace ImageFolderManager.Controls
                 };
                 contextMenu.Items.Add(newFolderItem);
 
-                // New Sibling Folder �?disabled when selected node IS the root
+                // New Sibling Folder, disabled when selected node is the root
                 var newSiblingFolderItem = new MenuItem { Header = "New Sibling Folder" };
                 newSiblingFolderItem.IsEnabled =
                     !string.IsNullOrEmpty(_rootDirectory) &&

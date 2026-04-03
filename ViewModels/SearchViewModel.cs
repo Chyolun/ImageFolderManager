@@ -64,6 +64,7 @@ namespace ImageFolderManager.ViewModels
     {
         private readonly UnifiedFolderService _folderService;
         private readonly List<FolderInfo> _allLoadedFolders;
+        private readonly object _allLoadedFoldersLock;
         private CancellationTokenSource _searchCancellationTokenSource;
 
         // ── Compiled regex (one allocation for the lifetime of the process) ───
@@ -155,12 +156,16 @@ namespace ImageFolderManager.ViewModels
 
         #endregion
 
-        public SearchViewModel(UnifiedFolderService folderService, List<FolderInfo> allLoadedFolders)
+        public SearchViewModel(
+            UnifiedFolderService folderService,
+            List<FolderInfo> allLoadedFolders,
+            object allLoadedFoldersLock = null)
         {
             _folderService = folderService
                 ?? throw new ArgumentNullException(nameof(folderService));
             _allLoadedFolders = allLoadedFolders
                 ?? throw new ArgumentNullException(nameof(allLoadedFolders));
+            _allLoadedFoldersLock = allLoadedFoldersLock ?? new object();
 
             SearchCommand = new AsyncRelayCommand(PerformSearchAsync);
         }
@@ -185,14 +190,20 @@ namespace ImageFolderManager.ViewModels
         {
             lock (_indexLock)
             {
-                int cap = _allLoadedFolders.Count;
+                List<FolderInfo> folderSnapshot;
+                lock (_allLoadedFoldersLock)
+                {
+                    folderSnapshot = _allLoadedFolders.ToList();
+                }
+
+                int cap = folderSnapshot.Count;
 
                 var byPath = new Dictionary<string, FolderInfo>(cap, StringComparer.OrdinalIgnoreCase);
                 var tagIdx = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
                 var nameIdx = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
                 var normCache = new Dictionary<string, HashSet<string>>(cap, StringComparer.OrdinalIgnoreCase);
 
-                foreach (var folder in _allLoadedFolders)
+                foreach (var folder in folderSnapshot)
                 {
                     if (folder?.FolderPath == null) continue;
                     string path = folder.FolderPath;

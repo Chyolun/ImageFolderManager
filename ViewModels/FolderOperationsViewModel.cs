@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
 using CommunityToolkit.Mvvm.Input;
+using ImageFolderManager.Commands;
 using ImageFolderManager.Models;
 using ImageFolderManager.Services;
 using ImageFolderManager.Views;
@@ -21,6 +22,7 @@ namespace ImageFolderManager.ViewModels
     public class FolderOperationsViewModel : ViewModelBase
     {
         private readonly UnifiedFolderService _folderService;
+        private readonly IFolderOperationOrchestrator _operationOrchestrator;
         private readonly IDialogService _dialogService;
 
         // ── Clipboard state ───────────────────────────────────────────────
@@ -67,10 +69,14 @@ namespace ImageFolderManager.ViewModels
 
         // ─────────────────────────────────────────────────────────────────
 
-        public FolderOperationsViewModel(UnifiedFolderService folderService, IDialogService dialogService = null)
+        public FolderOperationsViewModel(
+            UnifiedFolderService folderService,
+            IFolderOperationOrchestrator operationOrchestrator = null,
+            IDialogService dialogService = null)
         {
             _folderService = folderService
                 ?? throw new ArgumentNullException(nameof(folderService));
+            _operationOrchestrator = operationOrchestrator ?? new FolderOperationOrchestrator(folderService);
             _dialogService = dialogService ?? new WpfDialogService();
 
             // Create the undo manager and wire its events
@@ -172,12 +178,13 @@ namespace ImageFolderManager.ViewModels
                     if (string.IsNullOrWhiteSpace(folderName))
                         return;
 
-                    bool success = await _folderService.CreateFolderAsync(
+                    var createResult = await _operationOrchestrator.CreateFolderAsync(
                         parentFolder.FolderPath, folderName);
+                    bool success = createResult.Success;
 
                     if (success)
                     {
-                        string newPath = Path.Combine(parentFolder.FolderPath, folderName);
+                        string newPath = createResult.Data as string ?? Path.Combine(parentFolder.FolderPath, folderName);
 
                         // ── Record for undo ───────────────────────────────────
                         UndoManager.Push(UndoRecord.ForCreate(newPath));
@@ -228,7 +235,8 @@ namespace ImageFolderManager.ViewModels
                 // The folder is in the Recycle Bin and the user can restore it
                 // manually.  Adding it here would give false confidence since
                 // we cannot programmatically restore from the Recycle Bin.
-                bool success = await _folderService.DeleteFolderAsync(folder.FolderPath, useRecycleBin: true);
+                var deleteResult = await _operationOrchestrator.DeleteFolderAsync(folder.FolderPath, useRecycleBin: true);
+                bool success = deleteResult.Success;
 
                 if (success)
                 {
@@ -304,8 +312,11 @@ namespace ImageFolderManager.ViewModels
                             Application.Current.Dispatcher.Invoke(() =>
                                 progressDialog.UpdateProgress(progress, $"Deleting: {folder.Name}"));
 
-                            bool success = await _folderService.DeleteFolderAsync(
-                                folder.FolderPath, useRecycleBin: true);
+                            var deleteResult = await _operationOrchestrator.DeleteFolderAsync(
+                                folder.FolderPath,
+                                useRecycleBin: true,
+                                cancellationToken: cts.Token);
+                            bool success = deleteResult.Success;
 
                             if (!success)
                             {
@@ -400,12 +411,13 @@ namespace ImageFolderManager.ViewModels
                         return false;
 
                     string oldPath = folder.FolderPath;
-                    bool success = await _folderService.RenameFolderAsync(oldPath, newName);
+                    var renameResult = await _operationOrchestrator.RenameFolderAsync(oldPath, newName);
+                    bool success = renameResult.Success;
 
                     if (success)
                     {
-                        string newPath = Path.Combine(
-                            Path.GetDirectoryName(oldPath) ?? string.Empty, newName);
+                        string newPath = renameResult.Data as string
+                            ?? Path.Combine(Path.GetDirectoryName(oldPath) ?? string.Empty, newName);
 
                         // ── Record for undo ───────────────────────────────────
                         UndoManager.Push(UndoRecord.ForRename(oldPath, newPath));
@@ -544,17 +556,20 @@ namespace ImageFolderManager.ViewModels
                     return false;
                 }
 
-                bool success = await _folderService.MoveFolderAsync(
-                    sourceFolder.FolderPath, destPath);
+                var moveResult = await _operationOrchestrator.MoveFolderAsync(
+                    sourceFolder.FolderPath,
+                    destPath);
+                bool success = moveResult.Success;
+                string actualDestPath = moveResult.Data as string ?? destPath;
 
                 if (success)
                 {
                     // ── Record for undo ───────────────────────────────────
-                    UndoManager.Push(UndoRecord.ForMove(sourceFolder.FolderPath, destPath));
+                    UndoManager.Push(UndoRecord.ForMove(sourceFolder.FolderPath, actualDestPath));
 
                     UpdateStatus($"Moved '{sourceFolder.Name}' → '{targetFolder.Name}'.");
                     OnFolderOperationCompleted(FolderOperationEventArgs.CreateSuccess(
-                        FolderOperation.Move, sourceFolder.FolderPath, destPath));
+                        FolderOperation.Move, sourceFolder.FolderPath, actualDestPath));
                 }
                 else
                 {
@@ -615,9 +630,16 @@ namespace ImageFolderManager.ViewModels
                         }
                         else
                         {
-                            bool success = await _folderService.MoveFolderAsync(folder.FolderPath, destPath);
+                            var moveResult = await _operationOrchestrator.MoveFolderAsync(
+                                folder.FolderPath,
+                                destPath,
+                                cancellationToken: cts.Token);
+                            bool success = moveResult.Success;
                             if (success)
-                                movedSources.Add((folder.FolderPath, destPath));  
+                            {
+                                string actualDestPath = moveResult.Data as string ?? destPath;
+                                movedSources.Add((folder.FolderPath, actualDestPath));
+                            }
                             else
                                 overallSuccess = false;
                         }
@@ -825,30 +847,40 @@ namespace ImageFolderManager.ViewModels
                         // Handle Overwrite: delete existing folder first
                         if (Directory.Exists(destPath))
                         {
-                            bool deleted = await _folderService.DeleteFolderAsync(destPath, useRecycleBin: false);
+                            var deleteResult = await _operationOrchestrator.DeleteFolderAsync(
+                                destPath,
+                                useRecycleBin: false,
+                                cancellationToken: cts.Token);
+                            bool deleted = deleteResult.Success;
                             if (!deleted && Directory.Exists(destPath))
                             {
                                 throw new IOException($"Failed to overwrite destination folder: {destPath}");
                             }
                         }
 
-                        bool copied = await _folderService.CopyFolderAsync(sourceFolder.FolderPath, destPath);
+                        var copyResult = await _operationOrchestrator.CopyFolderAsync(
+                            sourceFolder.FolderPath,
+                            destPath,
+                            cancellationToken: cts.Token);
+                        bool copied = copyResult.Success;
                         if (!copied)
                         {
                             throw new IOException($"Failed to copy folder to destination: {destPath}");
                         }
 
+                        string actualDestPath = copyResult.Data as string ?? destPath;
+
                         // ── Record for undo & fire TreeView event ─────────
                         Application.Current.Dispatcher.Invoke(() =>
                         {
-                            UndoManager.Push(UndoRecord.ForCopy(destPath));
+                            UndoManager.Push(UndoRecord.ForCopy(actualDestPath));
 
                             // FIX: DestinationPath must be the actual copied folder path,
                             // NOT targetFolder.FolderPath (the parent).
                             OnFolderOperationCompleted(FolderOperationEventArgs.CreateSuccess(
                                 FolderOperation.Copy,
                                 sourceFolder.FolderPath,   // source (informational)
-                                destPath));                 // ← FIXED: real dest path
+                                actualDestPath));                 // ← FIXED: real dest path
                         });
                     }
                     catch (Exception ex)

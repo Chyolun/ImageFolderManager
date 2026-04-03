@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Forms;
+using ImageFolderManager.Commands;
 using ImageFolderManager.Models;
 using ImageFolderManager.Services;
 using ImageFolderManager.Views;
@@ -256,7 +257,7 @@ namespace ImageFolderManager.ViewModels
                 var importDialog = new ImportFolderDialog(
                     sourceFolders,
                     AppSettings.Instance.DefaultRootDirectory,   // rootDirectoryPath
-                    _allLoadedFolders,                            // allLoadedFolders
+                    GetAllLoadedFoldersSnapshot(),                // allLoadedFolders
                     _tagService);                                 // folderTagService
                 importDialog.Owner = Application.Current.MainWindow;
 
@@ -462,7 +463,7 @@ namespace ImageFolderManager.ViewModels
                             else
                             {
                                 // ©¤©¤ Plain copy path ©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤
-                                await CopyDirectoryAsync(
+                                var copyResult = await CopyFolderForImportAsync(
                                     sourceFolderPath,
                                     finalDestinationPath,
                                     progressDialog,
@@ -470,9 +471,9 @@ namespace ImageFolderManager.ViewModels
                                     progressWeight,
                                     importCts.Token);
 
-                                result.DestinationPath = finalDestinationPath;
+                                result.DestinationPath = copyResult.Data as string ?? finalDestinationPath;
 
-                                if (Directory.Exists(finalDestinationPath))
+                                if (copyResult.Success && Directory.Exists(result.DestinationPath))
                                 {
                                     result.Success = true;
                                     result.Message = "Import completed successfully";
@@ -497,7 +498,9 @@ namespace ImageFolderManager.ViewModels
                                 else
                                 {
                                     result.Success = false;
-                                    result.Message = "Import failed - destination folder not created";
+                                    result.Message = string.IsNullOrWhiteSpace(copyResult.Message)
+                                        ? "Import failed - destination folder not created"
+                                        : copyResult.Message;
                                 }
                             }
                         }
@@ -701,148 +704,36 @@ namespace ImageFolderManager.ViewModels
         }
 
         /// <summary>
-        /// Copies a directory and all its contents asynchronously
+        /// Import-specific wrapper that routes plain-copy operations through the
+        /// unified command/orchestrator pipeline while keeping progress feedback.
         /// </summary>
-        /// <param name="sourcePath">Source directory path</param>
-        /// <param name="destinationPath">Destination directory path</param>
-        /// <param name="progressDialog">Progress dialog for status updates</param>
-        /// <param name="baseProgress">Base progress value for this operation</param>
-        /// <param name="progressWeight">Weight of this operation in overall progress</param>
-        private async Task CopyDirectoryAsync(
-            string sourcePath,
-            string destinationPath,
-            ProgressDialog progressDialog = null,
-            double baseProgress = 0.0,
-            double progressWeight = 1.0,
-            CancellationToken operationToken = default)
-        {
-            await Task.Run(() =>
-            {
-                operationToken.ThrowIfCancellationRequested();
-
-                // Create destination directory
-                Directory.CreateDirectory(destinationPath);
-
-                try
-                {
-                    // Count total files for more accurate progress
-                    var allFiles = Directory.GetFiles(sourcePath, "*", SearchOption.AllDirectories);
-                    var totalFiles = allFiles.Length;
-                    int processedFiles = 0;
-
-                    // Copy files recursively with progress tracking
-                    CopyDirectoryWithProgress(
-                        sourcePath,
-                        destinationPath,
-                        progressDialog,
-                        baseProgress,
-                        progressWeight,
-                        ref processedFiles,
-                        totalFiles,
-                        operationToken);
-                }
-                catch (OperationCanceledException)
-                {
-                    throw;
-                }
-                catch (Exception)
-                {
-                    // If counting fails, fall back to simple copy
-                    progressDialog?.UpdateProgress(baseProgress + (progressWeight * 0.5),
-                        $"Copying contents of {Path.GetFileName(sourcePath)}...");
-                    CopyDirectorySync(sourcePath, destinationPath, operationToken);
-                    progressDialog?.UpdateProgress(baseProgress + progressWeight,
-                        $"Completed copying {Path.GetFileName(sourcePath)}");
-                }
-            }, operationToken);
-        }
-
-        /// <summary>
-        /// Helper method to copy directory with progress tracking
-        /// </summary>
-        private void CopyDirectoryWithProgress(
+        private async Task<CommandResult> CopyFolderForImportAsync(
             string sourcePath,
             string destinationPath,
             ProgressDialog progressDialog,
             double baseProgress,
             double progressWeight,
-            ref int processedFiles,
-            int totalFiles,
             CancellationToken operationToken)
         {
-            // Ensure destination directory exists
-            Directory.CreateDirectory(destinationPath);
-
-            // Copy all files in current directory
-            var files = Directory.GetFiles(sourcePath);
-            foreach (var file in files)
-            {
-                operationToken.ThrowIfCancellationRequested();
-
-                string fileName = Path.GetFileName(file);
-                string destFile = Path.Combine(destinationPath, fileName);
-                File.Copy(file, destFile, true);
-
-                processedFiles++;
-                if (progressDialog != null && totalFiles > 0)
-                {
-                    double currentProgress = baseProgress + (progressWeight * processedFiles / totalFiles);
-                    progressDialog.UpdateProgress(Math.Min(currentProgress, baseProgress + progressWeight),
-                        $"Copying: {fileName}");
-                }
-            }
-
-            // Recursively copy subdirectories
-            var subdirectories = Directory.GetDirectories(sourcePath);
-            foreach (var subdirectory in subdirectories)
-            {
-                operationToken.ThrowIfCancellationRequested();
-
-                string dirName = Path.GetFileName(subdirectory);
-                string destDir = Path.Combine(destinationPath, dirName);
-
-                if (progressDialog != null)
-                {
-                    double currentProgress = baseProgress + (progressWeight * processedFiles / totalFiles);
-                    progressDialog.UpdateProgress(Math.Min(currentProgress, baseProgress + progressWeight),
-                        $"Copying folder: {dirName}");
-                }
-
-                // Recursive call
-                CopyDirectoryWithProgress(subdirectory, destDir, progressDialog, baseProgress,
-                    progressWeight, ref processedFiles, totalFiles, operationToken);
-            }
-        }
-
-        /// <summary>
-        /// Synchronous directory copy helper method
-        /// </summary>
-        /// <param name="sourcePath">Source directory path</param>
-        /// <param name="destinationPath">Destination directory path</param>
-        private void CopyDirectorySync(string sourcePath, string destinationPath, CancellationToken operationToken)
-        {
             operationToken.ThrowIfCancellationRequested();
-            Directory.CreateDirectory(destinationPath);
 
-            // Copy files
-            foreach (var file in Directory.GetFiles(sourcePath))
+            progressDialog?.UpdateProgress(
+                baseProgress + (progressWeight * 0.1),
+                $"Copying: {Path.GetFileName(sourcePath)}");
+
+            var result = await _operationOrchestrator.CopyFolderAsync(
+                sourcePath,
+                destinationPath,
+                operationToken);
+
+            if (result.Success)
             {
-                operationToken.ThrowIfCancellationRequested();
-
-                string fileName = Path.GetFileName(file);
-                string destFile = Path.Combine(destinationPath, fileName);
-                File.Copy(file, destFile, true);
+                progressDialog?.UpdateProgress(
+                    baseProgress + progressWeight,
+                    $"Completed copying {Path.GetFileName(sourcePath)}");
             }
 
-            // Copy subdirectories
-            foreach (var subdirectory in Directory.GetDirectories(sourcePath))
-            {
-                operationToken.ThrowIfCancellationRequested();
-
-                string dirName = Path.GetFileName(subdirectory);
-                string destDir = Path.Combine(destinationPath, dirName);
-                CopyDirectorySync(subdirectory, destDir, operationToken);
-            }
+            return result;
         }
 
         /// <summary>
@@ -925,20 +816,25 @@ namespace ImageFolderManager.ViewModels
                 }
 
                 // Select the first imported folder if available
-                if (importedPaths.Count > 0 && _allLoadedFolders.Count > 0)
+                FolderInfo importedFolder = null;
+                if (importedPaths.Count > 0)
                 {
-                    var importedFolder = _allLoadedFolders.FirstOrDefault(f =>
-                        importedPaths.Any(path => PathService.PathsEqual(f.FolderPath, path)));
-
-                    if (importedFolder != null)
+                    var loadedFolders = GetAllLoadedFoldersSnapshot();
+                    if (loadedFolders.Count > 0)
                     {
-                        await SetSelectedFolderAsync(importedFolder);
+                        importedFolder = loadedFolders.FirstOrDefault(f =>
+                            importedPaths.Any(path => PathService.PathsEqual(f.FolderPath, path)));
+                    }
+                }
 
-                        // Select in tree view if available
-                        if (_shellTreeView != null)
-                        {
-                            _shellTreeView.SelectPath(importedFolder.FolderPath);
-                        }
+                if (importedFolder != null)
+                {
+                    await SetSelectedFolderAsync(importedFolder);
+
+                    // Select in tree view if available
+                    if (_shellTreeView != null)
+                    {
+                        _shellTreeView.SelectPath(importedFolder.FolderPath);
                     }
                 }
 
@@ -983,3 +879,7 @@ namespace ImageFolderManager.ViewModels
         }
 }
 }
+
+
+
+

@@ -18,13 +18,14 @@ using Microsoft.WindowsAPICodePack.Dialogs;
 using static ImageFolderManager.Controls.ShellTreeView;
 using System.Diagnostics;
 using System.Threading;
+using System.Windows.Threading;
 
 namespace ImageFolderManager.ViewModels
 {
     /// <summary>
     /// Refactored MainViewModel that coordinates between separate focused ViewModels
     /// </summary>
-    public partial class MainViewModel : ViewModelBase
+    public partial class MainViewModel : ViewModelBase, IShellTreeHost
     {
         #region Sub-ViewModels
 
@@ -45,8 +46,10 @@ namespace ImageFolderManager.ViewModels
         private readonly object _statusMessageLock = new object();
 
         private readonly UnifiedFolderService _unifiedFolderService;
+        private readonly IFolderOperationOrchestrator _operationOrchestrator;
         private readonly FolderTagService _tagService;
         private readonly List<FolderInfo> _allLoadedFolders;
+        private readonly object _allLoadedFoldersLock = new object();
         private readonly IDialogService _dialogService;
 
         // Operation synchronization mechanism
@@ -55,12 +58,14 @@ namespace ImageFolderManager.ViewModels
         private readonly SemaphoreSlim _importOperationSemaphore = new SemaphoreSlim(1, 1);
         private readonly object _importCtsLock = new object();
         private CancellationTokenSource _currentImportCts;
+        private readonly object _selectedFolderMetadataLock = new object();
+        private CancellationTokenSource _selectedFolderMetadataCts;
 
         // State tracking
         private volatile bool _isTreeViewInitialized = false;
         private volatile bool _isMonitoringActive = false;
 
-        private ShellTreeView _shellTreeView;
+        private IShellTreeViewAdapter _shellTreeView;
 
         private FolderInfo _selectedFolder;
 
@@ -190,10 +195,17 @@ namespace ImageFolderManager.ViewModels
 
             _tagService = new FolderTagService(categoryService);
             _allLoadedFolders = new List<FolderInfo>();
-            _unifiedFolderService = new UnifiedFolderService(_tagService, _nodeManager);
+            _unifiedFolderService = new UnifiedFolderService(
+                _tagService,
+                _nodeManager,
+                enableCommandSystem: true);
+            _operationOrchestrator = new FolderOperationOrchestrator(_unifiedFolderService);
             // Initialize sub-ViewModels with enhanced TagCloudViewModel
-            FolderOperations = new FolderOperationsViewModel(_unifiedFolderService, _dialogService);
-            Search = new SearchViewModel(_unifiedFolderService, _allLoadedFolders);
+            FolderOperations = new FolderOperationsViewModel(
+                _unifiedFolderService,
+                _operationOrchestrator,
+                _dialogService);
+            Search = new SearchViewModel(_unifiedFolderService, _allLoadedFolders, _allLoadedFoldersLock);
             ImageLoading = new ImageLoadingViewModel(_unifiedFolderService);
 
             var tagCloud = new TagCloudViewModel(categoryService);
@@ -349,6 +361,43 @@ namespace ImageFolderManager.ViewModels
 
         }
 
+        public void NotifyFolderSelected(FolderInfo folder, bool loadImages)
+        {
+            if (folder == null)
+            {
+                NotifySelectionCleared();
+                return;
+            }
+
+            SetSelectedFolderWithoutLoading(folder);
+            StatusMessage = $"Selected: {folder.Name} ({folder.FolderPath})";
+
+            if (loadImages)
+            {
+                _ = LoadImagesForSelectedFolderAsync();
+            }
+        }
+
+        public void NotifyMultiSelectionChanged(int selectedCount, string lastFolderName)
+        {
+            if (selectedCount <= 0)
+            {
+                NotifySelectionCleared();
+                return;
+            }
+
+            SetSelectedFolderWithoutLoading(null);
+            StatusMessage = string.IsNullOrWhiteSpace(lastFolderName)
+                ? $"Selected {selectedCount} folders"
+                : $"A total of {selectedCount} folders, including {lastFolderName}, are selected.";
+        }
+
+        public void NotifySelectionCleared()
+        {
+            SetSelectedFolderWithoutLoading(null);
+            StatusMessage = "No folders selected";
+        }
+
         public async Task SetSelectedFolderAsync(FolderInfo folder)
         {
             SetSelectedFolderWithoutLoading(folder);
@@ -469,39 +518,46 @@ namespace ImageFolderManager.ViewModels
 
 
         #region  Edit Command implementation methods
-        private bool CanExecuteCutCommand() => _shellTreeView?.HasSelectedItems() ?? false;
+        private bool CanExecuteCutCommand() => _shellTreeView?.HasSelectedItems() == true;
         private void ExecuteCutCommand()
         {
-            if (_shellTreeView != null)
+            var selectedFolders = GetSelectedFoldersFromTree();
+            if (selectedFolders.Count > 0)
             {
-                _shellTreeView.MultiFolderCut_Click(this, new RoutedEventArgs());
+                FolderOperations.CutFolders(selectedFolders);
+                RefreshEditCommands();
             }
         }
 
-        private bool CanExecuteCopyCommand() => _shellTreeView?.HasSelectedItems() ?? false;
+        private bool CanExecuteCopyCommand() => _shellTreeView?.HasSelectedItems() == true;
         private void ExecuteCopyCommand()
         {
-            if (_shellTreeView != null)
+            var selectedFolders = GetSelectedFoldersFromTree();
+            if (selectedFolders.Count > 0)
             {
-                _shellTreeView.MultiFolderCopy_Click(this, new RoutedEventArgs());
+                FolderOperations.CopyFolders(selectedFolders);
+                RefreshEditCommands();
             }
         }
 
-        private bool CanExecutePasteCommand() => HasClipboardContent();
+        private bool CanExecutePasteCommand() =>
+            HasClipboardContent() && GetPrimarySelectedFolderFromTree() != null;
         private void ExecutePasteCommand()
         {
-            if (_shellTreeView != null)
+            var targetFolder = GetPrimarySelectedFolderFromTree();
+            if (targetFolder != null)
             {
-                _shellTreeView.Paste_Click(this, new RoutedEventArgs());
+                _ = FolderOperations.PasteFoldersAsync(targetFolder);
             }
         }
 
-        private bool CanExecuteDeleteCommand() => _shellTreeView?.HasSelectedItems() ?? false;
+        private bool CanExecuteDeleteCommand() => _shellTreeView?.HasSelectedItems() == true;
         private void ExecuteDeleteCommand()
         {
-            if (_shellTreeView != null)
+            var selectedFolders = GetSelectedFoldersFromTree();
+            if (selectedFolders.Count > 0)
             {
-                _shellTreeView.MultiFolderDelete_Click(this, new RoutedEventArgs());
+                _ = FolderOperations.DeleteFoldersAsync(selectedFolders);
             }
         }
 
@@ -509,6 +565,23 @@ namespace ImageFolderManager.ViewModels
         #endregion
 
         #region Private Methods
+
+        private List<FolderInfo> GetSelectedFoldersFromTree()
+        {
+            if (_shellTreeView == null)
+            {
+                return new List<FolderInfo>();
+            }
+
+            return _shellTreeView.GetSelectedFolderInfos()
+                .Where(f => f != null && Directory.Exists(f.FolderPath))
+                .ToList();
+        }
+
+        private FolderInfo GetPrimarySelectedFolderFromTree()
+        {
+            return GetSelectedFoldersFromTree().FirstOrDefault();
+        }
 
         /// <summary>
         /// Sets an important status message that will be displayed for at least the specified duration
@@ -549,20 +622,13 @@ namespace ImageFolderManager.ViewModels
             {
                 // Don't set the status message here, as it would override operation messages
                 // The ShellTreeView already sets a status message when a folder is selected
-
-                Task.Run(async () =>
-                {
-                    await TagManagement.LoadFolderMetadataAsync(SelectedFolder);
-                    // Ensure UI properties are updated on the UI thread
-                    Application.Current.Dispatcher.Invoke(() =>
-                    {
-                        OnPropertyChanged(nameof(DisplayTagLine));
-                        OnPropertyChanged(nameof(TagDisplayItems));
-                    });
-                });
+                var selectedFolderSnapshot = SelectedFolder;
+                var cancellationToken = ResetSelectedFolderMetadataToken();
+                _ = LoadSelectedFolderMetadataAsync(selectedFolderSnapshot, cancellationToken);
             }
             else
             {
+                CancelSelectedFolderMetadataLoad();
                 ImageLoading.ClearImages();
 
                 // Ensure we're on the UI thread for collection modifications
@@ -573,6 +639,56 @@ namespace ImageFolderManager.ViewModels
                     OnPropertyChanged(nameof(DisplayTagLine));
                     OnPropertyChanged(nameof(TagDisplayItems));
                 });
+            }
+        }
+
+        private CancellationToken ResetSelectedFolderMetadataToken()
+        {
+            lock (_selectedFolderMetadataLock)
+            {
+                _selectedFolderMetadataCts?.Cancel();
+                _selectedFolderMetadataCts?.Dispose();
+                _selectedFolderMetadataCts = new CancellationTokenSource();
+                return _selectedFolderMetadataCts.Token;
+            }
+        }
+
+        private void CancelSelectedFolderMetadataLoad()
+        {
+            lock (_selectedFolderMetadataLock)
+            {
+                _selectedFolderMetadataCts?.Cancel();
+                _selectedFolderMetadataCts?.Dispose();
+                _selectedFolderMetadataCts = null;
+            }
+        }
+
+        private async Task LoadSelectedFolderMetadataAsync(FolderInfo selectedFolder, CancellationToken cancellationToken)
+        {
+            try
+            {
+                await TagManagement.LoadFolderMetadataAsync(selectedFolder, cancellationToken);
+
+                if (cancellationToken.IsCancellationRequested ||
+                    SelectedFolder == null ||
+                    !PathService.PathsEqual(SelectedFolder.FolderPath, selectedFolder.FolderPath))
+                {
+                    return;
+                }
+
+                await Application.Current.Dispatcher.InvokeAsync(() =>
+                {
+                    OnPropertyChanged(nameof(DisplayTagLine));
+                    OnPropertyChanged(nameof(TagDisplayItems));
+                }, DispatcherPriority.Background, cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                Debug.WriteLine($"Folder metadata load canceled for: {selectedFolder?.FolderPath}");
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Failed to load selected folder metadata: {ex.Message}");
             }
         }
 
@@ -587,7 +703,7 @@ namespace ImageFolderManager.ViewModels
         {
             // Return all indexed folder paths from the unified folder service
             return _unifiedFolderService?.IndexedFolders?.ToList() ??
-                   _allLoadedFolders.Select(f => f.FolderPath).ToList();
+                   GetAllLoadedFoldersSnapshot().Select(f => f.FolderPath).ToList();
         }
 
         private void CollapseParentDirectory()
@@ -618,8 +734,12 @@ namespace ImageFolderManager.ViewModels
         private async Task HandleTagsUpdated(TagsUpdatedEventArgs e)
         {
             // Update folder metadata in all loaded folders
-            var folder = _allLoadedFolders.FirstOrDefault(f =>
-                PathService.PathsEqual(f.FolderPath, e.Folder?.FolderPath));
+            FolderInfo folder;
+            lock (_allLoadedFoldersLock)
+            {
+                folder = _allLoadedFolders.FirstOrDefault(f =>
+                    PathService.PathsEqual(f.FolderPath, e.Folder?.FolderPath));
+            }
 
             if (folder != null)
             {
@@ -652,6 +772,14 @@ namespace ImageFolderManager.ViewModels
             if (SelectedFolder != null)
             {
                 await TagManagement.LoadFolderMetadataAsync(SelectedFolder);
+            }
+        }
+
+        internal List<FolderInfo> GetAllLoadedFoldersSnapshot()
+        {
+            lock (_allLoadedFoldersLock)
+            {
+                return _allLoadedFolders.ToList();
             }
         }
 
