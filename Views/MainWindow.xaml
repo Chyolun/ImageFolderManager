@@ -9,12 +9,59 @@
         xmlns:mah="http://metro.mahapps.com/winfx/xaml/controls"
         mc:Ignorable="d"
         Title="Image Folder Manager"
-        Height="600"
-        Width="1000"
-        GlowBrush="{DynamicResource AccentColorBrush}"
-        BorderBrush="{DynamicResource AccentColorBrush}"
+        Height="720"
+        Width="1220"
+        MinHeight="620"
+        MinWidth="980"
+        GlowBrush="{DynamicResource MahApps.Brushes.Accent}"
+        BorderBrush="{DynamicResource MahApps.Brushes.Accent}"
         WindowStartupLocation="CenterScreen"
-        Background="{DynamicResource MahApps.Brushes.Control.Background}">
+        Background="{DynamicResource App.Brush.Window}">
+
+    <mah:MetroWindow.Resources>
+        <Style x:Key="SearchResultListItemStyle" TargetType="ListBoxItem">
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+            <Setter Property="Padding" Value="2"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="{DynamicResource App.Brush.Hover}"/>
+                    <Setter Property="BorderBrush" Value="{DynamicResource App.Brush.Border}"/>
+                </Trigger>
+                <Trigger Property="IsSelected" Value="True">
+                    <Setter Property="Background" Value="{DynamicResource App.Brush.Selection}"/>
+                    <Setter Property="BorderBrush" Value="{DynamicResource App.Brush.BorderStrong}"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="ThumbnailCardStyle" TargetType="Border">
+            <Setter Property="Background" Value="{DynamicResource App.Brush.Surface1}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource App.Brush.Border}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="8"/>
+            <Setter Property="Padding" Value="8"/>
+            <Setter Property="Margin" Value="0,0,10,10"/>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="{DynamicResource App.Brush.Surface2}"/>
+                    <Setter Property="BorderBrush" Value="{DynamicResource App.Brush.BorderStrong}"/>
+                </Trigger>
+                <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                    <Setter Property="Background" Value="{DynamicResource App.Brush.Selection}"/>
+                    <Setter Property="BorderBrush" Value="{DynamicResource MahApps.Brushes.Accent}"/>
+                    <Setter Property="BorderThickness" Value="1.4"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="MutedText" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource App.Brush.TextMuted}"/>
+            <Setter Property="FontSize" Value="11"/>
+        </Style>
+    </mah:MetroWindow.Resources>
 
     <Window.InputBindings>
         <KeyBinding Key="Z" Modifiers="Control" Command="{Binding UndoCommand}" />
@@ -36,65 +83,67 @@
         </Grid.RowDefinitions>
 
         <!-- Menu Bar -->
-        <Menu Grid.Row="0" Background="{DynamicResource MahApps.Brushes.ThemeBackground}">
-            <MenuItem Header="File" Foreground="White">
+        <Menu Grid.Row="0"
+              Background="{DynamicResource App.Brush.Surface2}"
+              Foreground="{DynamicResource App.Brush.TextPrimary}">
+            <MenuItem Header="File">
                 <MenuItem Header="Import Folder" Click="ImportFolder_Click">
                     <MenuItem.Icon>
-                        <TextBlock Text="📥" FontSize="14" VerticalAlignment="Center" />
+                        <TextBlock Style="{StaticResource MenuGlyphStyle}" Text="&#xE8B7;" />
                     </MenuItem.Icon>
                 </MenuItem>
                 <Separator/>
                 <MenuItem Header="Exit" Click="Exit_Click">
                     <MenuItem.Icon>
-                        <TextBlock Text="🚪" FontSize="14" VerticalAlignment="Center" />
+                        <TextBlock Style="{StaticResource MenuGlyphStyle}" Text="&#xE8BB;" />
                     </MenuItem.Icon>
                 </MenuItem>
             </MenuItem>
-            <MenuItem Header="Settings" Foreground="White">
+            <MenuItem Header="Settings">
                 <MenuItem.Icon>
-                    <TextBlock Text="⚙️" FontSize="14" VerticalAlignment="Center" />
+                    <TextBlock Style="{StaticResource MenuGlyphStyle}" Text="&#xE713;" />
                 </MenuItem.Icon>
                 <MenuItem Header="Root Directory" Click="RootDirectory_Click">
                     <MenuItem.Icon>
-                        <TextBlock Text="📁" FontSize="14" VerticalAlignment="Center" />
+                        <TextBlock Style="{StaticResource MenuGlyphStyle}" Text="&#xE838;" />
                     </MenuItem.Icon>
                 </MenuItem>
                 <MenuItem Header="Preview Settings" Click="PreviewSize_Click">
                     <MenuItem.Icon>
-                        <TextBlock Text="🖼️" FontSize="14" VerticalAlignment="Center" />
+                        <TextBlock Style="{StaticResource MenuGlyphStyle}" Text="&#xE91B;" />
                     </MenuItem.Icon>
                 </MenuItem>
             </MenuItem>
-            <MenuItem Header="Edit" Foreground="White">
+            <MenuItem Header="Edit">
                 <MenuItem.Icon>
-                    <TextBlock Text="✏️" FontSize="14" VerticalAlignment="Center" />
+                    <TextBlock Style="{StaticResource MenuGlyphStyle}" Text="&#xE70F;" />
                 </MenuItem.Icon>
                 <MenuItem Header="Cut" 
               Command="{Binding CutCommand}" 
               InputGestureText="Ctrl+X">
                     <MenuItem.Icon>
-                        <TextBlock Text="✂️" FontSize="14" VerticalAlignment="Center" />
+                        <TextBlock Style="{StaticResource MenuGlyphStyle}" Text="&#xE8C6;" />
                     </MenuItem.Icon>
                 </MenuItem>
                 <MenuItem Header="Copy" 
               Command="{Binding CopyCommand}" 
               InputGestureText="Ctrl+C">
                     <MenuItem.Icon>
-                        <TextBlock Text="📋" FontSize="14" VerticalAlignment="Center" />
+                        <TextBlock Style="{StaticResource MenuGlyphStyle}" Text="&#xE8C8;" />
                     </MenuItem.Icon>
                 </MenuItem>
                 <MenuItem Header="Paste" 
               Command="{Binding PasteCommand}" 
               InputGestureText="Ctrl+V">
                     <MenuItem.Icon>
-                        <TextBlock Text="📌" FontSize="14" VerticalAlignment="Center" />
+                        <TextBlock Style="{StaticResource MenuGlyphStyle}" Text="&#xE77F;" />
                     </MenuItem.Icon>
                 </MenuItem>
                 <MenuItem Header="Delete" 
               Command="{Binding DeleteCommand}" 
               InputGestureText="Delete">
                     <MenuItem.Icon>
-                        <TextBlock Text="🗑️" FontSize="14" VerticalAlignment="Center" />
+                        <TextBlock Style="{StaticResource MenuGlyphStyle}" Text="&#xE74D;" />
                     </MenuItem.Icon>
                 </MenuItem>
                 <Separator/>
@@ -102,7 +151,7 @@
                           Click="Find_Click"
                           InputGestureText="Ctrl+F">
                     <MenuItem.Icon>
-                        <TextBlock Text="🔍" FontSize="14" VerticalAlignment="Center" />
+                        <TextBlock Style="{StaticResource MenuGlyphStyle}" Text="&#xE721;" />
                     </MenuItem.Icon>
                 </MenuItem>
                 <Separator/>
@@ -111,55 +160,55 @@
           IsEnabled="{Binding CanUndo}"
           InputGestureText="Ctrl+Z">
                     <MenuItem.Icon>
-                        <TextBlock Text="↩" FontSize="14" VerticalAlignment="Center" />
+                        <TextBlock Style="{StaticResource MenuGlyphStyle}" Text="&#xE7A7;" />
                     </MenuItem.Icon>
                 </MenuItem>
             </MenuItem>
 
-            <MenuItem Header="Tools" Foreground="White">
+            <MenuItem Header="Tools">
                 <MenuItem.Icon>
-                    <TextBlock Text="🔧" FontSize="14" VerticalAlignment="Center" />
+                    <TextBlock Style="{StaticResource MenuGlyphStyle}" Text="&#xE90F;" />
                 </MenuItem.Icon>
                 <MenuItem Header="Refresh Folder Tree" Click="RefreshAll_Click">
                     <MenuItem.Icon>
-                        <TextBlock Text="🔄" FontSize="14" VerticalAlignment="Center" />
+                        <TextBlock Style="{StaticResource MenuGlyphStyle}" Text="&#xE72C;" />
                     </MenuItem.Icon>
                 </MenuItem>
                 <MenuItem Header="Tags Cloud" Click="TagsCloud_Click" >
                     <MenuItem.Icon>
-                        <TextBlock Text="🏷" FontSize="14" VerticalAlignment="Center" />
+                        <TextBlock Style="{StaticResource MenuGlyphStyle}" Text="&#xE8EC;" />
                     </MenuItem.Icon>
                 </MenuItem>
                 <MenuItem Header="Find Duplicate Folders" Click="FindDuplicateFolders_Click">
                     <MenuItem.Icon>
-                        <TextBlock Text="👥" FontSize="14" VerticalAlignment="Center" />
+                        <TextBlock Style="{StaticResource MenuGlyphStyle}" Text="&#xE716;" />
                     </MenuItem.Icon>
                 </MenuItem>
                 <MenuItem Header="Compression" Click="Compression_Click">
                     <MenuItem.Icon>
-                        <TextBlock Text="🗜️" FontSize="14" VerticalAlignment="Center" />
+                        <TextBlock Style="{StaticResource MenuGlyphStyle}" Text="&#xE7B8;" />
                     </MenuItem.Icon>
                 </MenuItem>
                 <MenuItem Header="Collapse Parent Directory" Click="CollapseParentDirectory_Click" >
                     <MenuItem.Icon>
-                        <TextBlock Text="↑" FontSize="14" VerticalAlignment="Center" />
+                        <TextBlock Style="{StaticResource MenuGlyphStyle}" Text="&#xE70D;" />
                     </MenuItem.Icon>
                 </MenuItem>
                
             </MenuItem>
 
-            <MenuItem Header="Help" Foreground="White">
+            <MenuItem Header="Help">
                 <MenuItem.Icon>
-                    <TextBlock Text="❓" FontSize="14" VerticalAlignment="Center" />
+                    <TextBlock Style="{StaticResource MenuGlyphStyle}" Text="&#xE897;" />
                 </MenuItem.Icon>
                 <MenuItem Header="User Guide" Click="UserGuide_Click" >
                     <MenuItem.Icon>
-                        <TextBlock Text="📖" FontSize="14" VerticalAlignment="Center" />
+                        <TextBlock Style="{StaticResource MenuGlyphStyle}" Text="&#xE8A5;" />
                     </MenuItem.Icon>
                 </MenuItem>
                 <MenuItem Header="About" Click="About_Click">
                     <MenuItem.Icon>
-                        <TextBlock Text="ℹ️" FontSize="14" VerticalAlignment="Center" />
+                        <TextBlock Style="{StaticResource MenuGlyphStyle}" Text="&#xE946;" />
                     </MenuItem.Icon>
                 </MenuItem>
             </MenuItem>
@@ -167,14 +216,14 @@
         <Border x:Name="FindBar"
                 Grid.Row="1"
                 Visibility="Collapsed"
-                Background="#2D2D30"
-                BorderBrush="#3F3F46"
+                Background="{DynamicResource App.Brush.Surface2}"
+                BorderBrush="{DynamicResource App.Brush.Border}"
                 BorderThickness="0,0,0,1"
-                Padding="6,4">
+                Padding="8,6">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="180"/>
+                    <ColumnDefinition Width="220"/>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
@@ -182,98 +231,76 @@
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
 
-                <!-- 🔍 label -->
                 <TextBlock Grid.Column="0"
-                           Text="🔍"
-                           FontSize="13"
-                           VerticalAlignment="Center"
-                           Margin="2,0,6,0"
-                           Foreground="#CCCCCC"/>
+                           Style="{StaticResource MenuGlyphStyle}"
+                           Text="&#xE721;"
+                           Margin="2,0,8,0"/>
 
-                <!-- Search TextBox -->
-                <TextBox  Grid.Column="1"
-                          x:Name="FindTextBox"
-                          Background="#3C3C3C"
-                          Foreground="White"
-                          CaretBrush="White"
-                          BorderBrush="#555555"
-                          BorderThickness="1"
-                          Padding="4,2"
-                          FontSize="13"
-                          VerticalContentAlignment="Center"
-                          TextChanged="FindTextBox_TextChanged"
-                          KeyDown="FindTextBox_KeyDown"/>
+                <TextBox Grid.Column="1"
+                         x:Name="FindTextBox"
+                         Style="{StaticResource AppTextBoxStyle}"
+                         TextChanged="FindTextBox_TextChanged"
+                         KeyDown="FindTextBox_KeyDown"/>
 
-                <!-- ← Prev -->
-                <Button   Grid.Column="2"
-                          x:Name="FindPrevButton"
-                          Content="←"
-                          Width="28" Height="24"
-                          Margin="4,0,2,0"
-                          FontSize="14"
-                          ToolTip="Previous match (Shift+Enter)"
-                          Click="FindPrev_Click"
-                          Background="#3C3C3C"
-                          Foreground="White"
-                          BorderBrush="#555555"
-                          BorderThickness="1"/>
+                <Button Grid.Column="2"
+                        x:Name="FindPrevButton"
+                        Content="&#xE76B;"
+                        FontFamily="Segoe MDL2 Assets"
+                        FontSize="13"
+                        Margin="6,0,2,0"
+                        ToolTip="Previous match (Shift+Enter)"
+                        Click="FindPrev_Click"
+                        Style="{StaticResource CompactIconButton}"/>
 
-                <!-- → Next -->
-                <Button   Grid.Column="3"
-                          x:Name="FindNextButton"
-                          Content="→"
-                          Width="28" Height="24"
-                          Margin="2,0,4,0"
-                          FontSize="14"
-                          ToolTip="Next match (Enter)"
-                          Click="FindNext_Click"
-                          Background="#3C3C3C"
-                          Foreground="White"
-                          BorderBrush="#555555"
-                          BorderThickness="1"/>
+                <Button Grid.Column="3"
+                        x:Name="FindNextButton"
+                        Content="&#xE76C;"
+                        FontFamily="Segoe MDL2 Assets"
+                        FontSize="13"
+                        Margin="2,0,6,0"
+                        ToolTip="Next match (Enter)"
+                        Click="FindNext_Click"
+                        Style="{StaticResource CompactIconButton}"/>
 
-                <!-- Match counter "2 / 15" -->
                 <TextBlock Grid.Column="4"
                            x:Name="FindMatchLabel"
-                           Foreground="#AAAAAA"
+                           Foreground="{DynamicResource App.Brush.TextSecondary}"
                            FontSize="12"
                            VerticalAlignment="Center"
                            Margin="4,0,0,0"
                            Text=""/>
 
-                <!-- No-match hint -->
                 <TextBlock Grid.Column="5"
                            x:Name="FindNoMatchLabel"
-                           Foreground="#E05555"
+                           Foreground="{StaticResource StatusErrorBrush}"
                            FontSize="12"
                            VerticalAlignment="Center"
                            Margin="8,0,0,0"
                            Text=""
                            Visibility="Collapsed"/>
 
-                <!-- ✕ Close -->
-                <Button   Grid.Column="6"
-                          Content="✕"
-                          Width="22" Height="22"
-                          Margin="6,0,2,0"
-                          FontSize="11"
-                          ToolTip="Close (Escape)"
-                          Click="FindClose_Click"
-                          Background="Transparent"
-                          Foreground="#AAAAAA"
-                          BorderThickness="0"/>
+                <Button Grid.Column="6"
+                        Content="&#xE711;"
+                        FontFamily="Segoe MDL2 Assets"
+                        FontSize="11"
+                        Width="24"
+                        Height="24"
+                        Margin="8,0,0,0"
+                        ToolTip="Close (Escape)"
+                        Click="FindClose_Click"
+                        Style="{StaticResource CompactIconButton}"/>
             </Grid>
         </Border>
 
         <Grid Grid.Row="2">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="250"/>
-                <ColumnDefinition Width="3"/>
+                <ColumnDefinition Width="300"/>
+                <ColumnDefinition Width="6"/>
                 <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>
 
             <!-- Left Panel -->
-            <Grid Grid.Column="0" Margin="5">
+            <Grid Grid.Column="0" Margin="0">
                 <Grid.RowDefinitions>
                     <!-- ShellTreeView with star sizing and minimum height -->
                     <RowDefinition Height="*" MinHeight="100" />
@@ -284,50 +311,46 @@
                 </Grid.RowDefinitions>
 
                 <!-- ShellTreeView -->
-                <controls:ShellTreeView Grid.Row="0" x:Name="ShellTreeViewControl" 
-                        FolderSelected="OnFolderSelected"
-                        DataContext="{Binding}" />
+                <Border Grid.Row="0" Style="{StaticResource SectionCard}" Padding="8">
+                    <controls:ShellTreeView x:Name="ShellTreeViewControl" 
+                            FolderSelected="OnFolderSelected"
+                            DataContext="{Binding}" />
+                </Border>
 
                 <!-- Vertical Splitter - user can adjust relative heights -->
                 <GridSplitter Grid.Row="1"
-                  Height="5"
+                  Height="6"
                   HorizontalAlignment="Stretch"
                   VerticalAlignment="Center"
-                  Background="Gray"
+                  Background="{DynamicResource App.Brush.Border}"
                   ShowsPreview="True" />
 
-                <!-- Search Results Section (contains both title and list) -->
-                <Grid Grid.Row="2">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="25" />
-                        <!-- Fixed height for title -->
-                        <RowDefinition Height="*" />
-                        <!-- Remaining space for the list -->
-                    </Grid.RowDefinitions>
+                <!-- Search Results Section -->
+                <Border Grid.Row="2" Style="{StaticResource SectionCard}" Padding="8">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
 
-                    <!-- Search Results Header - always stays with the list -->
-                    <TextBlock Grid.Row="0" 
-                  Text="Search Results" 
-                  FontSize="13" 
-                  Foreground="LightGreen" 
-                  FontWeight="Bold" 
-                  Margin="5,2,5,0"/>
+                        <TextBlock Grid.Row="0"
+                                   Text="Search Results"
+                                   Style="{StaticResource SectionTitleText}"
+                                   Margin="0,0,0,8"/>
 
-                    <!-- Search Results List -->
-                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
-                        <ListBox ItemsSource="{Binding SearchResultFolders}"
-               
-                   ContextMenuOpening="SearchResultListBox_ContextMenuOpening"
-                   SelectionChanged="SearchResults_SelectionChanged"
-                   MouseDoubleClick="SearchResults_MouseDoubleClick"
-                   Background="Transparent"
-                   BorderThickness="0">
+                        <ListBox Grid.Row="1"
+                                 ItemsSource="{Binding SearchResultFolders}"
+                                 ContextMenuOpening="SearchResultListBox_ContextMenuOpening"
+                                 SelectionChanged="SearchResults_SelectionChanged"
+                                 MouseDoubleClick="SearchResults_MouseDoubleClick"
+                                 Background="Transparent"
+                                 BorderThickness="0"
+                                 ItemContainerStyle="{StaticResource SearchResultListItemStyle}">
                             <ListBox.ItemTemplate>
                                 <DataTemplate>
-                                    <Border Background="Transparent" 
-                                Padding="5" 
-                                Margin="0,2" 
-                                CornerRadius="4">
+                                    <Border Background="Transparent"
+                                            Padding="8"
+                                            CornerRadius="6">
                                         <Grid>
                                             <Grid.RowDefinitions>
                                                 <RowDefinition Height="Auto"/>
@@ -335,134 +358,147 @@
                                                 <RowDefinition Height="Auto"/>
                                             </Grid.RowDefinitions>
 
-                                            <!-- Folder Name -->
-                                            <TextBlock Grid.Row="0" 
-                                          Text="{Binding Name}" 
-                                          Foreground="White" 
-                                          FontWeight="SemiBold"/>
+                                            <TextBlock Grid.Row="0"
+                                                       Text="{Binding Name}"
+                                                       Foreground="{DynamicResource App.Brush.TextPrimary}"
+                                                       FontWeight="SemiBold"/>
 
-                                            <!-- Folder Path -->
-                                            <TextBlock Grid.Row="1" 
-                                          Text="{Binding FolderPath}" 
-                                          Foreground="Gray" 
-                                          FontSize="10" 
-                                          TextTrimming="CharacterEllipsis"/>
+                                            <TextBlock Grid.Row="1"
+                                                       Text="{Binding FolderPath}"
+                                                       Foreground="{DynamicResource App.Brush.TextMuted}"
+                                                       FontSize="10"
+                                                       Margin="0,2,0,0"
+                                                       TextTrimming="CharacterEllipsis"/>
 
-                                            <!-- Rating and Tags on the same line -->
-                                            <StackPanel Grid.Row="2" 
-                                           Orientation="Horizontal" 
-                                           Margin="0,3,0,0">
-
-                                                <!-- Rating Stars -->
+                                            <StackPanel Grid.Row="2"
+                                                        Orientation="Horizontal"
+                                                        Margin="0,5,0,0">
                                                 <TextBlock Text="{Binding Rating, Converter={StaticResource RatingToStarsDisplayConverter}}"
-                                             Foreground="Gold"
-                                             FontSize="14"
-                                             VerticalAlignment="Center"
-                                             Margin="0,0,8,0"/>
+                                                           Foreground="{StaticResource StatusWarningBrush}"
+                                                           FontSize="13"
+                                                           Margin="0,0,8,0"/>
 
-                                                <!-- Tags with "No tags" fallback -->
-                                                <TextBlock Text="{Binding Tags, Converter={StaticResource TagsToStringConverter}}" 
-                                             Foreground="LightGreen" 
-                                             FontSize="11" 
-                                             VerticalAlignment="Center"
-                                             TextTrimming="CharacterEllipsis"/>
+                                                <TextBlock Text="{Binding Tags, Converter={StaticResource TagsToStringConverter}}"
+                                                           Foreground="{StaticResource StatusSuccessBrush}"
+                                                           FontSize="11"
+                                                           TextTrimming="CharacterEllipsis"/>
                                             </StackPanel>
                                         </Grid>
                                     </Border>
                                 </DataTemplate>
                             </ListBox.ItemTemplate>
-
-                            <ListBox.ItemContainerStyle>
-                                <Style TargetType="ListBoxItem">
-                                    <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
-                                    <Setter Property="Padding" Value="1"/>
-                                    <Setter Property="Background" Value="Transparent"/>
-                                    <Style.Triggers>
-                                        <Trigger Property="IsSelected" Value="True">
-                                            <Setter Property="Background" Value="#3F3F3F"/>
-                                            <Setter Property="BorderBrush" Value="#1E90FF"/>
-                                            <Setter Property="BorderThickness" Value="1"/>
-                                        </Trigger>
-                                        <Trigger Property="IsMouseOver" Value="True">
-                                            <Setter Property="Background" Value="#2A2A2A"/>
-                                        </Trigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </ListBox.ItemContainerStyle>
                         </ListBox>
-                    </ScrollViewer>
-                </Grid>
+                    </Grid>
+                </Border>
             </Grid>
 
             <!-- Vertical Splitter -->
             <GridSplitter Grid.Column="1"
-                      Width="5"
+                      Width="6"
                       HorizontalAlignment="Center"
                       VerticalAlignment="Stretch"
-                      Background="Gray"
+                      Background="{DynamicResource App.Brush.Border}"
                       ShowsPreview="True" />
 
             <!-- Right Panel -->
-            <Grid Grid.Column="2" Margin="10">
+            <Grid Grid.Column="2" Margin="8,0,0,0">
                 <Grid.RowDefinitions>
-                    <RowDefinition Height="35"/>
-                    <!-- Search bar -->
-                    <RowDefinition Height="*"/>
-                    <!-- Image area -->
                     <RowDefinition Height="Auto"/>
-                    <!-- Tag & rating area -->
-                    <RowDefinition Height="30"/>
-                    <!-- message -->
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
 
                 <!-- Search bar -->
-                <StackPanel Orientation="Horizontal" Grid.Column="0" Margin="0,0,0,0">
-                    <TextBox Width="500" Margin="5,0,0,5" Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
-                               Background="Black"
-                               Foreground="White">
-                        <TextBox.InputBindings>
-                            <KeyBinding Key="Enter"
-                        Command="{Binding SearchCommand}" />
-                        </TextBox.InputBindings>
-                    </TextBox>
-                    <Button Content="Search" Width="50" Margin="5,0,0,5"
-                           Command="{Binding SearchCommand}" />
-                </StackPanel>
+                <Border Grid.Row="0" Style="{StaticResource SectionCard}" Padding="10" Margin="0,0,0,8">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <TextBlock Grid.Column="0"
+                                   Style="{StaticResource MenuGlyphStyle}"
+                                   Text="&#xE721;"
+                                   Margin="0,0,8,0"/>
+
+                        <TextBox Grid.Column="1"
+                                 Style="{StaticResource AppTextBoxStyle}"
+                                 Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}">
+                            <TextBox.InputBindings>
+                                <KeyBinding Key="Enter" Command="{Binding SearchCommand}" />
+                            </TextBox.InputBindings>
+                        </TextBox>
+
+                        <Button Grid.Column="2"
+                                Content="Search"
+                                Margin="8,0,0,0"
+                                Style="{StaticResource PrimaryButton}"
+                                Command="{Binding SearchCommand}" />
+                    </Grid>
+                </Border>
 
                 <!-- Image preview -->
-                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
-                    <ItemsControl ItemsSource="{Binding Images}">
-                        <ItemsControl.ItemsPanel>
-                            <ItemsPanelTemplate>
-                                <WrapPanel />
-                            </ItemsPanelTemplate>
-                        </ItemsControl.ItemsPanel>
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <StackPanel Margin="5">
-                                    <Image Source="{Binding Thumbnail}"
-                                       Width="{Binding DataContext.PreviewWidth, RelativeSource={RelativeSource AncestorType=Window}}"
-                                       Height="{Binding DataContext.PreviewHeight, RelativeSource={RelativeSource AncestorType=Window}}"
-                                       Stretch="Uniform"
-                                       VerticalAlignment="Center"
-                                       HorizontalAlignment="Center"
-                                       Tag="{Binding FilePath}" 
-                                       MouseLeftButtonDown="Image_MouseLeftButtonDown" />
-                                    <TextBlock Text="{Binding FileName}"
-                                       Width="{Binding DataContext.PreviewWidth, RelativeSource={RelativeSource AncestorType=Window}}"
-                                       FontSize="10"
-                                       Foreground="White"
-                                       TextAlignment="Center"
-                                       Margin="0,5,0,0"/>
-                                </StackPanel>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                </ScrollViewer>
+                <Border Grid.Row="1" Style="{StaticResource SectionCard}" Padding="10" Margin="0,0,0,8">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+
+                        <DockPanel Grid.Row="0" Margin="0,0,0,8">
+                            <TextBlock Text="Image Preview" Style="{StaticResource SectionTitleText}"/>
+                            <TextBlock Text="Click once to select, double-click to open viewer"
+                                       Style="{StaticResource MutedText}"
+                                       Margin="12,2,0,0"/>
+                        </DockPanel>
+
+                        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                            <ItemsControl ItemsSource="{Binding Images}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <WrapPanel />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Style="{StaticResource ThumbnailCardStyle}">
+                                            <StackPanel>
+                                                <Border Background="{DynamicResource App.Brush.Surface3}"
+                                                        CornerRadius="6"
+                                                        BorderBrush="{DynamicResource App.Brush.Border}"
+                                                        BorderThickness="1"
+                                                        Padding="4">
+                                                    <Image Source="{Binding Thumbnail}"
+                                                           Width="{Binding DataContext.PreviewWidth, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                           Height="{Binding DataContext.PreviewHeight, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                           Stretch="Uniform"
+                                                           VerticalAlignment="Center"
+                                                           HorizontalAlignment="Center"
+                                                           Tag="{Binding FilePath}"
+                                                           MouseLeftButtonDown="Image_MouseLeftButtonDown" />
+                                                </Border>
+                                                <TextBlock Text="{Binding FileName}"
+                                                           Width="{Binding DataContext.PreviewWidth, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                           FontSize="10"
+                                                           Foreground="{DynamicResource App.Brush.TextSecondary}"
+                                                           TextAlignment="Center"
+                                                           TextTrimming="CharacterEllipsis"
+                                                           Margin="0,6,0,0"/>
+                                            </StackPanel>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                    </Grid>
+                </Border>
 
                 <!-- Tag + Rating area -->
-                <GroupBox Header="Folder Info" Grid.Row="2" Margin="0,10,0,0" Foreground="White">
+                <Border Grid.Row="2" Style="{StaticResource SectionCard}" Padding="12" Margin="0,0,0,8">
                     <StackPanel>
+                        <TextBlock Text="Folder Info" Style="{StaticResource SectionTitleText}" Margin="0,0,0,8"/>
                         <!-- Current Folder Path -->
                         <TextBox Text="{Binding SelectedFolder.FolderPath, Mode=OneWay}"
                              IsReadOnly="True"
@@ -470,16 +506,16 @@
                              Background="Transparent"
                              BorderThickness="0"
                              Padding="0"
-                             Foreground="LightGray"
+                             Foreground="{DynamicResource App.Brush.TextSecondary}"
                              FontSize="13"
                              TextWrapping="Wrap"
                              Cursor="IBeam"
                              Margin="0,0,0,10"
-                             ToolTip="Click to select · Ctrl+A to select all · Ctrl+C to copy"/>
+                             ToolTip="Click to select. Ctrl+A select all. Ctrl+C copy."/>
 
                         <!-- Rating -->
-                        <StackPanel Orientation="Horizontal" Margin="0,0,0,0">
-                            <TextBlock Text="Rating:" VerticalAlignment="Center" Foreground="White" Margin="0,0,10,0"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                            <TextBlock Text="Rating:" VerticalAlignment="Center" Foreground="{DynamicResource App.Brush.TextPrimary}" Margin="0,0,10,0"/>
                             <ItemsControl ItemsSource="{Binding Stars}">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
@@ -487,7 +523,7 @@
                                     Command="{Binding DataContext.SetRatingCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                     CommandParameter="{Binding Value}"
                                     FontSize="20"
-                                    Foreground="Gold"
+                                    Foreground="{StaticResource StatusWarningBrush}"
                                     Background="Transparent"
                                     BorderThickness="0"
                                     Padding="0" />
@@ -501,11 +537,8 @@
                             </ItemsControl>
                         </StackPanel>
 
-                        <!-- Space -->
-                        <Border Height="10"/>
-
                         <!-- Saved Tags display -->
-                        <Grid>
+                        <Grid Margin="0,0,0,8">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="Auto"/>
@@ -534,11 +567,13 @@
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
                                         <Border Margin="0,0,5,5" 
-                                            Background="#2A2A2A" 
+                                            Background="{DynamicResource App.Brush.TagChip}"
+                                            BorderBrush="{DynamicResource App.Brush.TagChipBorder}"
+                                            BorderThickness="1"
                                             CornerRadius="4" 
                                             Padding="5,2">
                                             <TextBlock Text="{Binding DisplayText}" 
-                                               Foreground="LightGreen" 
+                                               Foreground="{StaticResource StatusSuccessBrush}" 
                                                FontWeight="SemiBold"
                                                ToolTip="{Binding TooltipText}" />
                                         </Border>
@@ -549,7 +584,7 @@
                             <!-- Fallback message when no tags -->
                             <TextBlock Grid.Column="0" 
                                    Text="No tags" 
-                                   Foreground="Gray">
+                                   Foreground="{DynamicResource App.Brush.TextMuted}">
                                 <TextBlock.Style>
                                     <Style TargetType="TextBlock">
                                         <Setter Property="Visibility" Value="Collapsed"/>
@@ -566,33 +601,28 @@
                                Grid.Column="1"
                                MinWidth="80"
                                Height="24"
-                               Margin="5,0,0,10"
+                               Margin="8,0,0,0"
+                               VerticalAlignment="Top"
                                HorizontalAlignment="Right"
+                               Style="{StaticResource SecondaryButton}"
                                Command="{Binding EditTagsCommand}"/>
                         </Grid>
                         <!-- Tags input -->
                         <StackPanel>
                             <TextBlock Text="Tags (use # to separate, Category::TagName for categories):" 
-                               Foreground="White" 
+                               Foreground="{DynamicResource App.Brush.TextSecondary}" 
                                Margin="0,5,0,5"/>   
                             <Grid>
                                 <TextBox Text="{Binding TagInputText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" 
-                                    Name="TagsTextBox">
+                                    Name="TagsTextBox"
+                                    Style="{StaticResource AppTextBoxStyle}">
                                     <TextBox.ToolTip>
                                         <ToolTip>
                                             <StackPanel>
                                                 <TextBlock Text="Tag Format Examples:" FontWeight="Bold"/>
-                                                <TextBlock Text="• Simple tags: #nature #sunset #beach"/>
-                                                <TextBlock Text="• Tags with categories: #Landscape::mountain #Season::winter"/>
-                                                <TextBlock Text="• Tags with spaces: #photon book #digital art"/>
-                                                <TextBlock Text="• Mixed format: #clothing::glasses # photon book #IP"/>
-                                                <TextBlock Text="• Spaces around # are ignored: # nature #  sunset  #beach"/>
-                                                <TextBlock Text=""/>
-                                                <TextBlock Text="Rules:" FontWeight="Bold"/>
-                                                <TextBlock Text="• Use # as the only separator between tags"/>
-                                                <TextBlock Text="• Spaces before and after # are ignored"/>
-                                                <TextBlock Text="• Tag names can contain spaces"/>
-                                                <TextBlock Text="• Use Category::TagName for categorized tags"/>
+                                                <TextBlock Text="- Simple tags: #nature #sunset #beach"/>
+                                                <TextBlock Text="- Categories: #Landscape::mountain #Season::winter"/>
+                                                <TextBlock Text="- Spaces in tag names are allowed"/>
                                             </StackPanel>
                                         </ToolTip>
                                     </TextBox.ToolTip>
@@ -601,7 +631,7 @@
                                    VerticalAlignment="Center"
                                    HorizontalAlignment="Left"
                                    Margin="10,0,0,0"
-                                   Foreground="Gray"
+                                   Foreground="{DynamicResource App.Brush.TextMuted}"
                                    IsHitTestVisible="False">
                                     <TextBlock.Style>
                                         <Style TargetType="TextBlock">
@@ -618,36 +648,39 @@
                         </StackPanel>
                         <!-- Save button -->
                         <Button Content="Update" Width="150" Margin="0,10,0,0"
+                                     Style="{StaticResource PrimaryButton}"
                                      Command="{Binding SaveTagsCommand}"/>
                     </StackPanel>
-                </GroupBox>
-                
-                
-                <StackPanel Grid.Row="3" Margin="10,5,20,3">
-                    <TextBlock Text="{Binding StatusMessage}" 
-                       Foreground="LightGray" 
-                       TextWrapping="Wrap"
-                       Margin="5"/>
-                    <!-- Real-time indexing status -->
-                    <Border Background="Green" 
-                            CornerRadius="3" 
-                            Padding="5,2" 
-                            Margin="10,0"
-                            Visibility="{Binding IsRealTimeIndexingActive, Converter={StaticResource BooleanToVisibilityConverter}}">
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="●" Foreground="White" FontSize="8" VerticalAlignment="Center" Margin="0,0,3,0"/>
-                            <TextBlock Text="Real-time" Foreground="White" FontSize="10"/>
-                        </StackPanel>   
-                    </Border>       
+                </Border>
+                <Border Grid.Row="3" Style="{StaticResource SectionCard}" Padding="10">
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding StatusMessage}" 
+                                   Foreground="{DynamicResource App.Brush.TextSecondary}" 
+                                   TextWrapping="Wrap"
+                                   Margin="0,0,12,0"
+                                   VerticalAlignment="Center"/>
 
-                    <!-- Indexed folder count -->
-                    <TextBlock Text="{Binding IndexedFolderCount, StringFormat='{}{0} folders indexed'}" 
-                           Foreground="#888888" 
-                           FontSize="10"
-                           VerticalAlignment="Center"
-                           Margin="5,0"/>   
+                        <Border Style="{StaticResource StatusChipBorder}"
+                                Margin="0,0,12,0"
+                                Visibility="{Binding IsRealTimeIndexingActive, Converter={StaticResource BooleanToVisibilityConverter}}">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="&#xE768;"
+                                           FontFamily="Segoe MDL2 Assets"
+                                           Foreground="{StaticResource StatusSuccessBrush}"
+                                           FontSize="10"
+                                           Margin="0,0,4,0"/>
+                                <TextBlock Text="Real-time"
+                                           Foreground="{DynamicResource App.Brush.TextPrimary}"
+                                           FontSize="10"/>
+                            </StackPanel>
+                        </Border>
 
-                </StackPanel>
+                        <TextBlock Text="{Binding IndexedFolderCount, StringFormat='{}{0} folders indexed'}" 
+                                   Foreground="{DynamicResource App.Brush.TextMuted}" 
+                                   FontSize="10"
+                                   VerticalAlignment="Center"/>   
+                    </StackPanel>
+                </Border>
             </Grid>
         </Grid>
     </Grid>

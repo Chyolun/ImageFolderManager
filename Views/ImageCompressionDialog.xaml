@@ -11,7 +11,7 @@
     ShowMinButton="False"
     ShowMaxRestoreButton="False"
     TitleCharacterCasing="Normal"
-    Background="{DynamicResource MahApps.Brushes.Control.Background}">
+    Background="{DynamicResource App.Brush.Window}">
 
     <Grid Margin="20,14,20,14">
         <Grid.RowDefinitions>
@@ -29,10 +29,10 @@
 
         <!-- Folder name -->
         <StackPanel Grid.Row="0" Orientation="Horizontal">
-            <TextBlock Text="&#x1F4C1;" FontSize="15" VerticalAlignment="Center" Margin="0,0,7,0"/>
+            <TextBlock Text="&#xE8B7;" FontFamily="Segoe MDL2 Assets" FontSize="14" VerticalAlignment="Center" Margin="0,0,7,0" Foreground="{StaticResource StatusInfoBrush}"/>
             <TextBlock x:Name="FolderNameText"
                        Text="Selected Folder"
-                       Foreground="{DynamicResource MahApps.Brushes.ThemeForeground}"
+                       Foreground="{DynamicResource App.Brush.TextPrimary}"
                        FontSize="13" FontWeight="SemiBold"
                        VerticalAlignment="Center"
                        TextTrimming="CharacterEllipsis"
@@ -47,7 +47,7 @@
             </Grid.ColumnDefinitions>
             <StackPanel Grid.Column="0">
                 <TextBlock Text="Compression Quality"
-                           Foreground="{DynamicResource MahApps.Brushes.ThemeForeground}"
+                           Foreground="{DynamicResource App.Brush.TextPrimary}"
                            FontSize="12" Margin="0,0,0,5"/>
                 <Slider x:Name="QualitySlider"
                         Minimum="1" Maximum="100" Value="80"
@@ -55,7 +55,7 @@
                         SmallChange="1" LargeChange="10"
                         ValueChanged="QualitySlider_ValueChanged"/>
                 <TextBlock Text="1 = smallest file,   100 = best quality"
-                           Foreground="{DynamicResource MahApps.Brushes.Gray3}"
+                           Foreground="{DynamicResource App.Brush.TextMuted}"
                            FontSize="10" Margin="0,3,0,0"/>
             </StackPanel>
             <Border Grid.Column="1"
@@ -63,15 +63,15 @@
                     CornerRadius="4" Margin="8,0,0,14"
                     VerticalAlignment="Center" Padding="4,2">
                 <TextBlock x:Name="QualityValueText" Text="80"
-                           Foreground="White" FontSize="15" FontWeight="Bold"
+                           Foreground="{DynamicResource App.Brush.TextPrimary}" FontSize="15" FontWeight="Bold"
                            HorizontalAlignment="Center"/>
             </Border>
         </Grid>
 
         <!-- Size preview panel -->
         <Border Grid.Row="4"
-                Background="{DynamicResource MahApps.Brushes.ThemeBackground}"
-                BorderBrush="{DynamicResource MahApps.Brushes.Gray7}"
+                Background="{DynamicResource App.Brush.Surface1}"
+                BorderBrush="{DynamicResource App.Brush.Border}"
                 BorderThickness="1" CornerRadius="4" Padding="12,10">
             <Grid>
                 <Grid.RowDefinitions>
@@ -86,7 +86,7 @@
 
                 <TextBlock Grid.Row="0"
                            Text="Estimated Size Change"
-                           Foreground="{DynamicResource MahApps.Brushes.ThemeForeground}"
+                           Foreground="{DynamicResource App.Brush.TextPrimary}"
                            FontSize="12" FontWeight="SemiBold"/>
 
                 <!-- Before / After -->
@@ -98,23 +98,23 @@
                     </Grid.ColumnDefinitions>
                     <StackPanel Grid.Column="0" HorizontalAlignment="Center">
                         <TextBlock Text="Before"
-                                   Foreground="{DynamicResource MahApps.Brushes.Gray3}"
+                                   Foreground="{DynamicResource App.Brush.TextMuted}"
                                    FontSize="11" HorizontalAlignment="Center"/>
                         <TextBlock x:Name="BeforeSizeText" Text="—"
-                                   Foreground="{DynamicResource MahApps.Brushes.ThemeForeground}"
+                                   Foreground="{DynamicResource App.Brush.TextPrimary}"
                                    FontSize="16" FontWeight="SemiBold"
                                    HorizontalAlignment="Center"/>
                     </StackPanel>
                     <TextBlock Grid.Column="1" Text="&#x2192;"
-                               Foreground="{DynamicResource MahApps.Brushes.Gray3}"
+                               Foreground="{DynamicResource App.Brush.TextMuted}"
                                FontSize="18" VerticalAlignment="Center"
                                Margin="10,4,10,0"/>
                     <StackPanel Grid.Column="2" HorizontalAlignment="Center">
                         <TextBlock Text="After (estimated)"
-                                   Foreground="{DynamicResource MahApps.Brushes.Gray3}"
+                                   Foreground="{DynamicResource App.Brush.TextMuted}"
                                    FontSize="11" HorizontalAlignment="Center"/>
                         <TextBlock x:Name="AfterSizeText" Text="—"
-                                   Foreground="#FF4FC3F7"
+                                   Foreground="{StaticResource StatusInfoBrush}"
                                    FontSize="16" FontWeight="SemiBold"
                                    HorizontalAlignment="Center"/>
                     </StackPanel>
@@ -127,14 +127,14 @@
 
                 <!-- Saved label -->
                 <TextBlock x:Name="SavedText" Grid.Row="4"
-                           Text="" Foreground="#FF81C784"
+                           Text="" Foreground="{StaticResource StatusSuccessBrush}"
                            FontSize="12" FontWeight="SemiBold"
                            HorizontalAlignment="Center" Visibility="Collapsed"/>
 
                 <!-- Note -->
                 <TextBlock x:Name="EstimateNote" Grid.Row="6"
                            Text="Calculating estimate..."
-                           Foreground="{DynamicResource MahApps.Brushes.Gray3}"
+                           Foreground="{DynamicResource App.Brush.TextMuted}"
                            FontSize="10" HorizontalAlignment="Center"/>
             </Grid>
         </Border>
@@ -143,7 +143,7 @@
         <CheckBox x:Name="DeleteSourceCheckBox"
                   Grid.Row="6"
                   Content="Delete source files after compression"
-                  Foreground="{DynamicResource MahApps.Brushes.ThemeForeground}"
+                  Foreground="{DynamicResource App.Brush.TextPrimary}"
                   FontSize="13" IsChecked="False"
                   Checked="DeleteSourceCheckBox_CheckedChanged"
                   Unchecked="DeleteSourceCheckBox_CheckedChanged"/>
@@ -152,17 +152,17 @@
         <TextBlock x:Name="DeleteWarningText"
                    Grid.Row="7"
                    Text="Original images will be permanently deleted. This cannot be undone."
-                   Foreground="#FFFFB74D"
+                   Foreground="{StaticResource StatusWarningBrush}"
                    FontSize="11" TextWrapping="Wrap"
                    Margin="0,4,0,0" Visibility="Collapsed"/>
 
         <!-- Buttons -->
-        <StackPanel Grid.Row="9" Orientation="Horizontal" HorizontalAlignment="Right">
+        <StackPanel Grid.Row="9" Style="{StaticResource DialogFooterPanel}">
             <Button x:Name="CancelButton"
                     Content="Cancel"
                     Style="{StaticResource SecondaryButton}"
                     Width="80" IsCancel="True"
-                    Margin="0,0,10,0"
+                    Margin="{StaticResource DialogButtonSpacing}"
                     Click="CancelButton_Click"/>
             <Button x:Name="CompressButton"
                     Content="Compress"

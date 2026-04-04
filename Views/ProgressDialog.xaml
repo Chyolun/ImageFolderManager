@@ -24,7 +24,7 @@
                    Text="Operation in progress..." 
                    TextWrapping="Wrap" 
                    Margin="0,0,0,15" 
-                   Foreground="White"/>
+                   Foreground="{DynamicResource App.Brush.TextPrimary}"/>
 
         <ProgressBar Grid.Row="1" 
                      x:Name="ProgressBar"
@@ -37,14 +37,15 @@
                    x:Name="StatusText" 
                    Text="Please wait..." 
                    Margin="0,10,0,0"
-                   Foreground="#CCCCCC"/>
+                   Foreground="{DynamicResource App.Brush.TextSecondary}"/>
 
         <Button Grid.Row="4"
                 x:Name="CancelButton"
                 Content="Cancel"
                 HorizontalAlignment="Right"
                 Margin="0,15,0,0"
-                Padding="20,5"
+                Style="{StaticResource SecondaryButton}"
+                IsCancel="True"
                 Click="CancelButton_Click"/>
     </Grid>
 </mah:MetroWindow>

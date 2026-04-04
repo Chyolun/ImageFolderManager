@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -38,6 +38,11 @@ namespace ImageFolderManager.Views
             _mainViewModel = mainViewModel ?? throw new ArgumentNullException(nameof(mainViewModel));
 
             this.Loaded += DuplicateFoldersDialog_Loaded;
+        }
+
+        private Brush GetBrush(string key, Brush fallback)
+        {
+            return TryFindResource(key) as Brush ?? fallback;
         }
 
         private async void DuplicateFoldersDialog_Loaded(object sender, RoutedEventArgs e)
@@ -122,13 +127,13 @@ namespace ImageFolderManager.Views
             {
                 var filtered = stats.totalFolders - stats.filteredFolders;
                 FilterInfoText.Text = $"Filters enabled • {filtered} folders excluded • {stats.filteredFolders} folders checked";
-                FilterInfoText.Foreground = Brushes.LightBlue;
+                FilterInfoText.Foreground = GetBrush("StatusInfoBrush", Brushes.LightBlue);
                 FilterSettingsButton.Visibility = Visibility.Visible;
             }
             else
             {
                 FilterInfoText.Text = "Filters disabled • All folders checked";
-                FilterInfoText.Foreground = Brushes.Gray;
+                FilterInfoText.Foreground = GetBrush("App.Brush.TextMuted", Brushes.Gray);
                 FilterSettingsButton.Visibility = Visibility.Visible;
             }
         }
@@ -141,10 +146,10 @@ namespace ImageFolderManager.Views
             // Group container
             var groupBorder = new Border
             {
-                Background = new SolidColorBrush(Color.FromArgb(40, 100, 149, 237)),
-                BorderBrush = new SolidColorBrush(Color.FromArgb(100, 100, 149, 237)),
+                Background = GetBrush("App.Brush.Surface1", new SolidColorBrush(Color.FromArgb(35, 24, 34, 48))),
+                BorderBrush = GetBrush("App.Brush.BorderStrong", new SolidColorBrush(Color.FromArgb(100, 100, 149, 237))),
                 BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(5),
+                CornerRadius = new CornerRadius(8),
                 Margin = new Thickness(0, 0, 0, 15),
                 Padding = new Thickness(15)
             };
@@ -160,10 +165,12 @@ namespace ImageFolderManager.Views
 
             var folderIcon = new TextBlock
             {
-                Text = "📁",
-                FontSize = 16,
+                Text = "\uE8B7",
+                FontFamily = new FontFamily("Segoe MDL2 Assets"),
+                FontSize = 14,
                 Margin = new Thickness(0, 0, 8, 0),
-                VerticalAlignment = VerticalAlignment.Center
+                VerticalAlignment = VerticalAlignment.Center,
+                Foreground = GetBrush("StatusInfoBrush", Brushes.LightBlue)
             };
 
             var headerText = new TextBlock
@@ -171,7 +178,7 @@ namespace ImageFolderManager.Views
                 Text = $"\"{group.FolderName}\" ({group.Count} duplicates)",
                 FontWeight = FontWeights.SemiBold,
                 FontSize = 14,
-                Foreground = Brushes.White,
+                Foreground = GetBrush("App.Brush.TextPrimary", Brushes.White),
                 VerticalAlignment = VerticalAlignment.Center
             };
 
@@ -208,7 +215,7 @@ namespace ImageFolderManager.Views
             var pathText = new TextBlock
             {
                 Text = pathWithSize,
-                Foreground = new SolidColorBrush(Color.FromRgb(200, 200, 200)),
+                Foreground = GetBrush("App.Brush.TextSecondary", new SolidColorBrush(Color.FromRgb(200, 200, 200))),
                 FontSize = 12,
                 TextWrapping = TextWrapping.Wrap,
                 VerticalAlignment = VerticalAlignment.Center,
@@ -228,24 +235,25 @@ namespace ImageFolderManager.Views
             // Show in Explorer button
             var explorerButton = new Button
             {
-                Content = "📂",
+                Content = "\uE8A7",
+                FontFamily = new FontFamily("Segoe MDL2 Assets"),
                 Width = 46,
                 Height = 30,
                 Margin = new Thickness(1, 1, 5, 1),
                 ToolTip = "Show in Explorer",
-                Style = FindResource("MahApps.Styles.Button.MetroSquare") as Style
+                Style = FindResource("SecondaryButton") as Style
             };
             explorerButton.Click += (s, e) => ShowFolderInExplorer(folder);
 
             // Delete button
             var deleteButton = new Button
             {
-                Content = "🗑️",
+                Content = "\uE74D",
+                FontFamily = new FontFamily("Segoe MDL2 Assets"),
                 Width = 46,
                 Height = 30,
                 ToolTip = "Delete Folder",
-                Style = FindResource("MahApps.Styles.Button.MetroSquare") as Style,
-                Background = new SolidColorBrush(Color.FromArgb(100, 220, 20, 60)) // Semi-transparent red
+                Style = FindResource("DangerButton") as Style
             };
             deleteButton.Click += async (s, e) => await DeleteFolder(folder);
 
@@ -524,7 +532,7 @@ namespace ImageFolderManager.Views
             {
                 Text = "No folders are currently loaded.\nPlease set a root directory and wait for indexing to complete.",
                 FontSize = 14,
-                Foreground = Brushes.Orange,
+                Foreground = GetBrush("StatusWarningBrush", Brushes.Orange),
                 TextAlignment = TextAlignment.Center,
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center,
@@ -550,8 +558,10 @@ namespace ImageFolderManager.Views
 
             var iconText = new TextBlock
             {
-                Text = "✅",
+                Text = "\uE73E",
+                FontFamily = new FontFamily("Segoe MDL2 Assets"),
                 FontSize = 48,
+                Foreground = GetBrush("StatusSuccessBrush", Brushes.LightGreen),
                 HorizontalAlignment = HorizontalAlignment.Center,
                 Margin = new Thickness(0, 0, 0, 15)
             };
@@ -560,7 +570,7 @@ namespace ImageFolderManager.Views
             {
                 Text = "No duplicate folder names found!",
                 FontSize = 16,
-                Foreground = Brushes.LightGreen,
+                Foreground = GetBrush("StatusSuccessBrush", Brushes.LightGreen),
                 HorizontalAlignment = HorizontalAlignment.Center,
                 FontWeight = FontWeights.SemiBold
             };
@@ -569,7 +579,7 @@ namespace ImageFolderManager.Views
             {
                 Text = "All folder names in your root directory are unique.",
                 FontSize = 12,
-                Foreground = Brushes.Gray,
+                Foreground = GetBrush("App.Brush.TextMuted", Brushes.Gray),
                 HorizontalAlignment = HorizontalAlignment.Center,
                 Margin = new Thickness(0, 5, 0, 0)
             };
@@ -624,3 +634,4 @@ namespace ImageFolderManager.Views
         }
     }
 }
+

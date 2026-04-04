@@ -26,7 +26,7 @@
                    FontSize="16" 
                    FontWeight="SemiBold" 
                    Margin="0,0,0,20" 
-                   Foreground="White"
+                   Foreground="{DynamicResource App.Brush.TextPrimary}"
                    TextWrapping="Wrap"/>
 
         <!-- Enable Filters Section -->
@@ -41,11 +41,11 @@
                           Content="Enable duplicate folder filters" 
                           FontSize="14" 
                           FontWeight="SemiBold"
-                          Foreground="White"
+                          Foreground="{DynamicResource App.Brush.TextPrimary}"
                           Checked="EnableFiltersCheckBox_Checked"
                           Unchecked="EnableFiltersCheckBox_Unchecked"/>
                 <TextBlock Text="When enabled, folders will be filtered based on the criteria below before checking for duplicates." 
-                           Foreground="LightGray" 
+                           Foreground="{DynamicResource App.Brush.TextSecondary}" 
                            FontSize="11" 
                            TextWrapping="Wrap" 
                            Margin="20,5,0,0"/>
@@ -66,11 +66,11 @@
                             <TextBlock Text="Minimum Folder Name Length" 
                                        FontSize="14" 
                                        FontWeight="SemiBold" 
-                                       Foreground="White" 
+                                       Foreground="{DynamicResource App.Brush.TextPrimary}" 
                                        Margin="0,0,0,10"/>
 
                             <TextBlock Text="Folders with names shorter than this will be excluded from duplicate detection." 
-                                       Foreground="LightGray" 
+                                       Foreground="{DynamicResource App.Brush.TextSecondary}" 
                                        FontSize="11" 
                                        TextWrapping="Wrap" 
                                        Margin="0,0,0,15"/>
@@ -95,7 +95,7 @@
                                 <TextBlock Grid.Column="1" 
                                            Text="characters" 
                                            VerticalAlignment="Center" 
-                                           Foreground="LightGray" 
+                                           Foreground="{DynamicResource App.Brush.TextSecondary}" 
                                            Margin="5,0"/>
 
                                 <TextBox x:Name="MinLengthTextBox" 
@@ -120,11 +120,11 @@
                             <TextBlock Text="Excluded Folder Names" 
                                        FontSize="14" 
                                        FontWeight="SemiBold" 
-                                       Foreground="White" 
+                                       Foreground="{DynamicResource App.Brush.TextPrimary}" 
                                        Margin="0,0,0,10"/>
 
                             <TextBlock Text="Folders with these exact names (case-insensitive) will be excluded from duplicate detection." 
-                                       Foreground="LightGray" 
+                                       Foreground="{DynamicResource App.Brush.TextSecondary}" 
                                        FontSize="11" 
                                        TextWrapping="Wrap" 
                                        Margin="0,0,0,15"/>
@@ -150,7 +150,7 @@
 
                             <!-- Excluded folders list -->
                             <TextBlock Text="Excluded Folder Names:" 
-                                       Foreground="LightGray" 
+                                       Foreground="{DynamicResource App.Brush.TextSecondary}" 
                                        FontSize="11" 
                                        Margin="0,0,0,5"/>
 
@@ -165,7 +165,7 @@
                                     <ListBox.ItemTemplate>
                                         <DataTemplate>
                                             <TextBlock Text="{Binding}" 
-                                                       Foreground="White" 
+                                                       Foreground="{DynamicResource App.Brush.TextPrimary}" 
                                                        Padding="5,2"/>
                                         </DataTemplate>
                                     </ListBox.ItemTemplate>
@@ -187,17 +187,15 @@
 
         <!-- Bottom buttons -->
         <StackPanel Grid.Row="3" 
-                    Orientation="Horizontal" 
-                    HorizontalAlignment="Right" 
-                    Margin="0,20,0,0">
+                    Style="{StaticResource DialogFooterPanel}">
 
             <Button Content="Reset to Defaults" 
                     Click="ResetDefaults_Click" 
-                    Margin="0,0,20,0" 
+                    Margin="{StaticResource DialogButtonSpacing}" 
                     MinWidth="120" 
-                    Background="DarkOrange"/>
+                    Style="{StaticResource DangerButton}"/>
             <Button Content="Cancel" 
-                    Margin="0,0,10,0" 
+                    Margin="{StaticResource DialogButtonSpacing}" 
                     Style="{StaticResource SecondaryButton}"
                     Click="Cancel_Click" 
                     IsCancel="True" 
@@ -207,8 +205,7 @@
                     Click="OK_Click" 
                     IsDefault="True" 
                     Style="{StaticResource PrimaryButton}"
-                    MinWidth="80" 
-                    Background="{DynamicResource MahApps.Brushes.Accent}"/>
+                    MinWidth="80"/>
 
            
         </StackPanel>

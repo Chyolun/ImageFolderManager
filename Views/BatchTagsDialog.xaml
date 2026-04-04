@@ -27,19 +27,19 @@
                    FontSize="16" 
                    FontWeight="SemiBold" 
                    Margin="0,0,0,10" 
-                   Foreground="White"/>
+                   Foreground="{DynamicResource App.Brush.TextPrimary}"/>
 
         <TextBlock Grid.Row="1" 
                    x:Name="SelectedFoldersText" 
                    Text="Selected folders: 0" 
                    Margin="0,0,0,15" 
-                   Foreground="LightGreen"/>
+                   Foreground="{StaticResource StatusSuccessBrush}"/>
 
         <!-- Add Tags Section -->
         <GroupBox Grid.Row="2" 
                   Header="Add Tags" 
                   Margin="0,0,0,10" 
-                  Foreground="White">
+                  Foreground="{DynamicResource App.Brush.TextPrimary}">
             <Grid Margin="5">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
@@ -49,7 +49,7 @@
                 <TextBlock Grid.Row="0" 
                            Text="Enter tags to add (use # to separate)" 
                            Margin="0,5,0,5" 
-                           Foreground="#CCCCCC"/>
+                           Foreground="{DynamicResource App.Brush.TextSecondary}"/>
 
                 <TextBox Grid.Row="1" 
                          x:Name="AddTagsTextBox" 
@@ -61,7 +61,7 @@
         <GroupBox Grid.Row="3" 
                   Header="Remove Tags" 
                   Margin="0,0,0,15" 
-                  Foreground="White">
+                  Foreground="{DynamicResource App.Brush.TextPrimary}">
             <Grid Margin="5">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
@@ -71,7 +71,7 @@
                 <TextBlock Grid.Row="0" 
                            Text="Enter tags to remove (use # to separate)" 
                            Margin="0,5,0,5" 
-                           Foreground="#CCCCCC"/>
+                           Foreground="{DynamicResource App.Brush.TextSecondary}"/>
 
                 <TextBox Grid.Row="1" 
                          x:Name="RemoveTagsTextBox" 
@@ -83,21 +83,20 @@
         <GroupBox Grid.Row="4" 
                   Header="Common Tags Preview" 
                   Margin="0,0,0,10" 
-                  Foreground="White">
+                  Foreground="{DynamicResource App.Brush.TextPrimary}">
             <TextBlock x:Name="CommonTagsTextBlock" 
                        Margin="5" 
                        TextWrapping="Wrap" 
-                       Foreground="LightBlue"
+                       Foreground="{StaticResource StatusInfoBrush}"
                        Text="No common tags found"/>
         </GroupBox>
 
         <!-- Buttons -->
         <StackPanel Grid.Row="6" 
-                    Orientation="Horizontal" 
-                    HorizontalAlignment="Right">
+                    Style="{StaticResource DialogFooterPanel}">
             <Button Content="Cancel" 
                     MinWidth="80" 
-                    Margin="0,0,10,0" 
+                    Margin="{StaticResource DialogButtonSpacing}" 
                     Style="{StaticResource SecondaryButton}" 
                     IsCancel="True"
                     Click="Cancel_Click"/>

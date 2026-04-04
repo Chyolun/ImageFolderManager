@@ -82,6 +82,7 @@ namespace ImageFolderManager
                 Debug.WriteLine("ERROR: ViewModel is null in OnFolderSelected");
                 return;
             }
+            ClearImageSelection();
             // We don't auto-load images anymore - just update selection
             ViewModel.SetSelectedFolderWithoutLoading(folder);
         }
@@ -126,6 +127,7 @@ namespace ImageFolderManager
                 //}
 
                 // Just update selection without loading images
+                ClearImageSelection();
                 ViewModel.SetSelectedFolderWithoutLoading(folder);
             }
         }
@@ -264,6 +266,11 @@ namespace ImageFolderManager
                 return;
             }
 
+            if (sender is Image imageElement && imageElement.DataContext is ImageInfo selectedImage)
+            {
+                SetSelectedImage(selectedImage);
+            }
+
             // Open in internal image viewer on double-click
             if (e.ClickCount == 2 && sender is Image img && img.Tag is string filePath)
             {
@@ -299,6 +306,33 @@ namespace ImageFolderManager
                 }
             }
         }
+
+        private void SetSelectedImage(ImageInfo selectedImage)
+        {
+            if (ViewModel?.Images == null || selectedImage == null)
+            {
+                return;
+            }
+
+            foreach (var image in ViewModel.Images)
+            {
+                image.IsSelected = ReferenceEquals(image, selectedImage);
+            }
+        }
+
+        private void ClearImageSelection()
+        {
+            if (ViewModel?.Images == null)
+            {
+                return;
+            }
+
+            foreach (var image in ViewModel.Images)
+            {
+                image.IsSelected = false;
+            }
+        }
+
         private static T FindVisualParent<T>(DependencyObject child) where T : DependencyObject
         {
             DependencyObject parentObject = VisualTreeHelper.GetParent(child);

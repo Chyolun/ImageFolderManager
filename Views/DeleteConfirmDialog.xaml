@@ -87,7 +87,7 @@
 
         <!-- Recycle Bin notice -->
         <TextBlock Grid.Row="2"
-                   Text="🗑️  The selected folder(s) will be moved to the Recycle Bin."
+                   Text="The selected folder(s) will be moved to the Recycle Bin."
                    FontSize="11"
                    Foreground="{StaticResource StatusMutedBrush}"
                    Margin="0,0,0,12"

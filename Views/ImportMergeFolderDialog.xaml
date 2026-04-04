@@ -48,27 +48,25 @@
         <TextBlock x:Name="DestPathText"
                    Grid.Row="1"
                    FontSize="12"
-                   Foreground="DarkOrange"
+                   Foreground="{StaticResource StatusWarningBrush}"
                    TextWrapping="Wrap"
                    Margin="0,0,0,4"/>
 
         <!-- Buttons -->
         <StackPanel Grid.Row="3"
-                    Orientation="Horizontal"
-                    HorizontalAlignment="Right"
-                    Margin="0,14,0,0">
+                    Style="{StaticResource DialogFooterPanel}">
 
             <Button x:Name="MergeButton"
                     Content="Merge"
                     MinWidth="80"
-                    Margin="0,0,8,0"
-                    Style="{StaticResource MahApps.Styles.Button.Square.Accent}"
+                    Margin="{StaticResource DialogButtonSpacing}"
+                    Style="{StaticResource PrimaryButton}"
                     Click="Merge_Click"/>
 
             <Button x:Name="SkipButton"
                     Content="Skip"
                     MinWidth="80"
-                    Margin="0,0,8,0"
+                    Margin="{StaticResource DialogButtonSpacing}"
                     Style="{StaticResource SecondaryButton}"
                     Click="Skip_Click"/>
 

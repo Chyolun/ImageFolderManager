@@ -353,7 +353,8 @@ namespace ImageFolderManager.Views
         {
             if (panel != null)
             {
-                panel.Background = new SolidColorBrush(Color.FromArgb(80, 0, 255, 0));
+                panel.Background = TryFindResource("App.Brush.SuccessSoft") as Brush
+                    ?? new SolidColorBrush(Color.FromArgb(80, 60, 177, 121));
             }
         }
 

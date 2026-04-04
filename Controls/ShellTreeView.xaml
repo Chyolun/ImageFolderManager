@@ -9,16 +9,6 @@
              d:DesignHeight="450" d:DesignWidth="300">
 
     <UserControl.Resources>
-        <!-- Modern Color Brushes -->
-        <SolidColorBrush x:Key="TreeBackground" Color="#1E1E1E"/>
-        <SolidColorBrush x:Key="TreeForeground" Color="#FFFFFF"/>
-        <SolidColorBrush x:Key="TreeHover" Color="#2D2D2D"/>
-        <SolidColorBrush x:Key="TreeSelected" Color="#0078D4"/>
-        <SolidColorBrush x:Key="TreeSelectedInactive" Color="#3F3F3F"/>
-        <SolidColorBrush x:Key="TreeBorder" Color="#3F3F3F"/>
-        <SolidColorBrush x:Key="AccentColor" Color="#0078D4"/>
-        <SolidColorBrush x:Key="AccentColorHover" Color="#106EBE"/>
-
         <!-- Modern Drop Shadow Effect -->
         <DropShadowEffect x:Key="ModernShadow" Color="#000000" BlurRadius="8" ShadowDepth="2" Opacity="0.3"/>
 
@@ -46,7 +36,7 @@
 
         <!-- Modern Expander Button Style -->
         <Style x:Key="ModernExpanderStyle" TargetType="ToggleButton">
-            <Setter Property="Foreground" Value="{StaticResource AccentColor}"/>
+            <Setter Property="Foreground" Value="{DynamicResource MahApps.Brushes.Accent}"/>
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="BorderThickness" Value="0"/>
             <Setter Property="Focusable" Value="False"/>
@@ -92,8 +82,8 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter Property="Background" Value="#20FFFFFF"/>
-                                <Setter Property="Foreground" Value="{StaticResource AccentColorHover}"/>
+                                <Setter Property="Background" Value="{DynamicResource App.Brush.Hover}"/>
+                                <Setter Property="Foreground" Value="{DynamicResource MahApps.Brushes.Accent}"/>
                             </Trigger>
                             <Trigger Property="IsChecked" Value="True">
                                 <Trigger.EnterActions>
@@ -143,7 +133,7 @@
                     AncestorType={x:Type ItemsControl}},
                     FallbackValue=Center}"/>
             <Setter Property="IsExpanded" Value="False"/>
-            <Setter Property="Foreground" Value="{StaticResource TreeForeground}"/>
+            <Setter Property="Foreground" Value="{DynamicResource App.Brush.TextPrimary}"/>
             <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
            
             <Setter Property="Margin" Value="0,1"/>
@@ -176,7 +166,7 @@
                             <!-- Content Area with Modern Styling -->
                             <Border x:Name="ContentBorder" 
                                     Grid.Column="1" 
-                                    Background="#1E1E1E"
+                                    Background="{DynamicResource App.Brush.Surface1}"
                                     CornerRadius="6"
                                     Margin="4,2"
                                     Padding="8,6">
@@ -184,17 +174,10 @@
                                     <Style TargetType="Border">
                                         <Style.Triggers>
                                             <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=TreeViewItem}}" Value="True">
-                                                <Setter Property="Background">
-                                                    <Setter.Value>
-                                                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
-                                                            <GradientStop Color="#FF0078D4" Offset="0"/>
-                                                            <GradientStop Color="#FF106EBE" Offset="1"/>
-                                                        </LinearGradientBrush>
-                                                    </Setter.Value>
-                                                </Setter>
+                                                <Setter Property="Background" Value="{DynamicResource App.Brush.Selection}"/>
                                                 <Setter Property="BorderBrush">
                                                     <Setter.Value>
-                                                        <SolidColorBrush Color="#FF00FFFF"/>
+                                                        <SolidColorBrush Color="#FF4F9DEB"/>
                                                     </Setter.Value>
                                                 </Setter>
                                                 <Setter Property="BorderThickness" Value="1"/>
@@ -310,7 +293,7 @@
                                                                 <Thumb>
                                                                     <Thumb.Style>
                                                                         <Style TargetType="Thumb">
-                                                                            <Setter Property="Background" Value="#40FFFFFF"/>
+                                                                            <Setter Property="Background" Value="{DynamicResource App.Brush.Border}"/>
                                                                             <Setter Property="Template">
                                                                                 <Setter.Value>
                                                                                     <ControlTemplate TargetType="Thumb">
@@ -321,7 +304,7 @@
                                                                             </Setter>
                                                                             <Style.Triggers>
                                                                                 <Trigger Property="IsMouseOver" Value="True">
-                                                                                    <Setter Property="Background" Value="#60FFFFFF"/>
+                                                                                    <Setter Property="Background" Value="{DynamicResource App.Brush.BorderStrong}"/>
                                                                                 </Trigger>
                                                                             </Style.Triggers>
                                                                         </Style>
@@ -356,7 +339,7 @@
                                                                 <Thumb>
                                                                     <Thumb.Style>
                                                                         <Style TargetType="Thumb">
-                                                                            <Setter Property="Background" Value="#40FFFFFF"/>
+                                                                            <Setter Property="Background" Value="{DynamicResource App.Brush.Border}"/>
                                                                             <Setter Property="Template">
                                                                                 <Setter.Value>
                                                                                     <ControlTemplate TargetType="Thumb">
@@ -367,7 +350,7 @@
                                                                             </Setter>
                                                                             <Style.Triggers>
                                                                                 <Trigger Property="IsMouseOver" Value="True">
-                                                                                    <Setter Property="Background" Value="#60FFFFFF"/>
+                                                                                    <Setter Property="Background" Value="{DynamicResource App.Brush.BorderStrong}"/>
                                                                                 </Trigger>
                                                                             </Style.Triggers>
                                                                         </Style>
@@ -389,10 +372,10 @@
         </Style>
     </UserControl.Resources>
 
-    <Border Background="{StaticResource TreeBackground}" 
+    <Border Background="{DynamicResource App.Brush.Surface1}" 
             CornerRadius="8" 
             BorderThickness="1" 
-            BorderBrush="{StaticResource TreeBorder}">
+            BorderBrush="{DynamicResource App.Brush.Border}">
         <Grid Margin="8">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
@@ -402,7 +385,7 @@
 
             <!-- Modern Header -->
             <Border Grid.Row="0" 
-                    Background="{StaticResource AccentColor}" 
+                    Background="{DynamicResource MahApps.Brushes.Accent}" 
                     CornerRadius="6" 
                     Padding="12,8" 
                     Margin="0,0,0,8">
@@ -414,7 +397,7 @@
 
                     <StackPanel Grid.Column="0" Orientation="Horizontal">
                         <!-- Modern Folder Icon -->
-                        <Path Fill="White" 
+                        <Path Fill="{DynamicResource App.Brush.TextPrimary}" 
                               Width="25" Height="20" 
                               Margin="0,0,0,5"
                               VerticalAlignment="Center"
@@ -423,7 +406,7 @@
                         <TextBlock Text=" Folder Tree" 
                                    FontSize="14" 
                                    FontWeight="SemiBold"
-                                   Foreground="White"
+                                   Foreground="{DynamicResource App.Brush.TextPrimary}"
                                    VerticalAlignment="Center"/>
                     </StackPanel>
 
@@ -432,11 +415,11 @@
                           Grid.Column="1" 
                           Visibility="Collapsed">
                         <Ellipse Width="16" Height="16" 
-                                 Stroke="White" 
+                                 Stroke="{DynamicResource App.Brush.TextPrimary}" 
                                  StrokeThickness="2" 
                                  Opacity="0.3"/>
                         <Ellipse Width="16" Height="16" 
-                                 Stroke="White" 
+                                 Stroke="{DynamicResource App.Brush.TextPrimary}" 
                                  StrokeThickness="2" 
                                  StrokeDashArray="12,4"
                                  RenderTransformOrigin="0.5,0.5">
@@ -461,7 +444,7 @@
 
             <!-- Search Box -->
             <Border Grid.Row="1" 
-                    Background="#2D2D2D" 
+                    Background="{DynamicResource App.Brush.Surface2}" 
                     CornerRadius="6" 
                     Padding="12,8" 
                     Margin="0,0,0,8"
@@ -473,7 +456,7 @@
                     </Grid.ColumnDefinitions>
 
                     <Path Grid.Column="0" 
-                          Fill="#AAAAAA" 
+                          Fill="{DynamicResource App.Brush.TextMuted}" 
                           Width="14" Height="14" 
                           Margin="0,0,8,0"
                           Data="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/>
@@ -481,7 +464,7 @@
                     <TextBox Grid.Column="1" 
                              x:Name="SearchBox"
                              Background="Transparent" 
-                             Foreground="White" 
+                             Foreground="{DynamicResource App.Brush.TextPrimary}" 
                              BorderThickness="0"
                              FontSize="12"
                              VerticalAlignment="Center"/>

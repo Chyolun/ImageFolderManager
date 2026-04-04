@@ -116,14 +116,14 @@ namespace ImageFolderManager.Views
                         {
                             SavedText.Text = $"Save approx. {CompressionResult.FormatBytes(saved)}" +
                                              $"  ({savedPct:F1}% smaller)";
-                            SavedText.Foreground =
-                                new SolidColorBrush(Color.FromRgb(0x81, 0xC7, 0x84)); // green
+                            SavedText.Foreground = TryFindResource("StatusSuccessBrush") as Brush
+                                ?? new SolidColorBrush(Color.FromRgb(0x81, 0xC7, 0x84));
                         }
                         else
                         {
                             SavedText.Text = $"Approx. {CompressionResult.FormatBytes(-saved)} larger";
-                            SavedText.Foreground =
-                                new SolidColorBrush(Color.FromRgb(0xFF, 0xB7, 0x4D)); // amber
+                            SavedText.Foreground = TryFindResource("StatusWarningBrush") as Brush
+                                ?? new SolidColorBrush(Color.FromRgb(0xFF, 0xB7, 0x4D));
                         }
 
                         SavedText.Visibility = Visibility.Visible;

@@ -48,7 +48,7 @@
         <TextBlock x:Name="DestPathText"
                    Grid.Row="1"
                    FontSize="12"
-                   Foreground="DarkOrange"
+                   Foreground="{StaticResource StatusWarningBrush}"
                    TextWrapping="Wrap"
                    Margin="0,0,0,14"/>
 
@@ -64,7 +64,7 @@
                      TextChanged="NewNameTextBox_TextChanged"/>
             <TextBlock x:Name="NameValidationText"
                        FontSize="11"
-                       Foreground="OrangeRed"
+                       Foreground="{StaticResource StatusErrorBrush}"
                        Margin="0,4,0,0"
                        Visibility="Collapsed"/>
         </StackPanel>
@@ -81,28 +81,26 @@
 
         <!-- Buttons -->
         <StackPanel Grid.Row="4"
-                    Orientation="Horizontal"
-                    HorizontalAlignment="Right"
-                    Margin="0,14,0,0">
+                    Style="{StaticResource DialogFooterPanel}">
 
             <Button x:Name="SkipButton"
                     Content="Skip"
                     MinWidth="80"
-                    Margin="0,0,8,0"
+                    Margin="{StaticResource DialogButtonSpacing}"
                     Style="{StaticResource SecondaryButton}"
                     Click="Skip_Click"/>
 
             <Button x:Name="RenameButton"
                     Content="Rename"
                     MinWidth="80"
-                    Margin="0,0,8,0"
+                    Margin="{StaticResource DialogButtonSpacing}"
                     Style="{StaticResource SecondaryButton}"
                     Click="Rename_Click"/>
 
             <Button x:Name="OverwriteButton"
                     Content="Overwrite"
                     MinWidth="80"
-                    Margin="0,0,8,0"
+                    Margin="{StaticResource DialogButtonSpacing}"
                     Style="{StaticResource DangerButton}"
                     Click="Overwrite_Click"/>
 
