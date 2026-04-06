@@ -63,6 +63,7 @@ namespace ImageFolderManager.ViewModels
     public class SearchViewModel : ViewModelBase
     {
         private readonly UnifiedFolderService _folderService;
+        private readonly TagCategoryService _categoryService;
         private readonly List<FolderInfo> _allLoadedFolders;
         private readonly object _allLoadedFoldersLock;
         private CancellationTokenSource _searchCancellationTokenSource;
@@ -82,6 +83,13 @@ namespace ImageFolderManager.ViewModels
         /// Substring match is applied to the keys at query time.
         /// </summary>
         private Dictionary<string, HashSet<string>> _tagIndex =
+            new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>
+        /// Inverted category+tag index: "category::tag" → paths.
+        /// Enables category-aware tag search syntax (#Category::Tag).
+        /// </summary>
+        private Dictionary<string, HashSet<string>> _fullTagIndex =
             new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
 
         /// <summary>
@@ -159,13 +167,15 @@ namespace ImageFolderManager.ViewModels
         public SearchViewModel(
             UnifiedFolderService folderService,
             List<FolderInfo> allLoadedFolders,
-            object allLoadedFoldersLock = null)
+            object allLoadedFoldersLock = null,
+            TagCategoryService categoryService = null)
         {
             _folderService = folderService
                 ?? throw new ArgumentNullException(nameof(folderService));
             _allLoadedFolders = allLoadedFolders
                 ?? throw new ArgumentNullException(nameof(allLoadedFolders));
             _allLoadedFoldersLock = allLoadedFoldersLock ?? new object();
+            _categoryService = categoryService;
 
             SearchCommand = new AsyncRelayCommand(PerformSearchAsync);
         }
@@ -200,6 +210,7 @@ namespace ImageFolderManager.ViewModels
 
                 var byPath = new Dictionary<string, FolderInfo>(cap, StringComparer.OrdinalIgnoreCase);
                 var tagIdx = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+                var fullTagIdx = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
                 var nameIdx = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
                 var normCache = new Dictionary<string, HashSet<string>>(cap, StringComparer.OrdinalIgnoreCase);
 
@@ -224,6 +235,15 @@ namespace ImageFolderManager.ViewModels
                             string lower = tag.ToLowerInvariant();
                             normTags.Add(lower);
                             AddToIndex(tagIdx, lower, path);
+
+                            if (_categoryService != null)
+                            {
+                                string category = _categoryService.GetTagCategory(tag)?.ToLowerInvariant() ?? string.Empty;
+                                if (!string.IsNullOrWhiteSpace(category))
+                                {
+                                    AddToIndex(fullTagIdx, $"{category}::{lower}", path);
+                                }
+                            }
                         }
                     }
                     normCache[path] = normTags;
@@ -231,6 +251,7 @@ namespace ImageFolderManager.ViewModels
 
                 _folderByPath = byPath;
                 _tagIndex = tagIdx;
+                _fullTagIndex = fullTagIdx;
                 _nameIndex = nameIdx;
                 _normalizedTagsCache = normCache;
                 _indexDirty = false;
@@ -304,7 +325,7 @@ namespace ImageFolderManager.ViewModels
         {
             EnsureIndexFresh();
 
-            var searchTerms = new SearchTerms(SearchText);
+            var searchTerms = new SearchTerms(SearchText, _categoryService);
             var candidateFolders = GetCandidateFolders(SearchText);
             var results = new List<FolderInfo>(candidateFolders.Count);
 
@@ -398,7 +419,11 @@ namespace ImageFolderManager.ViewModels
             foreach (var term in tagTerms)
             {
                 var matched = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                foreach (var kvp in _tagIndex)
+                var indexToUse = term.Contains("::", StringComparison.Ordinal)
+                    ? _fullTagIndex
+                    : _tagIndex;
+
+                foreach (var kvp in indexToUse)
                 {
                     if (kvp.Key.Contains(term))
                     {
@@ -558,11 +583,13 @@ namespace ImageFolderManager.ViewModels
         private static readonly Regex OrGroupRegex =
             new Regex(@"\(([^)]+)\)", RegexOptions.Compiled);
 
+        private readonly TagCategoryService _categoryService;
         private readonly List<List<Predicate<FolderInfo>>> _andGroups =
             new List<List<Predicate<FolderInfo>>>();
 
-        public SearchTerms(string searchText)
+        public SearchTerms(string searchText, TagCategoryService categoryService = null)
         {
+            _categoryService = categoryService;
             if (string.IsNullOrWhiteSpace(searchText)) return;
 
             foreach (Match m in OrGroupRegex.Matches(searchText))
@@ -593,7 +620,7 @@ namespace ImageFolderManager.ViewModels
             return list;
         }
 
-        private static Predicate<FolderInfo> CreatePredicateForTerm(string term)
+        private Predicate<FolderInfo> CreatePredicateForTerm(string term)
         {
             if (string.IsNullOrWhiteSpace(term)) return null;
 
@@ -601,6 +628,34 @@ namespace ImageFolderManager.ViewModels
             {
                 string tagTerm = term.Substring(1).ToLowerInvariant(); // captured once
                 if (string.IsNullOrWhiteSpace(tagTerm)) return null;
+
+                if (tagTerm.Contains("::", StringComparison.Ordinal))
+                {
+                    var parts = tagTerm.Split(new[] { "::" }, 2, StringSplitOptions.None);
+                    string categoryTerm = parts[0].Trim();
+                    string tagNameTerm = parts[1].Trim();
+                    if (string.IsNullOrWhiteSpace(categoryTerm) || string.IsNullOrWhiteSpace(tagNameTerm))
+                        return null;
+
+                    return folder =>
+                    {
+                        if (folder?.Tags == null) return false;
+                        foreach (var tag in folder.Tags)
+                        {
+                            if (tag == null || !tag.ToLowerInvariant().Contains(tagNameTerm))
+                                continue;
+
+                            if (_categoryService == null)
+                                return true; // fallback: treat as tag-only match
+
+                            string category = _categoryService.GetTagCategory(tag)?.ToLowerInvariant() ?? string.Empty;
+                            if (category.Contains(categoryTerm))
+                                return true;
+                        }
+                        return false;
+                    };
+                }
+
                 return folder =>
                 {
                     if (folder?.Tags == null) return false;

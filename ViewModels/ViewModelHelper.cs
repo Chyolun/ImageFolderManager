@@ -375,5 +375,7 @@ namespace ImageFolderManager.ViewModels
         public string FolderName { get; set; }
         public bool Success { get; set; }
         public string Message { get; set; }
+        public bool WasMerged { get; set; }
+        public bool SourceRemoved { get; set; }
     }
 }

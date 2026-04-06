@@ -205,7 +205,11 @@ namespace ImageFolderManager.ViewModels
                 _unifiedFolderService,
                 _operationOrchestrator,
                 _dialogService);
-            Search = new SearchViewModel(_unifiedFolderService, _allLoadedFolders, _allLoadedFoldersLock);
+            Search = new SearchViewModel(
+                _unifiedFolderService,
+                _allLoadedFolders,
+                _allLoadedFoldersLock,
+                categoryService);
             ImageLoading = new ImageLoadingViewModel(_unifiedFolderService);
 
             var tagCloud = new TagCloudViewModel(categoryService);

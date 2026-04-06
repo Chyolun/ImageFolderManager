@@ -619,6 +619,25 @@ namespace ImageFolderManager.Controls
             rootItem.IsExpanded = true;
             await ExpandNodeAsync(rootItem, _rootNode);
 
+            if (AppSettings.Instance.AutoExpandFolders)
+            {
+                // Optional convenience mode: expand first-level folders automatically.
+                // Limit the count to keep startup responsive on very large roots.
+                var firstLevelItems = rootItem.Items
+                    .OfType<TreeViewItem>()
+                    .Take(40)
+                    .ToList();
+
+                foreach (var childItem in firstLevelItems)
+                {
+                    if (childItem.Tag is FolderNode childNode && !childItem.IsExpanded)
+                    {
+                        childItem.IsExpanded = true;
+                        await ExpandNodeAsync(childItem, childNode);
+                    }
+                }
+            }
+
             Debug.WriteLine($"InitializeShellTreeAsync complete: {_rootDirectory}");
         }
 

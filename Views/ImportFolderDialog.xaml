@@ -107,6 +107,7 @@
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
@@ -152,6 +153,26 @@
                                    VerticalAlignment="Center"/>
                     </StackPanel>
                 </Border>
+
+                <StackPanel Grid.Row="3"
+                            Grid.ColumnSpan="2"
+                            Orientation="Horizontal"
+                            Margin="0,8,0,0">
+                    <TextBlock Text="Import mode:"
+                               Foreground="{DynamicResource App.Brush.TextPrimary}"
+                               VerticalAlignment="Center"
+                               Margin="0,0,10,0"/>
+                    <RadioButton x:Name="CopyModeRadioButton"
+                                 Content="Copy (Recommended)"
+                                 IsChecked="True"
+                                 Foreground="{DynamicResource App.Brush.TextSecondary}"
+                                 VerticalAlignment="Center"
+                                 Margin="0,0,12,0"/>
+                    <RadioButton x:Name="MoveModeRadioButton"
+                                 Content="Move (Delete source after success)"
+                                 Foreground="{DynamicResource App.Brush.TextSecondary}"
+                                 VerticalAlignment="Center"/>
+                </StackPanel>
             </Grid>
         </Border>
 

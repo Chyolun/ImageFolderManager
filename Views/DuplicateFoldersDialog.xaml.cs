@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -21,6 +22,10 @@ namespace ImageFolderManager.Views
     {
         private readonly MainViewModel _mainViewModel;
         private List<DuplicateFolderGroup> _duplicateGroups;
+        private readonly Dictionary<string, string> _folderSizeInfoCache =
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        private readonly SemaphoreSlim _folderSizeCalculationSemaphore = new SemaphoreSlim(3, 3);
+        private CancellationTokenSource _folderSizeCalculationCts = new CancellationTokenSource();
 
         /// <summary>
         /// Represents a group of folders with the same name
@@ -38,6 +43,20 @@ namespace ImageFolderManager.Views
             _mainViewModel = mainViewModel ?? throw new ArgumentNullException(nameof(mainViewModel));
 
             this.Loaded += DuplicateFoldersDialog_Loaded;
+            this.Closed += DuplicateFoldersDialog_Closed;
+        }
+
+        private void DuplicateFoldersDialog_Closed(object sender, EventArgs e)
+        {
+            try
+            {
+                _folderSizeCalculationCts.Cancel();
+                _folderSizeCalculationCts.Dispose();
+            }
+            catch
+            {
+                // Best-effort cleanup.
+            }
         }
 
         private Brush GetBrush(string key, Brush fallback)
@@ -58,6 +77,7 @@ namespace ImageFolderManager.Views
             try
             {
                 StatusText.Text = "Searching for duplicate folders...";
+                ResetFolderSizeCalculation();
                 DuplicateGroupsPanel.Children.Clear();
 
                 // Get statistics with filter information
@@ -138,6 +158,13 @@ namespace ImageFolderManager.Views
             }
         }
 
+        private void ResetFolderSizeCalculation()
+        {
+            _folderSizeCalculationCts.Cancel();
+            _folderSizeCalculationCts.Dispose();
+            _folderSizeCalculationCts = new CancellationTokenSource();
+        }
+
         /// <summary>
         /// Creates UI elements for a duplicate folder group
         /// </summary>
@@ -210,8 +237,8 @@ namespace ImageFolderManager.Views
             itemPanel.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             itemPanel.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
-            // Path text with folder size
-            var pathWithSize = GetFolderPathWithSize(folder);
+            // Path text starts with placeholder, then updates asynchronously.
+            var pathWithSize = $"{folder.FolderPath} (Calculating size...)";
             var pathText = new TextBlock
             {
                 Text = pathWithSize,
@@ -224,6 +251,8 @@ namespace ImageFolderManager.Views
 
             Grid.SetColumn(pathText, 0);
             itemPanel.Children.Add(pathText);
+
+            _ = UpdateFolderSizeTextAsync(folder.FolderPath, pathText, _folderSizeCalculationCts.Token);
 
             // Action buttons
             var buttonPanel = new StackPanel
@@ -264,6 +293,52 @@ namespace ImageFolderManager.Views
             itemPanel.Children.Add(buttonPanel);
 
             parent.Children.Add(itemPanel);
+        }
+
+        /// <summary>
+        /// Calculates folder size in background and updates the UI text safely.
+        /// </summary>
+        private async Task UpdateFolderSizeTextAsync(string folderPath, TextBlock targetTextBlock, CancellationToken cancellationToken)
+        {
+            if (string.IsNullOrWhiteSpace(folderPath) || targetTextBlock == null)
+                return;
+
+            try
+            {
+                if (!_folderSizeInfoCache.TryGetValue(folderPath, out string sizeInfo))
+                {
+                    await _folderSizeCalculationSemaphore.WaitAsync(cancellationToken);
+                    try
+                    {
+                        if (!_folderSizeInfoCache.TryGetValue(folderPath, out sizeInfo))
+                        {
+                            sizeInfo = await Task.Run(() => GetFolderSizeInfo(folderPath), cancellationToken);
+                            _folderSizeInfoCache[folderPath] = sizeInfo;
+                        }
+                    }
+                    finally
+                    {
+                        _folderSizeCalculationSemaphore.Release();
+                    }
+                }
+
+                await Dispatcher.InvokeAsync(() =>
+                {
+                    if (!cancellationToken.IsCancellationRequested)
+                    {
+                        targetTextBlock.Text = $"{folderPath} ({sizeInfo})";
+                    }
+                });
+            }
+            catch (OperationCanceledException)
+            {
+                // Expected during refresh/close.
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine(
+                    $"Error asynchronously updating folder size for {folderPath}: {ex.Message}");
+            }
         }
 
         /// <summary>

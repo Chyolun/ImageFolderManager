@@ -113,6 +113,22 @@
                         <TextBlock Style="{StaticResource MenuGlyphStyle}" Text="&#xE91B;" />
                     </MenuItem.Icon>
                 </MenuItem>
+                <Separator/>
+                <MenuItem x:Name="AutoExpandFoldersMenuItem"
+                          Header="Auto Expand First Level"
+                          IsCheckable="True"
+                          Click="AutoExpandFolders_Click">
+                    <MenuItem.Icon>
+                        <TextBlock Style="{StaticResource MenuGlyphStyle}" Text="&#xE8E5;" />
+                    </MenuItem.Icon>
+                </MenuItem>
+                <MenuItem x:Name="RecentRootDirectoriesMenuItem"
+                          Header="Recent Root Directories"
+                          SubmenuOpened="RecentRootDirectories_SubmenuOpened">
+                    <MenuItem.Icon>
+                        <TextBlock Style="{StaticResource MenuGlyphStyle}" Text="&#xE823;" />
+                    </MenuItem.Icon>
+                </MenuItem>
             </MenuItem>
             <MenuItem Header="Edit">
                 <MenuItem.Icon>
@@ -412,6 +428,10 @@
                 <!-- Search bar -->
                 <Border Grid.Row="0" Style="{StaticResource SectionCard}" Padding="10" Margin="0,0,0,8">
                     <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto"/>
                             <ColumnDefinition Width="*"/>
@@ -424,8 +444,21 @@
                                    Margin="0,0,8,0"/>
 
                         <TextBox Grid.Column="1"
+                                 x:Name="SearchTextBox"
                                  Style="{StaticResource AppTextBoxStyle}"
-                                 Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}">
+                                 Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                                 TextChanged="SearchTextBox_TextChanged"
+                                 PreviewKeyDown="SearchTextBox_PreviewKeyDown">
+                            <TextBox.ToolTip>
+                                <ToolTip>
+                                    <StackPanel>
+                                        <TextBlock Text="Search Syntax" FontWeight="Bold"/>
+                                        <TextBlock Text="- #tag 或 #Category::Tag"/>
+                                        <TextBlock Text="- @folderName"/>
+                                        <TextBlock Text="- *>=4 / *=5 / *&lt;=2"/>
+                                    </StackPanel>
+                                </ToolTip>
+                            </TextBox.ToolTip>
                             <TextBox.InputBindings>
                                 <KeyBinding Key="Enter" Command="{Binding SearchCommand}" />
                             </TextBox.InputBindings>
@@ -436,6 +469,35 @@
                                 Margin="8,0,0,0"
                                 Style="{StaticResource PrimaryButton}"
                                 Command="{Binding SearchCommand}" />
+
+                        <TextBlock Grid.Row="1"
+                                   Grid.Column="1"
+                                   Grid.ColumnSpan="2"
+                                   Margin="0,6,0,0"
+                                   Foreground="{DynamicResource App.Brush.TextMuted}"
+                                   FontSize="11"
+                                   Text="Syntax: #Tag / #Category::Tag, @Folder, *>=4"/>
+
+                        <Popup x:Name="SearchSuggestionPopup"
+                               PlacementTarget="{Binding ElementName=SearchTextBox}"
+                               Placement="Bottom"
+                               StaysOpen="False"
+                               AllowsTransparency="True"
+                               PopupAnimation="Fade">
+                            <Border Background="{DynamicResource App.Brush.Surface2}"
+                                    BorderBrush="{DynamicResource App.Brush.BorderStrong}"
+                                    BorderThickness="1"
+                                    CornerRadius="4"
+                                    MinWidth="360"
+                                    MaxWidth="520"
+                                    Padding="2">
+                                <ListBox x:Name="SearchSuggestionListBox"
+                                         MaxHeight="220"
+                                         Background="Transparent"
+                                         BorderThickness="0"
+                                         MouseDoubleClick="SearchSuggestionListBox_MouseDoubleClick"/>
+                            </Border>
+                        </Popup>
                     </Grid>
                 </Border>
 
@@ -613,9 +675,15 @@
                                Foreground="{DynamicResource App.Brush.TextSecondary}" 
                                Margin="0,5,0,5"/>   
                             <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
                                 <TextBox Text="{Binding TagInputText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" 
                                     Name="TagsTextBox"
-                                    Style="{StaticResource AppTextBoxStyle}">
+                                    Style="{StaticResource AppTextBoxStyle}"
+                                    TextChanged="TagsTextBox_TextChanged"
+                                    PreviewKeyDown="TagsTextBox_PreviewKeyDown">
                                     <TextBox.ToolTip>
                                         <ToolTip>
                                             <StackPanel>
@@ -644,6 +712,33 @@
                                         </Style>
                                     </TextBlock.Style>
                                 </TextBlock>
+
+                                <TextBlock Grid.Row="1"
+                                           Margin="0,6,0,0"
+                                           Foreground="{DynamicResource App.Brush.TextMuted}"
+                                           FontSize="11"
+                                           Text="Tip: #Category::Tag 可直接输入或从下拉补全"/>
+
+                                <Popup x:Name="TagSuggestionPopup"
+                                       PlacementTarget="{Binding ElementName=TagsTextBox}"
+                                       Placement="Bottom"
+                                       StaysOpen="False"
+                                       AllowsTransparency="True"
+                                       PopupAnimation="Fade">
+                                    <Border Background="{DynamicResource App.Brush.Surface2}"
+                                            BorderBrush="{DynamicResource App.Brush.BorderStrong}"
+                                            BorderThickness="1"
+                                            CornerRadius="4"
+                                            MinWidth="360"
+                                            MaxWidth="520"
+                                            Padding="2">
+                                        <ListBox x:Name="TagSuggestionListBox"
+                                                 MaxHeight="220"
+                                                 Background="Transparent"
+                                                 BorderThickness="0"
+                                                 MouseDoubleClick="TagSuggestionListBox_MouseDoubleClick"/>
+                                    </Border>
+                                </Popup>
                             </Grid>
                         </StackPanel>
                         <!-- Save button -->

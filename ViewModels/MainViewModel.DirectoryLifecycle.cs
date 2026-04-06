@@ -62,6 +62,9 @@ namespace ImageFolderManager.ViewModels
                 // Step 4: Final verification
                 await VerifyInitializationAsync(path);
 
+                // Keep recent root directories in sync with actual successful loads.
+                AppSettings.Instance.AddRecentFolder(path);
+
                 StatusMessage = $"Directory loaded successfully. Monitoring {_unifiedFolderService.IndexedFolderCount} folders.";
             }
             catch (Exception ex)

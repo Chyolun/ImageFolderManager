@@ -16,13 +16,20 @@ namespace ImageFolderManager.Views
 {
     public partial class ImportFolderDialog : MetroWindow
     {
+        public enum ImportTransferMode
+        {
+            Copy,
+            Move
+        }
+
         private List<string> _sourceFolderPaths;
         private readonly string _rootDirectoryPath;
         private readonly List<FolderInfo> _allLoadedFolders;
         private string _detectedAuthor;
-        private readonly FolderTagService _folderTagService;
 
         public string DestinationPath { get; private set; }
+        public List<string> TagsToApply { get; private set; } = new List<string>();
+        public ImportTransferMode TransferMode { get; private set; } = ImportTransferMode.Copy;
         public bool DialogConfirmed { get; private set; } = false;
 
         /// <summary>
@@ -75,7 +82,6 @@ namespace ImageFolderManager.Views
             List<string> sourceFolderPaths,
             string rootDirectoryPath,
             List<FolderInfo> allLoadedFolders,
-            FolderTagService folderTagService,
             Dictionary<string, string> skippedFolders = null)
         {
             InitializeComponent();
@@ -85,7 +91,6 @@ namespace ImageFolderManager.Views
             _sourceFolderPaths = sourceFolderPaths;
             _rootDirectoryPath = rootDirectoryPath;
             _allLoadedFolders = allLoadedFolders;
-            _folderTagService = folderTagService ?? throw new ArgumentNullException(nameof(folderTagService));
 
             // Show source folder(s) in the text box
             UpdateSourceFolderDisplay();
@@ -414,6 +419,10 @@ namespace ImageFolderManager.Views
                 }
             }
 
+            TransferMode = MoveModeRadioButton?.IsChecked == true
+                ? ImportTransferMode.Move
+                : ImportTransferMode.Copy;
+
             if (_sourceFolderPaths.Count > 1)
             {
                 // Multiple folders: finalDestination is the target directory
@@ -472,13 +481,10 @@ namespace ImageFolderManager.Views
             }
 
             DestinationPath = finalDestination;
+            TagsToApply = tagsToApply;
             DialogConfirmed = true;
-
             if (tagsToApply.Count > 0)
-            {
-                _ = System.Threading.Tasks.Task.Run(() => ApplyTagsToImportedFoldersAsync(tagsToApply));
-                StatusText.Text += $" Tags will be applied: {string.Join(" ", tagsToApply.Select(t => $"#{t}"))}";
-            }
+                StatusText.Text += $" Tags prepared: {string.Join(" ", tagsToApply.Select(t => $"#{t}"))}";
 
             DialogResult = true;
         }
@@ -642,69 +648,13 @@ namespace ImageFolderManager.Views
         }
 
         // ═════════════════════════════════════════════════════════════════════════
-        //  Tag application (background, post-import)
+        //  Tag application (legacy helper, no longer used)
         // ═════════════════════════════════════════════════════════════════════════
 
-        private async Task ApplyTagsToImportedFoldersAsync(List<string> tags)
+        [Obsolete("Tag application is now handled by MainViewModel after successful import results.")]
+        private Task ApplyTagsToImportedFoldersAsync(List<string> tags)
         {
-            if (tags == null || tags.Count == 0 || string.IsNullOrEmpty(DestinationPath))
-                return;
-
-            try
-            {
-                var targetFolderPaths = new List<string>();
-
-                if (_sourceFolderPaths.Count == 1)
-                {
-                    targetFolderPaths.Add(DestinationPath);
-                }
-                else
-                {
-                    foreach (var sourcePath in _sourceFolderPaths)
-                    {
-                        string fn         = Path.GetFileName(sourcePath);
-                        string targetPath = Path.Combine(DestinationPath, fn);
-                        targetFolderPaths.Add(targetPath);
-                    }
-                }
-
-                await System.Threading.Tasks.Task.Run(async () =>
-                {
-                    const int maxWaitMs      = 60_000;
-                    const int intervalMs     = 500;
-                    int totalWait            = 0;
-
-                    while (totalWait < maxWaitMs)
-                    {
-                        if (targetFolderPaths.All(p => Directory.Exists(p)))
-                        {
-                            foreach (var path in targetFolderPaths)
-                            {
-                                try
-                                {
-                                    await _folderTagService.SetTagsAndRatingForFolderAsync(path, tags, 0);
-                                }
-                                catch (Exception ex)
-                                {
-                                    System.Diagnostics.Debug.WriteLine(
-                                        $"Error applying tags to {path}: {ex.Message}");
-                                }
-                            }
-                            return;
-                        }
-
-                        await System.Threading.Tasks.Task.Delay(intervalMs);
-                        totalWait += intervalMs;
-                    }
-
-                    System.Diagnostics.Debug.WriteLine(
-                        "Timeout waiting for imported folders. Tags not applied.");
-                });
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"Error in ApplyTagsToImportedFoldersAsync: {ex.Message}");
-            }
+            return Task.CompletedTask;
         }
     }
 }

@@ -20,6 +20,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Linq;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Windows.Threading;
 
 
@@ -35,6 +36,10 @@ namespace ImageFolderManager
 
         // ADD this to track which instance we're using
         private string _mainViewModelInstanceInfo;
+        private readonly ObservableCollection<string> _searchSuggestionItems = new ObservableCollection<string>();
+        private readonly ObservableCollection<string> _tagSuggestionItems = new ObservableCollection<string>();
+        private bool _isApplyingSearchSuggestion;
+        private bool _isApplyingTagSuggestion;
 
         public MainWindow()
         {
@@ -43,6 +48,9 @@ namespace ImageFolderManager
             _mainViewModelInstanceInfo = viewModel.GetInstanceInfo();
             DataContext = viewModel;
             viewModel.SetShellTreeView(ShellTreeViewControl);
+            SearchSuggestionListBox.ItemsSource = _searchSuggestionItems;
+            TagSuggestionListBox.ItemsSource = _tagSuggestionItems;
+            AutoExpandFoldersMenuItem.IsChecked = AppSettings.Instance.AutoExpandFolders;
             this.Loaded += MainWindow_Loaded;
             this.Closing += MainWindow_Closing;
             _ = LoadDefaultRootDirectoryAsync();
@@ -230,6 +238,71 @@ namespace ImageFolderManager
                 MessageBox.Show($"Error setting root directory: {ex.Message}",
                     "Error", MessageBoxButton.OK, MessageBoxImage.Error);
             }
+        }
+
+        private async void AutoExpandFolders_Click(object sender, RoutedEventArgs e)
+        {
+            bool enabled = AutoExpandFoldersMenuItem.IsChecked;
+            AppSettings.Instance.AutoExpandFolders = enabled;
+            ViewModel.StatusMessage = enabled
+                ? "Auto-expand enabled for first-level folders."
+                : "Auto-expand disabled.";
+
+            if (ShellTreeViewControl != null)
+            {
+                await ShellTreeViewControl.RefreshTreeFull();
+            }
+        }
+
+        private void RecentRootDirectories_SubmenuOpened(object sender, RoutedEventArgs e)
+        {
+            RecentRootDirectoriesMenuItem.Items.Clear();
+
+            var recentFolders = AppSettings.Instance.RecentFolders?
+                .Where(path => !string.IsNullOrWhiteSpace(path) && Directory.Exists(path))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList() ?? new List<string>();
+
+            if (recentFolders.Count == 0)
+            {
+                RecentRootDirectoriesMenuItem.Items.Add(new MenuItem
+                {
+                    Header = "(No recent directories)",
+                    IsEnabled = false
+                });
+                return;
+            }
+
+            foreach (var path in recentFolders)
+            {
+                var menuItem = new MenuItem
+                {
+                    Header = path,
+                    ToolTip = path
+                };
+
+                menuItem.Click += async (_, __) =>
+                {
+                    await SwitchRootDirectoryAsync(path);
+                };
+
+                RecentRootDirectoriesMenuItem.Items.Add(menuItem);
+            }
+        }
+
+        private async Task SwitchRootDirectoryAsync(string rootPath)
+        {
+            if (string.IsNullOrWhiteSpace(rootPath) || !Directory.Exists(rootPath))
+            {
+                MessageBox.Show("The selected directory no longer exists.",
+                    "Directory Not Found", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            AppSettings.Instance.DefaultRootDirectory = rootPath;
+            AppSettings.Instance.AddRecentFolder(rootPath);
+
+            await ViewModel.LoadDirectoryAsync(rootPath);
         }
 
         private async void PreviewSize_Click(object sender, RoutedEventArgs e)
@@ -423,6 +496,419 @@ namespace ImageFolderManager
 
         }
 
+        #region Search And Tag Autocomplete
+
+        private void SearchTextBox_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            if (_isApplyingSearchSuggestion)
+                return;
+
+            UpdateSearchSuggestions();
+        }
+
+        private void SearchTextBox_PreviewKeyDown(object sender, KeyEventArgs e)
+        {
+            if (!SearchSuggestionPopup.IsOpen || _searchSuggestionItems.Count == 0)
+                return;
+
+            if (e.Key == Key.Down)
+            {
+                int nextIndex = Math.Min(_searchSuggestionItems.Count - 1, SearchSuggestionListBox.SelectedIndex + 1);
+                SearchSuggestionListBox.SelectedIndex = nextIndex;
+                SearchSuggestionListBox.ScrollIntoView(SearchSuggestionListBox.SelectedItem);
+                e.Handled = true;
+            }
+            else if (e.Key == Key.Up)
+            {
+                int nextIndex = Math.Max(0, SearchSuggestionListBox.SelectedIndex - 1);
+                SearchSuggestionListBox.SelectedIndex = nextIndex;
+                SearchSuggestionListBox.ScrollIntoView(SearchSuggestionListBox.SelectedItem);
+                e.Handled = true;
+            }
+            else if (e.Key == Key.Enter || e.Key == Key.Tab)
+            {
+                if (ApplySelectedSearchSuggestion())
+                {
+                    e.Handled = true;
+                }
+            }
+            else if (e.Key == Key.Escape)
+            {
+                HideSearchSuggestionPopup();
+                e.Handled = true;
+            }
+        }
+
+        private void SearchSuggestionListBox_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+        {
+            ApplySelectedSearchSuggestion();
+        }
+
+        private bool ApplySelectedSearchSuggestion()
+        {
+            if (!(SearchSuggestionListBox.SelectedItem is string selectedSuggestion) ||
+                string.IsNullOrWhiteSpace(selectedSuggestion))
+            {
+                return false;
+            }
+
+            ReplaceSearchToken(selectedSuggestion);
+            return true;
+        }
+
+        private void ReplaceSearchToken(string replacement)
+        {
+            if (SearchTextBox == null)
+                return;
+
+            string text = SearchTextBox.Text ?? string.Empty;
+            var (start, end, _) = GetTokenBoundsByWhitespace(text, SearchTextBox.CaretIndex);
+            string newText = text.Substring(0, start) + replacement + text.Substring(end);
+
+            _isApplyingSearchSuggestion = true;
+            SearchTextBox.Text = newText;
+            SearchTextBox.CaretIndex = start + replacement.Length;
+            _isApplyingSearchSuggestion = false;
+
+            HideSearchSuggestionPopup();
+        }
+
+        private void UpdateSearchSuggestions()
+        {
+            if (SearchTextBox == null)
+                return;
+
+            string text = SearchTextBox.Text ?? string.Empty;
+            var (_, _, token) = GetTokenBoundsByWhitespace(text, SearchTextBox.CaretIndex);
+
+            IEnumerable<string> suggestions = Enumerable.Empty<string>();
+            if (token.StartsWith("#"))
+            {
+                suggestions = BuildTagSearchSuggestions(token.Substring(1));
+            }
+            else if (token.StartsWith("@"))
+            {
+                suggestions = BuildFolderSearchSuggestions(token.Substring(1));
+            }
+            else if (token.StartsWith("*"))
+            {
+                suggestions = BuildRatingSearchSuggestions(token.Substring(1));
+            }
+            else
+            {
+                HideSearchSuggestionPopup();
+                return;
+            }
+
+            var topSuggestions = suggestions.Take(24).ToList();
+            SetSuggestionItems(_searchSuggestionItems, topSuggestions);
+
+            bool shouldOpen = topSuggestions.Count > 0 && SearchTextBox.IsKeyboardFocusWithin;
+            SearchSuggestionPopup.IsOpen = shouldOpen;
+            SearchSuggestionListBox.SelectedIndex = shouldOpen ? 0 : -1;
+        }
+
+        private IEnumerable<string> BuildTagSearchSuggestions(string fragment)
+        {
+            var candidates = GetCategoryTagSuggestionValues()
+                .Select(v => $"#{v}")
+                .ToList();
+
+            if (candidates.Count == 0)
+            {
+                candidates.Add("#Category::Tag");
+            }
+
+            return RankSuggestions(candidates, $"#{fragment}", 64);
+        }
+
+        private IEnumerable<string> BuildFolderSearchSuggestions(string fragment)
+        {
+            var folderNames = (ViewModel?.GetAllIndexedFolderPaths() ?? new List<string>())
+                .Select(path => Path.GetFileName(path))
+                .Where(name => !string.IsNullOrWhiteSpace(name))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Select(name => $"@{name}")
+                .ToList();
+
+            if (folderNames.Count == 0)
+            {
+                folderNames.Add("@folderName");
+            }
+
+            return RankSuggestions(folderNames, $"@{fragment}", 64);
+        }
+
+        private IEnumerable<string> BuildRatingSearchSuggestions(string fragment)
+        {
+            string[] ratingTemplates =
+            {
+                "*>=5", "*>=4", "*>=3", "*=5", "*=4", "*<=2", "*<3", "*>3"
+            };
+            return RankSuggestions(ratingTemplates, $"*{fragment}", 16);
+        }
+
+        private void TagsTextBox_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            if (_isApplyingTagSuggestion)
+                return;
+
+            UpdateTagSuggestions();
+        }
+
+        private void TagsTextBox_PreviewKeyDown(object sender, KeyEventArgs e)
+        {
+            if (!TagSuggestionPopup.IsOpen || _tagSuggestionItems.Count == 0)
+                return;
+
+            if (e.Key == Key.Down)
+            {
+                int nextIndex = Math.Min(_tagSuggestionItems.Count - 1, TagSuggestionListBox.SelectedIndex + 1);
+                TagSuggestionListBox.SelectedIndex = nextIndex;
+                TagSuggestionListBox.ScrollIntoView(TagSuggestionListBox.SelectedItem);
+                e.Handled = true;
+            }
+            else if (e.Key == Key.Up)
+            {
+                int nextIndex = Math.Max(0, TagSuggestionListBox.SelectedIndex - 1);
+                TagSuggestionListBox.SelectedIndex = nextIndex;
+                TagSuggestionListBox.ScrollIntoView(TagSuggestionListBox.SelectedItem);
+                e.Handled = true;
+            }
+            else if (e.Key == Key.Enter || e.Key == Key.Tab)
+            {
+                if (ApplySelectedTagSuggestion())
+                {
+                    e.Handled = true;
+                }
+            }
+            else if (e.Key == Key.Escape)
+            {
+                HideTagSuggestionPopup();
+                e.Handled = true;
+            }
+        }
+
+        private void TagSuggestionListBox_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+        {
+            ApplySelectedTagSuggestion();
+        }
+
+        private bool ApplySelectedTagSuggestion()
+        {
+            if (!(TagSuggestionListBox.SelectedItem is string selectedSuggestion) ||
+                string.IsNullOrWhiteSpace(selectedSuggestion))
+            {
+                return false;
+            }
+
+            ReplaceTagFragment(selectedSuggestion);
+            return true;
+        }
+
+        private void ReplaceTagFragment(string replacement)
+        {
+            if (TagsTextBox == null)
+                return;
+
+            string text = TagsTextBox.Text ?? string.Empty;
+            if (!TryGetTagFragmentBounds(text, TagsTextBox.CaretIndex, out int valueStart, out int valueEnd, out _))
+                return;
+
+            string newText = text.Substring(0, valueStart) + replacement + text.Substring(valueEnd);
+
+            _isApplyingTagSuggestion = true;
+            TagsTextBox.Text = newText;
+            TagsTextBox.CaretIndex = valueStart + replacement.Length;
+            _isApplyingTagSuggestion = false;
+
+            HideTagSuggestionPopup();
+        }
+
+        private void UpdateTagSuggestions()
+        {
+            if (TagsTextBox == null)
+                return;
+
+            string text = TagsTextBox.Text ?? string.Empty;
+            if (!TryGetTagFragmentBounds(text, TagsTextBox.CaretIndex, out _, out _, out string fragment))
+            {
+                HideTagSuggestionPopup();
+                return;
+            }
+
+            var suggestions = RankSuggestions(GetCategoryTagSuggestionValues(), fragment, 24).ToList();
+            SetSuggestionItems(_tagSuggestionItems, suggestions);
+
+            bool shouldOpen = suggestions.Count > 0 && TagsTextBox.IsKeyboardFocusWithin;
+            TagSuggestionPopup.IsOpen = shouldOpen;
+            TagSuggestionListBox.SelectedIndex = shouldOpen ? 0 : -1;
+        }
+
+        private List<string> GetCategoryTagSuggestionValues()
+        {
+            var suggestionSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            if (ViewModel?.TagManagement?.TagCloud != null)
+            {
+                var tagCloud = ViewModel.TagManagement.TagCloud;
+                var categories = tagCloud.Categories?
+                    .Select(c => c.Name)
+                    .Where(name => !string.IsNullOrWhiteSpace(name))
+                    .ToList() ?? new List<string>();
+
+                foreach (var category in categories)
+                {
+                    if (!category.Equals("Uncategorized", StringComparison.OrdinalIgnoreCase))
+                    {
+                        suggestionSet.Add($"{category}::");
+                    }
+
+                    var tags = tagCloud.GetTagsInCategory(category)
+                        .Select(t => t.Tag)
+                        .Where(t => !string.IsNullOrWhiteSpace(t))
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .ToList();
+
+                    foreach (var tag in tags)
+                    {
+                        suggestionSet.Add(tag);
+                        if (!category.Equals("Uncategorized", StringComparison.OrdinalIgnoreCase))
+                        {
+                            suggestionSet.Add($"{category}::{tag}");
+                        }
+                    }
+                }
+            }
+
+            foreach (var tag in ViewModel?.FolderTags ?? new ObservableCollection<string>())
+            {
+                if (!string.IsNullOrWhiteSpace(tag))
+                    suggestionSet.Add(tag.Trim());
+            }
+
+            foreach (var tagDisplayInfo in ViewModel?.TagDisplayItems ?? new ObservableCollection<TagDisplayInfo>())
+            {
+                if (tagDisplayInfo == null || string.IsNullOrWhiteSpace(tagDisplayInfo.TagName))
+                    continue;
+
+                suggestionSet.Add(tagDisplayInfo.TagName.Trim());
+                if (!string.IsNullOrWhiteSpace(tagDisplayInfo.Category) &&
+                    !tagDisplayInfo.Category.Equals("Uncategorized", StringComparison.OrdinalIgnoreCase))
+                {
+                    suggestionSet.Add($"{tagDisplayInfo.Category.Trim()}::{tagDisplayInfo.TagName.Trim()}");
+                }
+            }
+
+            if (suggestionSet.Count == 0)
+            {
+                suggestionSet.Add("Category::Tag");
+            }
+
+            return suggestionSet
+                .OrderBy(v => v, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+
+        private static IEnumerable<string> RankSuggestions(IEnumerable<string> rawSuggestions, string typedFragment, int take)
+        {
+            var source = rawSuggestions?.Where(s => !string.IsNullOrWhiteSpace(s))
+                ?? Enumerable.Empty<string>();
+
+            string fragment = typedFragment?.Trim() ?? string.Empty;
+
+            var filtered = source
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Where(s => string.IsNullOrEmpty(fragment) ||
+                            s.Contains(fragment, StringComparison.OrdinalIgnoreCase))
+                .OrderBy(s => string.IsNullOrEmpty(fragment) ||
+                              s.StartsWith(fragment, StringComparison.OrdinalIgnoreCase) ? 0 : 1)
+                .ThenBy(s => s, StringComparer.OrdinalIgnoreCase)
+                .Take(Math.Max(1, take));
+
+            return filtered;
+        }
+
+        private static (int start, int end, string token) GetTokenBoundsByWhitespace(string text, int caretIndex)
+        {
+            string value = text ?? string.Empty;
+            int caret = Math.Max(0, Math.Min(caretIndex, value.Length));
+
+            int start = caret;
+            while (start > 0 && !char.IsWhiteSpace(value[start - 1]))
+            {
+                start--;
+            }
+
+            int end = caret;
+            while (end < value.Length && !char.IsWhiteSpace(value[end]))
+            {
+                end++;
+            }
+
+            string token = value.Substring(start, end - start);
+            return (start, end, token);
+        }
+
+        private static bool TryGetTagFragmentBounds(
+            string text,
+            int caretIndex,
+            out int valueStart,
+            out int valueEnd,
+            out string fragment)
+        {
+            valueStart = 0;
+            valueEnd = 0;
+            fragment = string.Empty;
+
+            string value = text ?? string.Empty;
+            if (value.Length == 0)
+                return false;
+
+            int caret = Math.Max(0, Math.Min(caretIndex, value.Length));
+            int hashIndex = value.LastIndexOf('#', Math.Max(0, caret - 1));
+            if (hashIndex < 0)
+                return false;
+
+            valueStart = hashIndex + 1;
+            while (valueStart < value.Length &&
+                   valueStart < caret &&
+                   char.IsWhiteSpace(value[valueStart]))
+            {
+                valueStart++;
+            }
+
+            int nextHash = value.IndexOf('#', caret);
+            valueEnd = nextHash >= 0 ? nextHash : value.Length;
+            fragment = value.Substring(valueStart, Math.Max(0, valueEnd - valueStart)).Trim();
+            return true;
+        }
+
+        private static void SetSuggestionItems(ObservableCollection<string> target, IEnumerable<string> values)
+        {
+            target.Clear();
+            foreach (var value in values)
+            {
+                target.Add(value);
+            }
+        }
+
+        private void HideSearchSuggestionPopup()
+        {
+            SearchSuggestionPopup.IsOpen = false;
+            SearchSuggestionListBox.SelectedIndex = -1;
+            _searchSuggestionItems.Clear();
+        }
+
+        private void HideTagSuggestionPopup()
+        {
+            TagSuggestionPopup.IsOpen = false;
+            TagSuggestionListBox.SelectedIndex = -1;
+            _tagSuggestionItems.Clear();
+        }
+
+        #endregion
+
         #region Find Bar
 
         private List<string> _findResults = new List<string>();
@@ -511,6 +997,33 @@ namespace ImageFolderManager
         }
 
         /// <summary>Core search + navigation logic.</summary>
+        private async Task<List<string>> FindFoldersWithIndexFirstAsync(string keyword, CancellationToken cancellationToken)
+        {
+            var indexedPaths = ViewModel?.GetAllIndexedFolderPaths();
+            if (indexedPaths != null && indexedPaths.Count > 0)
+            {
+                var indexedMatches = indexedPaths
+                    .Where(path =>
+                        !string.IsNullOrWhiteSpace(path) &&
+                        PathService.DirectoryExists(path) &&
+                        Path.GetFileName(path).IndexOf(keyword, StringComparison.OrdinalIgnoreCase) >= 0)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(path =>
+                        path.Split(
+                            new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar },
+                            StringSplitOptions.RemoveEmptyEntries).Length)
+                    .ThenBy(path => Path.GetFileName(path), WindowsNaturalStringComparer.Instance)
+                    .ThenBy(path => path, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+
+                if (indexedMatches.Count > 0)
+                    return indexedMatches;
+            }
+
+            return await ShellTreeViewControl.FindFoldersByNameAsync(keyword, cancellationToken);
+        }
+
+        /// <summary>Core search + navigation logic.</summary>
         private async Task RunFindAsync(string keyword, bool forward, bool resetIndex)
         {
             // Reset UI hints
@@ -537,7 +1050,7 @@ namespace ImageFolderManager
                     ? _findResults[_findIndex]
                     : null;
 
-                var refreshedResults = await ShellTreeViewControl.FindFoldersByNameAsync(trimmedKeyword, cancellationToken);
+                var refreshedResults = await FindFoldersWithIndexFirstAsync(trimmedKeyword, cancellationToken);
 
                 if (requestId != _findRequestId)
                     return;
