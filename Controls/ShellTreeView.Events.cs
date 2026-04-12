@@ -82,7 +82,11 @@ namespace ImageFolderManager.Controls
             finally
             {
                 HideLoadingIndicator();
-                if (_expansionCts.ContainsKey(parentItem))
+                // Only clear/dispose if this call still owns the dictionary slot.
+                // Prevents an older expansion from disposing a newer CTS when
+                // multiple expand requests race for the same TreeViewItem.
+                if (_expansionCts.TryGetValue(parentItem, out var current) &&
+                    ReferenceEquals(current, cts))
                 {
                     _expansionCts.Remove(parentItem);
                     cts.Dispose();

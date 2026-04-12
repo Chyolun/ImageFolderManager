@@ -614,10 +614,10 @@ namespace ImageFolderManager.Controls
             _pathToTreeViewItem[_rootDirectory] = rootItem;
 
             // Expand the root immediately so the first level is visible.
-            // ExpandAsync inserts children in background-priority batches,
-            // so the window stays responsive even with hundreds of sub-folders.
-            rootItem.IsExpanded = true;
+            // Load first, then mark expanded to avoid duplicate expansion
+            // (IsExpanded event + manual ExpandNodeAsync) racing each other.
             await ExpandNodeAsync(rootItem, _rootNode);
+            rootItem.IsExpanded = true;
 
             if (AppSettings.Instance.AutoExpandFolders)
             {
@@ -632,8 +632,8 @@ namespace ImageFolderManager.Controls
                 {
                     if (childItem.Tag is FolderNode childNode && !childItem.IsExpanded)
                     {
-                        childItem.IsExpanded = true;
                         await ExpandNodeAsync(childItem, childNode);
+                        childItem.IsExpanded = true;
                     }
                 }
             }
@@ -1470,11 +1470,13 @@ namespace ImageFolderManager.Controls
 
             foreach (var dir in directoriesToExpand)
             {
-                cancellationToken.ThrowIfCancellationRequested();
+                if (cancellationToken.IsCancellationRequested)
+                    return;
 
                 for (int attempt = 0; attempt < 40; attempt++)
                 {
-                    cancellationToken.ThrowIfCancellationRequested();
+                    if (cancellationToken.IsCancellationRequested)
+                        return;
 
                     TreeViewItem parentItem = null;
                     if (_pathToTreeViewItem.TryGetValue(dir, out var foundParent))
@@ -1501,7 +1503,7 @@ namespace ImageFolderManager.Controls
                             break;
                     }
 
-                    await Task.Delay(50, cancellationToken);
+                    await Task.Delay(50);
                 }
             }
         }

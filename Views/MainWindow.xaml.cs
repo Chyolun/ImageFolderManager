@@ -1114,7 +1114,11 @@ namespace ImageFolderManager
                         continue;
                     }
 
-                    navigated = await ShellTreeViewControl.NavigateToPathAsync(target, cancellationToken);
+                    navigated = await ShellTreeViewControl.NavigateToPathAsync(
+                        target,
+                        cancellationToken,
+                        promptToChangeRoot: false,
+                        centerInView: true);
                     if (navigated)
                         break;
 
@@ -1231,6 +1235,79 @@ namespace ImageFolderManager
             contextMenu.Items.Add(deleteItem);
 
             item.ContextMenu = contextMenu;
+        }
+
+        /// <summary>
+        /// Handles Tools > Smart Author Classification click.
+        /// Organizes non-[author] top-level folders into [author]/[author]folder format.
+        /// </summary>
+        private async void SmartClassifyFolders_Click(object sender, RoutedEventArgs e)
+        {
+            var menuItem = sender as MenuItem;
+            if (menuItem != null)
+            {
+                menuItem.IsEnabled = false;
+            }
+
+            try
+            {
+                if (ViewModel == null)
+                {
+                    MessageBox.Show(
+                        "ViewModel is not available.",
+                        "Smart Classification",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Error);
+                    return;
+                }
+
+                string rootDirectory = ViewModel.CurrentRootDirectory;
+                if (string.IsNullOrWhiteSpace(rootDirectory))
+                {
+                    rootDirectory = AppSettings.Instance.DefaultRootDirectory;
+                }
+
+                if (string.IsNullOrWhiteSpace(rootDirectory) || !Directory.Exists(rootDirectory))
+                {
+                    MessageBox.Show(
+                        "Please set a valid root directory first.",
+                        "Smart Classification",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Information);
+                    return;
+                }
+
+                if (ViewModel.IsIndexing)
+                {
+                    var proceed = MessageBox.Show(
+                        "Folder indexing is in progress. Smart classification can continue, but results may be incomplete.\n\nContinue anyway?",
+                        "Indexing In Progress",
+                        MessageBoxButton.YesNo,
+                        MessageBoxImage.Question);
+                    if (proceed != MessageBoxResult.Yes)
+                    {
+                        return;
+                    }
+                }
+
+                await ViewModel.SmartClassifyRootFoldersByAuthorAsync();
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"SmartClassifyFolders_Click error: {ex}");
+                MessageBox.Show(
+                    $"An error occurred during smart classification:\n\n{ex.Message}",
+                    "Smart Classification Error",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+            }
+            finally
+            {
+                if (menuItem != null)
+                {
+                    menuItem.IsEnabled = true;
+                }
+            }
         }
 
         /// <summary>

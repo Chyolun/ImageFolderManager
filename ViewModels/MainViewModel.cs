@@ -470,6 +470,17 @@ namespace ImageFolderManager.ViewModels
 
         public async Task<bool> MoveFolders(IEnumerable<FolderInfo> sources, FolderInfo target) => await FolderOperations.MoveFoldersAsync(sources, target);
 
+        public async Task<bool> SmartClassifyRootFoldersByAuthorAsync()
+        {
+            string rootDirectory = CurrentRootDirectory;
+            if (string.IsNullOrWhiteSpace(rootDirectory))
+            {
+                rootDirectory = AppSettings.Instance.DefaultRootDirectory;
+            }
+
+            return await FolderOperations.SmartClassifyRootFoldersByAuthorAsync(rootDirectory);
+        }
+
         public async Task RenameFolder(FolderInfo folder) => await FolderOperations.RenameFolderAsync(folder);
 
         // New unified methods

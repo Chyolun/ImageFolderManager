@@ -86,6 +86,12 @@ namespace ImageFolderManager.Controls
                 var nodes = await Task.Run(() =>
                     EnumerateChildren(FullPath, cancellationToken), cancellationToken);
 
+                if (cancellationToken.IsCancellationRequested || nodes == null)
+                {
+                    // Cancelled load should not poison the node's cache state.
+                    return null;
+                }
+
                 _children = nodes;
                 _childrenLoaded = true;
                 // Update the flag from what we actually found
@@ -121,7 +127,8 @@ namespace ImageFolderManager.Controls
                 foreach (var dir in Directory.EnumerateDirectories(
                     path, "*", SearchOption.TopDirectoryOnly))
                 {
-                    ct.ThrowIfCancellationRequested();
+                    if (ct.IsCancellationRequested)
+                        return null;
 
                     // Skip hidden / system folders (optional — remove if all folders are wanted)
                     var attrs = File.GetAttributes(dir);
@@ -132,13 +139,12 @@ namespace ImageFolderManager.Controls
                     list.Add(new FolderNode(dir));
                 }
 
+                if (ct.IsCancellationRequested)
+                    return null;
+
                 // Natural sort (Windows Explorer order)
                 list.Sort((a, b) =>
                     WindowsNaturalStringComparer.Instance.Compare(a.Name, b.Name));
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
             }
             catch
             {

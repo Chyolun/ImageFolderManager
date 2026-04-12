@@ -78,20 +78,50 @@ namespace ImageFolderManager.Controls
             // Remove the placeholder "Loading…" item
             parentItem.Items.Clear();
 
+            void RestorePlaceholderIfNeeded()
+            {
+                if (parentItem.Items.Count > 0)
+                    return;
+
+                bool shouldShowPlaceholder = false;
+
+                if (parentNode.ChildrenLoaded)
+                {
+                    shouldShowPlaceholder = parentNode.Children.Count > 0;
+                }
+                else
+                {
+                    shouldShowPlaceholder = parentNode.HasSubDirectories;
+                }
+
+                if (shouldShowPlaceholder)
+                {
+                    parentItem.Items.Add(MakePlaceholder());
+                }
+            }
+
             // Load children on a background thread (pure filesystem I/O)
             IReadOnlyList<FolderNode> children;
             try
             {
                 children = await parentNode.LoadChildrenAsync(ct);
             }
-            catch (OperationCanceledException) { return; }
+            catch (OperationCanceledException)
+            {
+                RestorePlaceholderIfNeeded();
+                return;
+            }
             catch
             {
                 // Access denied etc. — leave the node empty
                 return;
             }
 
-            if (ct.IsCancellationRequested) return;
+            if (ct.IsCancellationRequested || children == null)
+            {
+                RestorePlaceholderIfNeeded();
+                return;
+            }
 
             // Insert children into the UI in batches at Background priority.
             // Each batch yields control back to the message pump so the window
@@ -101,7 +131,11 @@ namespace ImageFolderManager.Controls
 
             while (inserted < total)
             {
-                if (ct.IsCancellationRequested) return;
+                if (ct.IsCancellationRequested)
+                {
+                    RestorePlaceholderIfNeeded();
+                    return;
+                }
 
                 int end = Math.Min(inserted + UI_BATCH_SIZE, total);
 
@@ -117,7 +151,11 @@ namespace ImageFolderManager.Controls
                     batch[batchIdx++] = (child, hasSub);
                 }
 
-                if (ct.IsCancellationRequested) return;
+                if (ct.IsCancellationRequested)
+                {
+                    RestorePlaceholderIfNeeded();
+                    return;
+                }
 
                 // Now hand off to the UI thread for the fast insert-only pass
                 await Application.Current.Dispatcher.InvokeAsync(() =>

@@ -1,4 +1,4 @@
-using System;
+ï»¿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -218,7 +218,7 @@ namespace ImageFolderManager.Controls
         /// </summary>
         private void TraverseForFind(string path, string keyword, List<string> results, CancellationToken ct)
         {
-            ct.ThrowIfCancellationRequested();
+            if (ct.IsCancellationRequested) return;
 
             string[] children;
             try
@@ -230,7 +230,7 @@ namespace ImageFolderManager.Controls
             catch (PathTooLongException) { return; }
             catch (IOException) { return; }
 
-            // Sort with StrCmpLogicalW â€?identical to FolderNode.EnumerateChildren and Tree View
+            // Sort with StrCmpLogicalW ï¿½?identical to FolderNode.EnumerateChildren and Tree View
             Array.Sort(children, (a, b) =>
                 WindowsNaturalStringComparer.Instance.Compare(
                     Path.GetFileName(a),
@@ -238,7 +238,7 @@ namespace ImageFolderManager.Controls
 
             foreach (var child in children)
             {
-                ct.ThrowIfCancellationRequested();
+                if (ct.IsCancellationRequested) return;
 
                 // Skip hidden / system folders (same rule as FolderNode.EnumerateChildren)
                 try
@@ -253,7 +253,7 @@ namespace ImageFolderManager.Controls
                 string normalizedChild = PathService.NormalizePath(child);
                 string name = Path.GetFileName(normalizedChild);
 
-                // Check match before recursing â€?pre-order means parent before children
+                // Check match before recursing ï¿½?pre-order means parent before children
                 if (name.IndexOf(keyword, StringComparison.OrdinalIgnoreCase) >= 0)
                     results.Add(normalizedChild);
 
@@ -305,7 +305,7 @@ namespace ImageFolderManager.Controls
 
                 for (int attempt = 0; attempt < 40; attempt++)
                 {
-                    cancellationToken.ThrowIfCancellationRequested();
+                    if (cancellationToken.IsCancellationRequested) return false;
 
                     if (_pathToTreeViewItem.TryGetValue(normalizedPath, out var treeViewItem))
                     {
@@ -337,7 +337,7 @@ namespace ImageFolderManager.Controls
                         });
                     }
 
-                    await Task.Delay(50, cancellationToken);
+                    await Task.Delay(50);
                 }
 
                 return false;

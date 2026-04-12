@@ -190,6 +190,11 @@
                         <TextBlock Style="{StaticResource MenuGlyphStyle}" Text="&#xE72C;" />
                     </MenuItem.Icon>
                 </MenuItem>
+                <MenuItem Header="Smart Author Classification" Click="SmartClassifyFolders_Click">
+                    <MenuItem.Icon>
+                        <TextBlock Style="{StaticResource MenuGlyphStyle}" Text="&#xE9D5;" />
+                    </MenuItem.Icon>
+                </MenuItem>
                 <MenuItem Header="Tags Cloud" Click="TagsCloud_Click" >
                     <MenuItem.Icon>
                         <TextBlock Style="{StaticResource MenuGlyphStyle}" Text="&#xE8EC;" />

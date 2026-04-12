@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -8,23 +8,24 @@ using ImageFolderManager.Services;
 
 namespace ImageFolderManager.ViewModels
 {
-    // ─────────────────────────────────────────────────────────────────────────
+    // 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
     //  Operation type enumeration
-    // ─────────────────────────────────────────────────────────────────────────
+    // 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
     public enum UndoOperationType
     {
         Move,
         MultiMove,
+        MappedMove,
         Copy,
         Create,
         Delete,
         Rename
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
+    // 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
     //  Immutable record for a single undoable operation
-    // ─────────────────────────────────────────────────────────────────────────
+    // 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
     public sealed class UndoResult
     {
@@ -53,12 +54,13 @@ namespace ImageFolderManager.ViewModels
         public UndoOperationType OperationType { get; }
         public DateTime Timestamp { get; }
 
-        // Move / Rename: single source → destination
+        // Move / Rename: single source 鈫?destination
         public string SourcePath { get; }
         public string DestinationPath { get; }
 
-        // MultiMove: multiple sources → same destination directory
+        // MultiMove: multiple sources 鈫?same destination directory
         public IReadOnlyList<string> SourcePaths { get; }
+        public IReadOnlyList<(string SourcePath, string DestinationPath)> MoveMappings { get; }
 
         // Copy: the path that was *created* (to delete on undo)
         public string CreatedPath { get; }
@@ -70,9 +72,9 @@ namespace ImageFolderManager.ViewModels
         // Description shown in UI / status bar
         public string Description { get; }
 
-        // ── Factory methods ────────────────────────────────────────────────
+        // 鈹€鈹€ Factory methods 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
-        public static UndoRecord ForMove(string sourcePath, string destinationPath)
+                public static UndoRecord ForMove(string sourcePath, string destinationPath)
         {
             string name = Path.GetFileName(sourcePath);
             return new UndoRecord(
@@ -81,7 +83,8 @@ namespace ImageFolderManager.ViewModels
                 destinationPath,
                 null,
                 null,
-                $"Move '{name}' → '{Path.GetFileName(destinationPath)}'");
+                $"Move '{name}' -> '{Path.GetFileName(destinationPath)}'",
+                null);
         }
 
         public static UndoRecord ForMultiMove(IEnumerable<string> sourcePaths, string destinationDirectory)
@@ -93,7 +96,38 @@ namespace ImageFolderManager.ViewModels
                 destinationDirectory,
                 list,
                 null,
-                $"Move {list.Count} folders → '{Path.GetFileName(destinationDirectory)}'");
+                $"Move {list.Count} folders -> '{Path.GetFileName(destinationDirectory)}'",
+                null);
+        }
+
+        public static UndoRecord ForMappedMove(
+            IEnumerable<(string SourcePath, string DestinationPath)> moveMappings,
+            string description = null)
+        {
+            if (moveMappings == null)
+                throw new ArgumentNullException(nameof(moveMappings));
+
+            var list = moveMappings
+                .Where(m => !string.IsNullOrWhiteSpace(m.SourcePath) &&
+                            !string.IsNullOrWhiteSpace(m.DestinationPath))
+                .ToList()
+                .AsReadOnly();
+
+            if (list.Count == 0)
+                throw new ArgumentException("moveMappings cannot be empty.", nameof(moveMappings));
+
+            string finalDescription = string.IsNullOrWhiteSpace(description)
+                ? $"Move {list.Count} folders (mapped)"
+                : description;
+
+            return new UndoRecord(
+                UndoOperationType.MappedMove,
+                null,
+                null,
+                null,
+                null,
+                finalDescription,
+                list);
         }
 
         public static UndoRecord ForCopy(string copiedPath)
@@ -105,7 +139,8 @@ namespace ImageFolderManager.ViewModels
                 null,
                 null,
                 copiedPath,
-                $"Copy → '{name}' (undo will delete copy)");
+                $"Copy -> '{name}' (undo will delete copy)",
+                null);
         }
 
         public static UndoRecord ForCreate(string createdPath)
@@ -117,7 +152,8 @@ namespace ImageFolderManager.ViewModels
                 null,
                 null,
                 createdPath,
-                $"Create '{name}'");
+                $"Create '{name}'",
+                null);
         }
 
         public static UndoRecord ForRename(string oldPath, string newPath)
@@ -130,18 +166,20 @@ namespace ImageFolderManager.ViewModels
                 newPath,
                 null,
                 null,
-                $"Rename '{oldName}' → '{newName}'");
+                $"Rename '{oldName}' -> '{newName}'",
+                null);
         }
 
-        // ── Private constructor ────────────────────────────────────────────
+        // 鈹€鈹€ Private constructor 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
-        private UndoRecord(
+                private UndoRecord(
             UndoOperationType type,
             string source,
             string destination,
             IReadOnlyList<string> sources,
             string created,
-            string description)
+            string description,
+            IReadOnlyList<(string SourcePath, string DestinationPath)> moveMappings)
         {
             OperationType   = type;
             SourcePath      = source;
@@ -149,15 +187,16 @@ namespace ImageFolderManager.ViewModels
             SourcePaths     = sources;
             CreatedPath     = created;
             Description     = description;
+            MoveMappings    = moveMappings ?? Array.Empty<(string SourcePath, string DestinationPath)>();
             Timestamp       = DateTime.Now;
         }
 
         public override string ToString() => $"[{Timestamp:HH:mm:ss}] {Description}";
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    //  UndoManager  — the single source of truth for undoable operations
-    // ─────────────────────────────────────────────────────────────────────────
+    // 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+    //  UndoManager  鈥?the single source of truth for undoable operations
+    // 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
     /// <summary>
     /// Manages a stack of undoable folder operations.
@@ -173,7 +212,7 @@ namespace ImageFolderManager.ViewModels
         private readonly object _stackLock = new object();
         private readonly UnifiedFolderService _folderService;
 
-        // ── Events ────────────────────────────────────────────────────────
+        // 鈹€鈹€ Events 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
         /// <summary>Fired whenever the undo stack changes (push, pop, or clear).</summary>
         public event EventHandler StateChanged;
@@ -181,7 +220,7 @@ namespace ImageFolderManager.ViewModels
         /// <summary>Fired with a status message after each undo operation.</summary>
         public event EventHandler<string> StatusChanged;
 
-        // ── Properties ────────────────────────────────────────────────────
+        // 鈹€鈹€ Properties 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
         /// <summary>True when there is at least one undoable operation.</summary>
         public bool CanUndo
@@ -219,7 +258,7 @@ namespace ImageFolderManager.ViewModels
             }
         }
 
-        // ── Constructor ───────────────────────────────────────────────────
+        // 鈹€鈹€ Constructor 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
         public UndoManager(UnifiedFolderService folderService)
         {
@@ -227,7 +266,7 @@ namespace ImageFolderManager.ViewModels
                 ?? throw new ArgumentNullException(nameof(folderService));
         }
 
-        // ── Push ──────────────────────────────────────────────────────────
+        // 鈹€鈹€ Push 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
         /// <summary>Records a new undoable operation.</summary>
         public void Push(UndoRecord record)
@@ -254,7 +293,7 @@ namespace ImageFolderManager.ViewModels
             RaiseStateChanged();
         }
 
-        // ── Undo ─────────────────────────────────────────────────────────
+        // 鈹€鈹€ Undo 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
         /// <summary>
         /// Reverses the most recent operation.
@@ -292,7 +331,7 @@ namespace ImageFolderManager.ViewModels
             }
         }
 
-        // ── Clear ─────────────────────────────────────────────────────────
+        // 鈹€鈹€ Clear 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
         /// <summary>Clears the entire undo history.</summary>
         public void Clear()
@@ -304,7 +343,7 @@ namespace ImageFolderManager.ViewModels
             RaiseStateChanged();
         }
 
-        // ── Private helpers ───────────────────────────────────────────────
+        // 鈹€鈹€ Private helpers 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
         private async Task<UndoResult> ExecuteUndoAsync(UndoRecord record)
         {
@@ -312,6 +351,7 @@ namespace ImageFolderManager.ViewModels
             {
                 case UndoOperationType.Move: return await UndoMoveAsync(record);
                 case UndoOperationType.MultiMove: return await UndoMultiMoveAsync(record);
+                case UndoOperationType.MappedMove: return await UndoMappedMoveAsync(record);
                 case UndoOperationType.Copy: return await UndoCopyAsync(record);
                 case UndoOperationType.Create: return await UndoCreateAsync(record);
                 case UndoOperationType.Rename: return await UndoRenameAsync(record);
@@ -383,6 +423,75 @@ namespace ImageFolderManager.ViewModels
                 : $"Undo move: restored {success}, failed {failed}.";
 
             return new UndoResult(success > 0, msg, UndoOperationType.MultiMove,
+                multiPaths: restoredPairs.AsReadOnly());
+        }
+
+        private async Task<UndoResult> UndoMappedMoveAsync(UndoRecord record)
+        {
+            if (record.MoveMappings == null || record.MoveMappings.Count == 0)
+            {
+                return new UndoResult(false,
+                    "Cannot undo mapped move: no mappings recorded.",
+                    UndoOperationType.MappedMove);
+            }
+
+            int success = 0;
+            int failed = 0;
+            var restoredPairs = new List<(string PreviousPath, string RestoredPath)>();
+            var touchedDestinationParents = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var mapping in record.MoveMappings.Reverse())
+            {
+                string originalSource = mapping.SourcePath;
+                string currentDestination = mapping.DestinationPath;
+
+                if (string.IsNullOrWhiteSpace(originalSource) || string.IsNullOrWhiteSpace(currentDestination))
+                {
+                    failed++;
+                    continue;
+                }
+
+                if (!Directory.Exists(currentDestination) || Directory.Exists(originalSource))
+                {
+                    failed++;
+                    continue;
+                }
+
+                string sourceParent = Path.GetDirectoryName(originalSource);
+                if (!string.IsNullOrWhiteSpace(sourceParent) && !Directory.Exists(sourceParent))
+                {
+                    Directory.CreateDirectory(sourceParent);
+                }
+
+                bool ok = await _folderService.MoveFolderAsync(currentDestination, originalSource);
+                if (ok)
+                {
+                    success++;
+                    restoredPairs.Add((currentDestination, originalSource));
+
+                    string destinationParent = Path.GetDirectoryName(currentDestination);
+                    if (!string.IsNullOrWhiteSpace(destinationParent))
+                    {
+                        touchedDestinationParents.Add(destinationParent);
+                    }
+                }
+                else
+                {
+                    failed++;
+                }
+            }
+
+            foreach (var candidate in touchedDestinationParents
+                .OrderByDescending(path => path.Length))
+            {
+                TryDeleteIfEmptySpecialDirectory(candidate);
+            }
+
+            string message = failed == 0
+                ? $"Undo move: restored {success} folder(s)."
+                : $"Undo move: restored {success}, failed {failed}.";
+
+            return new UndoResult(success > 0, message, UndoOperationType.MappedMove,
                 multiPaths: restoredPairs.AsReadOnly());
         }
 
@@ -458,5 +567,34 @@ namespace ImageFolderManager.ViewModels
 
         private void RaiseStatus(string message) =>
             StatusChanged?.Invoke(this, message);
+
+        private static void TryDeleteIfEmptySpecialDirectory(string path)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(path) || !Directory.Exists(path))
+                    return;
+
+                if (Directory.EnumerateFileSystemEntries(path).Any())
+                    return;
+
+                string folderName = Path.GetFileName(path);
+                bool isAuthorDirectory = folderName.StartsWith("[", StringComparison.Ordinal) &&
+                                         folderName.EndsWith("]", StringComparison.Ordinal);
+                bool isUnclassifiedDirectory = folderName.Equals(
+                    SmartFolderClassificationService.UnclassifiedDirectoryName,
+                    StringComparison.OrdinalIgnoreCase);
+
+                if (isAuthorDirectory || isUnclassifiedDirectory)
+                {
+                    Directory.Delete(path, recursive: false);
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[UndoManager] Failed to cleanup directory '{path}': {ex.Message}");
+            }
+        }
     }
 }
+

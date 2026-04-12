@@ -100,17 +100,28 @@ namespace ImageFolderManager.ViewModels
 
             if (result.Success)
             {
-                if (result.OperationType == UndoOperationType.MultiMove
-                    && result.MultiPaths.Count > 0)
+                if ((result.OperationType == UndoOperationType.MultiMove ||
+                     result.OperationType == UndoOperationType.MappedMove) &&
+                    result.MultiPaths.Count > 0)
                 {
-                    OnFolderOperationCompleted(new FolderOperationEventArgs
+                    if (result.MultiPaths.Count == 1)
                     {
-                        Operation = FolderOperation.Refresh,
-                        SourcePath = result.MultiPaths[0].RestoredPath,   // representative path for status
-                        Success = true,
-                        IsUndoOperation = true,
-                        Timestamp = DateTime.Now
-                    });
+                        var item = result.MultiPaths[0];
+                        OnFolderOperationCompleted(FolderOperationEventArgs.CreateSuccess(
+                            FolderOperation.Move,
+                            item.PreviousPath,
+                            item.RestoredPath,
+                            isUndoOperation: true));
+                    }
+                    else
+                    {
+                        var previousPaths = result.MultiPaths.Select(p => p.PreviousPath).ToList();
+                        var restoredPaths = result.MultiPaths.Select(p => p.RestoredPath).ToList();
+                        OnFolderOperationCompleted(FolderOperationEventArgs.CreateBatchMoveSuccess(
+                            previousPaths,
+                            restoredPaths,
+                            isUndoOperation: true));
+                    }
                 }
                 else
                 {
@@ -135,7 +146,8 @@ namespace ImageFolderManager.ViewModels
             switch (type)
             {
                 case UndoOperationType.Move:
-                case UndoOperationType.MultiMove: return FolderOperation.Move;
+                case UndoOperationType.MultiMove:
+                case UndoOperationType.MappedMove: return FolderOperation.Move;
                 case UndoOperationType.Rename: return FolderOperation.Rename;
                 case UndoOperationType.Copy:
                 case UndoOperationType.Create: return FolderOperation.Delete;
@@ -703,6 +715,224 @@ namespace ImageFolderManager.ViewModels
             }
 
             return overallSuccess;
+        }
+
+        #endregion
+
+        // ─────────────────────────────────────────────────────────────────
+        #region Smart Author Classification
+        // ─────────────────────────────────────────────────────────────────
+
+        public async Task<bool> SmartClassifyRootFoldersByAuthorAsync(string rootDirectory)
+        {
+            return await ExecuteSerializedAsync(async () =>
+            {
+                if (string.IsNullOrWhiteSpace(rootDirectory) || !Directory.Exists(rootDirectory))
+                {
+                    _dialogService.Show(
+                        "Please set a valid root directory first.",
+                        "Smart Classification",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Information);
+                    return false;
+                }
+
+                var classifier = new SmartFolderClassificationService();
+                SmartFolderClassificationPlan plan;
+                try
+                {
+                    plan = classifier.BuildPlan(rootDirectory);
+                }
+                catch (Exception ex)
+                {
+                    _dialogService.Show(
+                        $"Failed to analyze folders: {ex.Message}",
+                        "Smart Classification",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Error);
+                    return false;
+                }
+
+                if (plan.Moves.Count == 0)
+                {
+                    UpdateStatus("No non-[author] folders need classification.");
+                    _dialogService.Show(
+                        "No non-[author] folders need classification under the current root.",
+                        "Smart Classification",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Information);
+                    return true;
+                }
+
+                string previewMessage = BuildSmartClassificationPreviewMessage(plan);
+                var confirm = _dialogService.Show(
+                    previewMessage,
+                    "Smart Classification Preview",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Question);
+                if (confirm != MessageBoxResult.Yes)
+                {
+                    UpdateStatus("Smart classification cancelled.");
+                    return false;
+                }
+
+                var progressDialog = new ProgressDialog(
+                    "Smart Classification",
+                    $"Classifying {plan.Moves.Count} folder(s)...");
+                progressDialog.Owner = Application.Current.MainWindow;
+
+                using var cts = new CancellationTokenSource();
+                progressDialog.CancelRequested += (_, __) => cts.Cancel();
+
+                var movedPairs = new List<(string src, string dest)>();
+                bool wasCancelled = false;
+                int processed = 0;
+                int failed = 0;
+                int movedToUnclassified = 0;
+
+                var task = Task.Run(async () =>
+                {
+                    foreach (var move in plan.Moves)
+                    {
+                        if (cts.Token.IsCancellationRequested)
+                        {
+                            wasCancelled = true;
+                            break;
+                        }
+
+                        try
+                        {
+                            double progress = plan.Moves.Count == 0 ? 0 : (double)processed / plan.Moves.Count;
+                            Application.Current.Dispatcher.Invoke(() =>
+                                progressDialog.UpdateProgress(progress, $"Classifying: {move.SourceFolderName}"));
+
+                            string destinationParent = Path.Combine(plan.RootDirectory, move.TargetParentDirectoryName);
+                            Directory.CreateDirectory(destinationParent);
+
+                            string preferredDestinationPath = Path.Combine(destinationParent, move.TargetFolderName);
+                            var moveResult = await _operationOrchestrator.MoveFolderAsync(
+                                move.SourcePath,
+                                preferredDestinationPath,
+                                cancellationToken: cts.Token);
+
+                            if (moveResult.Success)
+                            {
+                                string actualDestinationPath = moveResult.Data as string ?? preferredDestinationPath;
+                                movedPairs.Add((move.SourcePath, actualDestinationPath));
+                                if (move.IsUnclassified)
+                                {
+                                    movedToUnclassified++;
+                                }
+                            }
+                            else
+                            {
+                                failed++;
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Debug.WriteLine($"[SmartClassify] Failed for '{move.SourcePath}': {ex.Message}");
+                            failed++;
+                        }
+
+                        processed++;
+                    }
+
+                    Application.Current.Dispatcher.Invoke(() =>
+                        progressDialog.UpdateProgress(1.0, wasCancelled ? "Classification cancelled" : "Classification completed"));
+                }, cts.Token);
+
+                progressDialog.ShowDialog();
+
+                if (progressDialog.IsCancelled && !cts.IsCancellationRequested)
+                {
+                    cts.Cancel();
+                }
+
+                try
+                {
+                    await task;
+                }
+                catch (OperationCanceledException)
+                {
+                    wasCancelled = true;
+                }
+
+                if (movedPairs.Count > 0)
+                {
+                    UndoManager.Push(UndoRecord.ForMappedMove(
+                        movedPairs.Select(m => (m.src, m.dest)),
+                        $"Smart classify {movedPairs.Count} folders by author"));
+                }
+
+                var sourcePaths = movedPairs.Select(x => x.src).ToList();
+                var destinationPaths = movedPairs.Select(x => x.dest).ToList();
+                if (destinationPaths.Count == 1)
+                {
+                    OnFolderOperationCompleted(FolderOperationEventArgs.CreateSuccess(
+                        FolderOperation.Move,
+                        sourcePaths[0],
+                        destinationPaths[0]));
+                }
+                else if (destinationPaths.Count > 1)
+                {
+                    OnFolderOperationCompleted(FolderOperationEventArgs.CreateBatchMoveSuccess(
+                        sourcePaths,
+                        destinationPaths));
+                }
+
+                CommandManager.InvalidateRequerySuggested();
+
+                if (wasCancelled)
+                {
+                    UpdateStatus($"Smart classification cancelled. Moved {movedPairs.Count} of {plan.Moves.Count} folder(s).");
+                    return false;
+                }
+
+                int successCount = movedPairs.Count;
+                UpdateStatus(
+                    $"Smart classification completed: moved {successCount}/{plan.Moves.Count}, " +
+                    $"unclassified {movedToUnclassified}, failed {failed}.");
+
+                if (failed > 0)
+                {
+                    _dialogService.Show(
+                        $"Smart classification completed with warnings.\n\n" +
+                        $"Moved: {successCount}\n" +
+                        $"Moved to (Unclassified): {movedToUnclassified}\n" +
+                        $"Failed: {failed}\n\n" +
+                        $"You can press Ctrl+Z once to undo the whole moved batch.",
+                        "Smart Classification",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Warning);
+                }
+
+                return failed == 0;
+            });
+        }
+
+        private static string BuildSmartClassificationPreviewMessage(SmartFolderClassificationPlan plan)
+        {
+            var previewLines = plan.Moves
+                .Take(8)
+                .Select(move => $"- {move.SourceFolderName} -> {move.TargetParentDirectoryName}\\{move.TargetFolderName} ({move.Reason})")
+                .ToList();
+
+            string preview = previewLines.Count == 0
+                ? "- (No preview items)"
+                : string.Join(Environment.NewLine, previewLines);
+            string suffix = plan.Moves.Count > previewLines.Count
+                ? $"{Environment.NewLine}... and {plan.Moves.Count - previewLines.Count} more."
+                : string.Empty;
+
+            return
+                $"Scanned top-level folders: {plan.ScannedTopLevelDirectoryCount}{Environment.NewLine}" +
+                $"Existing [author] directories: {plan.ExistingAuthorDirectoryCount}{Environment.NewLine}" +
+                $"Folders to classify: {plan.Moves.Count}{Environment.NewLine}" +
+                $"Recognized author: {plan.RecognizedAuthorCount}{Environment.NewLine}" +
+                $"Will move to (Unclassified): {plan.UnclassifiedCount}{Environment.NewLine}{Environment.NewLine}" +
+                $"Preview:{Environment.NewLine}{preview}{suffix}{Environment.NewLine}{Environment.NewLine}" +
+                $"Proceed with smart classification now?";
         }
 
         #endregion
