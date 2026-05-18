@@ -48,6 +48,7 @@ namespace ImageFolderManager.ViewModels
         private readonly UnifiedFolderService _unifiedFolderService;
         private readonly IFolderOperationOrchestrator _operationOrchestrator;
         private readonly FolderTagService _tagService;
+        private readonly TagCategoryService _categoryService;
         private readonly List<FolderInfo> _allLoadedFolders;
         private readonly object _allLoadedFoldersLock = new object();
         private readonly IDialogService _dialogService;
@@ -189,11 +190,11 @@ namespace ImageFolderManager.ViewModels
             _dialogService = dialogService ?? new WpfDialogService();
             AppSettings.DialogService = _dialogService;
             // Initialize shared category service
-            var categoryService = new TagCategoryService();
+            _categoryService = new TagCategoryService();
             // Initialize services
             _nodeManager = new HierarchicalNodeManager();
 
-            _tagService = new FolderTagService(categoryService);
+            _tagService = new FolderTagService(_categoryService);
             _allLoadedFolders = new List<FolderInfo>();
             _unifiedFolderService = new UnifiedFolderService(
                 _tagService,
@@ -209,10 +210,10 @@ namespace ImageFolderManager.ViewModels
                 _unifiedFolderService,
                 _allLoadedFolders,
                 _allLoadedFoldersLock,
-                categoryService);
+                _categoryService);
             ImageLoading = new ImageLoadingViewModel(_unifiedFolderService);
 
-            var tagCloud = new TagCloudViewModel(categoryService);
+            var tagCloud = new TagCloudViewModel(_categoryService);
             _coordinator = new FolderOperationCoordinator(_unifiedFolderService, _tagService, tagCloud, _nodeManager);
             TagManagement = new TagManagementViewModel(_tagService, tagCloud, _coordinator, _dialogService);
 
@@ -481,6 +482,14 @@ namespace ImageFolderManager.ViewModels
             return await FolderOperations.SmartClassifyRootFoldersByAuthorAsync(rootDirectory);
         }
 
+        public async Task<bool> AutoAssortFoldersAsync(
+            string rootDirectory,
+            string sourceDirectory,
+            IReadOnlyList<AutoAssortmentExecutionItem> executionItems)
+        {
+            return await FolderOperations.AutoAssortFoldersAsync(rootDirectory, sourceDirectory, executionItems);
+        }
+
         public async Task RenameFolder(FolderInfo folder) => await FolderOperations.RenameFolderAsync(folder);
 
         // New unified methods
@@ -519,10 +528,12 @@ namespace ImageFolderManager.ViewModels
                 folderPaths = GetAllIndexedFolderPaths();
             }
 
-            await TagManagement.RenameTagAsync(oldTag, newTag);
+            await TagManagement.RenameTagAsync(oldTag, newTag, folderPaths);
+            var refreshedFolders = await RefreshLoadedFolderMetadataAsync(folderPaths);
 
             // Refresh tag cloud after renaming
-            await UpdateTagCloudAsync();
+            Search.InvalidateSearchIndex();
+            await RefreshTagCloudForFoldersAsync(refreshedFolders);
         }
 
 
@@ -760,6 +771,14 @@ namespace ImageFolderManager.ViewModels
             {
                 // No need for null check since Tags is now guaranteed to be non-null
                 folder.Tags = new ObservableCollection<string>(e.Tags);
+                folder.CategorizedTags = new ObservableCollection<TagWithCategory>(
+                    (e.CategorizedTags ?? new List<TagWithCategory>())
+                        .Where(tag => tag != null && !string.IsNullOrWhiteSpace(tag.TagName))
+                        .Select(tag => new TagWithCategory
+                        {
+                            TagName = tag.TagName,
+                            Category = tag.Category
+                        }));
                 folder.Rating = e.Rating;
             }
 
@@ -769,7 +788,12 @@ namespace ImageFolderManager.ViewModels
                 await TagManagement.LoadFolderMetadataAsync(e.Folder);
             }
             Search.InvalidateSearchIndex();
-            await UpdateTagCloudAsync();
+
+            var updatedFolder = folder ?? e.Folder;
+            if (updatedFolder != null)
+            {
+                await TagManagement.TagCloud.ApplyFolderUpdateAsync(updatedFolder);
+            }
         }
 
         public async Task DeleteTagFromAllFoldersAsync(string tagToDelete, List<string> folderPaths)
@@ -779,15 +803,142 @@ namespace ImageFolderManager.ViewModels
 
             // Call the service to delete the tag from all folders
             await TagManagement.DeleteTagFromAllFoldersAsync(tagToDelete, folderPaths);
+            var refreshedFolders = await RefreshLoadedFolderMetadataAsync(folderPaths);
 
             // Refresh tag cloud
-            await UpdateTagCloudAsync();
+            Search.InvalidateSearchIndex();
+            await RefreshTagCloudForFoldersAsync(refreshedFolders);
 
             // Refresh current folder tags if needed
             if (SelectedFolder != null)
             {
                 await TagManagement.LoadFolderMetadataAsync(SelectedFolder);
             }
+        }
+
+        public async Task MoveTagToCategoryAsync(string tagName, string oldCategory, string newCategory, List<string> folderPaths = null)
+        {
+            if (string.IsNullOrWhiteSpace(tagName) || string.IsNullOrWhiteSpace(newCategory))
+                return;
+
+            if (folderPaths == null || folderPaths.Count == 0)
+            {
+                folderPaths = GetAllIndexedFolderPaths();
+            }
+
+            await TagManagement.MoveTagToCategoryAsync(tagName, oldCategory, newCategory, folderPaths);
+            var refreshedFolders = await RefreshLoadedFolderMetadataAsync(folderPaths);
+            Search.InvalidateSearchIndex();
+            await RefreshTagCloudForFoldersAsync(refreshedFolders);
+        }
+
+        public async Task RenameCategoryAsync(string oldCategory, string newCategory, List<string> folderPaths = null)
+        {
+            if (string.IsNullOrWhiteSpace(oldCategory) || string.IsNullOrWhiteSpace(newCategory))
+                return;
+
+            if (folderPaths == null || folderPaths.Count == 0)
+            {
+                folderPaths = GetAllIndexedFolderPaths();
+            }
+
+            await TagManagement.RenameCategoryAsync(oldCategory, newCategory, folderPaths);
+            var refreshedFolders = await RefreshLoadedFolderMetadataAsync(folderPaths);
+            Search.InvalidateSearchIndex();
+            await RefreshTagCloudForFoldersAsync(refreshedFolders);
+        }
+
+        public async Task DeleteCategoryAsync(string categoryName, List<string> folderPaths = null)
+        {
+            if (string.IsNullOrWhiteSpace(categoryName) ||
+                categoryName.Equals("Uncategorized", StringComparison.OrdinalIgnoreCase))
+                return;
+
+            if (folderPaths == null || folderPaths.Count == 0)
+            {
+                folderPaths = GetAllIndexedFolderPaths();
+            }
+
+            await TagManagement.DeleteCategoryAsync(categoryName, folderPaths);
+            var refreshedFolders = await RefreshLoadedFolderMetadataAsync(folderPaths);
+            Search.InvalidateSearchIndex();
+            await RefreshTagCloudForFoldersAsync(refreshedFolders);
+        }
+
+        private async Task<List<FolderInfo>> RefreshLoadedFolderMetadataAsync(IEnumerable<string> folderPaths)
+        {
+            var requestedPaths = folderPaths?
+                .Where(path => !string.IsNullOrWhiteSpace(path))
+                .Select(PathService.NormalizePath)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            if (requestedPaths == null || requestedPaths.Count == 0)
+                return new List<FolderInfo>();
+
+            List<FolderInfo> affectedFolders;
+            lock (_allLoadedFoldersLock)
+            {
+                affectedFolders = _allLoadedFolders
+                    .Where(folder =>
+                        folder != null &&
+                        !string.IsNullOrWhiteSpace(folder.FolderPath) &&
+                        requestedPaths.Contains(PathService.NormalizePath(folder.FolderPath)))
+                    .ToList();
+            }
+
+            if (affectedFolders.Count == 0)
+                return affectedFolders;
+
+            var refreshedMetadata = new List<(FolderInfo Folder, List<TagWithCategory> Tags, int Rating)>();
+            foreach (var folder in affectedFolders)
+            {
+                var tagsWithCategories = await _tagService.GetTagsWithCategoriesForFolderAsync(folder.FolderPath);
+                int rating = await _tagService.GetRatingForFolderAsync(folder.FolderPath);
+
+                refreshedMetadata.Add((
+                    folder,
+                    tagsWithCategories
+                        .Where(tag => tag != null && !string.IsNullOrWhiteSpace(tag.TagName))
+                        .Select(tag => new TagWithCategory
+                        {
+                            TagName = tag.TagName,
+                            Category = tag.Category
+                        })
+                        .ToList(),
+                    rating));
+            }
+
+            var dispatcher = Application.Current?.Dispatcher ?? Dispatcher.CurrentDispatcher;
+            await dispatcher.InvokeAsync(() =>
+            {
+                foreach (var metadata in refreshedMetadata)
+                {
+                    metadata.Folder.Tags = new ObservableCollection<string>(
+                        metadata.Tags
+                            .Select(tag => tag.TagName)
+                            .Distinct(StringComparer.OrdinalIgnoreCase));
+                    metadata.Folder.CategorizedTags = new ObservableCollection<TagWithCategory>(metadata.Tags);
+                    metadata.Folder.Rating = metadata.Rating;
+                }
+            }, DispatcherPriority.Background);
+
+            return affectedFolders;
+        }
+
+        private async Task RefreshTagCloudForFoldersAsync(IEnumerable<FolderInfo> folders)
+        {
+            var folderList = folders?
+                .Where(folder => folder != null)
+                .ToList() ?? new List<FolderInfo>();
+
+            if (folderList.Count == 0)
+            {
+                await TagManagement.TagCloud.ApplyFolderUpdatesAsync(Array.Empty<FolderInfo>());
+                return;
+            }
+
+            await TagManagement.TagCloud.ApplyFolderUpdatesAsync(folderList);
         }
 
         internal List<FolderInfo> GetAllLoadedFoldersSnapshot()

@@ -181,15 +181,13 @@ namespace ImageFolderManager.ViewModels
                 int rating = await _tagService.GetRatingForFolderAsync(folder.FolderPath);
                 cancellationToken.ThrowIfCancellationRequested();
 
-                var tagsTask = _tagService.GetTagsForFolderAsync(folder.FolderPath);
                 var tagsWithCategoriesTask = _tagService.GetTagsWithCategoriesForFolderAsync(folder.FolderPath);
-                await Task.WhenAll(tagsTask, tagsWithCategoriesTask);
+                await tagsWithCategoriesTask;
 
-                var tags = tagsTask.Result;
                 var tagsWithCategories = tagsWithCategoriesTask.Result;
                 cancellationToken.ThrowIfCancellationRequested();
 
-                System.Diagnostics.Debug.WriteLine($"Loaded {tags.Count} tags and {tagsWithCategories.Count} categorized tags for folder: {folder.Name}");
+                System.Diagnostics.Debug.WriteLine($"Loaded {tagsWithCategories.Count} categorized tags for folder: {folder.Name}");
 
                 // Update UI on the dispatcher thread
                 var dispatcher = System.Windows.Application.Current?.Dispatcher ?? System.Windows.Threading.Dispatcher.CurrentDispatcher;
@@ -202,9 +200,9 @@ namespace ImageFolderManager.ViewModels
 
                     // Update tags collection
                     var uniqueTags = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                    foreach (var tag in tags.Where(t => !string.IsNullOrEmpty(t)))
+                    foreach (var tag in tagsWithCategories.Where(t => t != null && !string.IsNullOrWhiteSpace(t.TagName)))
                     {
-                        uniqueTags.Add(tag.Trim());
+                        uniqueTags.Add(tag.ToString());
                     }
 
                     FolderTags.Clear();
@@ -219,6 +217,15 @@ namespace ImageFolderManager.ViewModels
                     {
                         TagDisplayItems.Add(new TagDisplayInfo(tagWithCategory.TagName, tagWithCategory.Category));
                     }
+
+                    folder.Tags = new ObservableCollection<string>(ToSimpleTagNames(tagsWithCategories));
+                    folder.CategorizedTags = new ObservableCollection<TagWithCategory>(
+                        tagsWithCategories.Select(tag => new TagWithCategory
+                        {
+                            TagName = tag.TagName,
+                            Category = tag.Category
+                        }));
+                    folder.Rating = rating;
 
                     // Explicitly notify that these properties changed
                     OnPropertyChanged(nameof(TagDisplayItems));
@@ -248,7 +255,7 @@ namespace ImageFolderManager.ViewModels
             {
                 // Find common tags
                 var commonTags = TagHelper.FindCommonTags(
-                    folders.Select(f => f.Tags)).ToList();
+                    folders.Select(GetStoredTagIdentifiers)).ToList();
 
                 // Show batch tags dialog
                 var dialog = new BatchTagsDialog(folders.Count, commonTags);
@@ -315,7 +322,9 @@ namespace ImageFolderManager.ViewModels
 
                 // If current folder has the renamed tag, refresh
                 if (CurrentFolder != null &&
-                    CurrentFolder.Tags.Contains(oldTag, StringComparer.OrdinalIgnoreCase))
+                    CurrentFolder.CategorizedTags.Any(tag =>
+                        tag != null &&
+                        tag.TagName.Equals(oldTag, StringComparison.OrdinalIgnoreCase)))
                 {
                     await LoadFolderMetadataAsync(CurrentFolder);
                 }
@@ -324,6 +333,98 @@ namespace ImageFolderManager.ViewModels
             {
                 _dialogService.Show(
                     $"Error renaming tag: {ex.Message}",
+                    "Error",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+            }
+        }
+
+        public async Task MoveTagToCategoryAsync(
+            string tagName,
+            string oldCategory,
+            string newCategory,
+            IEnumerable<string> folderPaths = null)
+        {
+            if (string.IsNullOrWhiteSpace(tagName) || string.IsNullOrWhiteSpace(newCategory))
+                return;
+
+            try
+            {
+                folderPaths = folderPaths ?? GetAllFolderPaths();
+                await _tagService.MoveTagToCategoryAsync(tagName, oldCategory, newCategory, folderPaths);
+
+                _tagCloud.InvalidateCache();
+                await UpdateTagCloudAsync();
+
+                if (CurrentFolder != null)
+                {
+                    await LoadFolderMetadataAsync(CurrentFolder);
+                }
+            }
+            catch (Exception ex)
+            {
+                _dialogService.Show(
+                    $"Error moving tag to category: {ex.Message}",
+                    "Error",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+            }
+        }
+
+        public async Task RenameCategoryAsync(
+            string oldCategory,
+            string newCategory,
+            IEnumerable<string> folderPaths = null)
+        {
+            if (string.IsNullOrWhiteSpace(oldCategory) || string.IsNullOrWhiteSpace(newCategory))
+                return;
+
+            try
+            {
+                folderPaths = folderPaths ?? GetAllFolderPaths();
+                await _tagService.RenameCategoryAsync(oldCategory, newCategory, folderPaths);
+
+                _tagCloud.InvalidateCache();
+                await UpdateTagCloudAsync();
+
+                if (CurrentFolder != null)
+                {
+                    await LoadFolderMetadataAsync(CurrentFolder);
+                }
+            }
+            catch (Exception ex)
+            {
+                _dialogService.Show(
+                    $"Error renaming category: {ex.Message}",
+                    "Error",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+            }
+        }
+
+        public async Task DeleteCategoryAsync(string categoryName, IEnumerable<string> folderPaths = null)
+        {
+            if (string.IsNullOrWhiteSpace(categoryName) ||
+                categoryName.Equals("Uncategorized", StringComparison.OrdinalIgnoreCase))
+                return;
+
+            try
+            {
+                folderPaths = folderPaths ?? GetAllFolderPaths();
+                await _tagService.DeleteCategoryAsync(categoryName, folderPaths);
+
+                _tagCloud.InvalidateCache();
+                await UpdateTagCloudAsync();
+
+                if (CurrentFolder != null)
+                {
+                    await LoadFolderMetadataAsync(CurrentFolder);
+                }
+            }
+            catch (Exception ex)
+            {
+                _dialogService.Show(
+                    $"Error deleting category: {ex.Message}",
                     "Error",
                     MessageBoxButton.OK,
                     MessageBoxImage.Error);
@@ -343,6 +444,121 @@ namespace ImageFolderManager.ViewModels
 
         #region Private Methods
 
+        private static List<TagWithCategory> ParseStoredTags(IEnumerable<string> tags)
+        {
+            return (tags ?? Enumerable.Empty<string>())
+                .Select(tag => TagHelper.ParseTagWithCategory(tag))
+                .Where(tag => tag != null && !string.IsNullOrWhiteSpace(tag.TagName))
+                .ToList();
+        }
+
+        private static List<string> ToSimpleTagNames(IEnumerable<TagWithCategory> tags)
+        {
+            return (tags ?? Enumerable.Empty<TagWithCategory>())
+                .Where(tag => tag != null && !string.IsNullOrWhiteSpace(tag.TagName))
+                .Select(tag => tag.TagName)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+
+        private static List<string> ToStoredTagIdentifiers(IEnumerable<TagWithCategory> tags)
+        {
+            return (tags ?? Enumerable.Empty<TagWithCategory>())
+                .Where(tag => tag != null && !string.IsNullOrWhiteSpace(tag.TagName))
+                .Select(tag => tag.ToString())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+
+        private static List<string> GetStoredTagIdentifiers(FolderInfo folder)
+        {
+            if (folder?.CategorizedTags != null && folder.CategorizedTags.Count > 0)
+                return ToStoredTagIdentifiers(folder.CategorizedTags);
+
+            return folder?.Tags?
+                .Where(tag => !string.IsNullOrWhiteSpace(tag))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList()
+                ?? new List<string>();
+        }
+
+        private List<string> ResolveInputTagsForCurrentFolder(string tagsInput)
+        {
+            var parsedTags = TagHelper.ParseTagsWithCategories(tagsInput).ToList();
+            if (parsedTags.Count == 0)
+                return new List<string>();
+
+            var existingCategorizedTags = CurrentFolder?.CategorizedTags?
+                .Where(tag => tag != null && !string.IsNullOrWhiteSpace(tag.TagName))
+                .ToList()
+                ?? new List<TagWithCategory>();
+
+            var resolvedTags = parsedTags.Select(parsedTag =>
+            {
+                if (parsedTag == null || string.IsNullOrWhiteSpace(parsedTag.TagName))
+                    return null;
+
+                bool isUncategorized = string.Equals(
+                    parsedTag.Category,
+                    "Uncategorized",
+                    StringComparison.OrdinalIgnoreCase);
+
+                if (!isUncategorized)
+                    return parsedTag;
+
+                var matchedCategories = existingCategorizedTags
+                    .Where(existing =>
+                        existing.TagName.Equals(parsedTag.TagName, StringComparison.OrdinalIgnoreCase) &&
+                        !string.IsNullOrWhiteSpace(existing.Category) &&
+                        !existing.Category.Equals("Uncategorized", StringComparison.OrdinalIgnoreCase))
+                    .Select(existing => existing.Category)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+
+                if (matchedCategories.Count == 1)
+                {
+                    return new TagWithCategory
+                    {
+                        TagName = parsedTag.TagName,
+                        Category = matchedCategories[0]
+                    };
+                }
+
+                return parsedTag;
+            });
+
+            return ToStoredTagIdentifiers(resolvedTags);
+        }
+
+        private static bool MatchesTagOperation(TagWithCategory tag, string tagExpression)
+        {
+            if (tag == null || string.IsNullOrWhiteSpace(tag.TagName) || string.IsNullOrWhiteSpace(tagExpression))
+                return false;
+
+            bool categorySpecified = tagExpression.Contains("::", StringComparison.Ordinal);
+            var parsed = TagHelper.ParseTagWithCategory(tagExpression);
+            if (parsed == null || string.IsNullOrWhiteSpace(parsed.TagName))
+                return false;
+
+            if (!tag.TagName.Equals(parsed.TagName, StringComparison.OrdinalIgnoreCase))
+                return false;
+
+            return !categorySpecified ||
+                   string.Equals(tag.Category, parsed.Category, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static TagsUpdatedEventArgs CreateTagsUpdatedEventArgs(
+            FolderInfo folder,
+            IEnumerable<string> storedTags,
+            int rating)
+        {
+            var categorizedTags = ParseStoredTags(storedTags);
+            return new TagsUpdatedEventArgs(folder, ToSimpleTagNames(categorizedTags), rating)
+            {
+                CategorizedTags = categorizedTags
+            };
+        }
+
         private async Task SaveFolderTagsAsync()
         {
             if (CurrentFolder == null) return;
@@ -356,7 +572,18 @@ namespace ImageFolderManager.ViewModels
 
                 if (!isTagInputEmpty)
                 {
-                    bool tagsChanged = TagHelper.UpdateObservableCollection(FolderTags, TagInputText);
+                    var resolvedTags = ResolveInputTagsForCurrentFolder(TagInputText);
+                    bool tagsChanged = FolderTags.Count != resolvedTags.Count ||
+                                       !FolderTags.All(tag => resolvedTags.Contains(tag, StringComparer.OrdinalIgnoreCase));
+
+                    if (tagsChanged)
+                    {
+                        FolderTags.Clear();
+                        foreach (var tag in resolvedTags)
+                        {
+                            FolderTags.Add(tag);
+                        }
+                    }
 
                     if (tagsChanged)
                     {
@@ -378,7 +605,7 @@ namespace ImageFolderManager.ViewModels
                         TagInputText = string.Empty;
 
                         // Notify UI of successful update
-                        var args = new TagsUpdatedEventArgs(CurrentFolder, FolderTags, Rating);
+                        var args = CreateTagsUpdatedEventArgs(CurrentFolder, FolderTags, Rating);
                         TagsUpdated?.Invoke(this, args);
 
                         UpdateStatus(isTagInputEmpty
@@ -406,7 +633,7 @@ namespace ImageFolderManager.ViewModels
                         ? "No new tags provided. Existing tags preserved."
                         : "Tags updated successfully.");
 
-                    var args = new TagsUpdatedEventArgs(CurrentFolder, FolderTags, Rating);
+                    var args = CreateTagsUpdatedEventArgs(CurrentFolder, FolderTags, Rating);
                     TagsUpdated?.Invoke(this, args);
                 }
             }
@@ -437,7 +664,7 @@ namespace ImageFolderManager.ViewModels
 
                         if (result.Success)
                         {
-                            var args = new TagsUpdatedEventArgs(CurrentFolder, FolderTags, Rating);
+                            var args = CreateTagsUpdatedEventArgs(CurrentFolder, FolderTags, Rating);
                             TagsUpdated?.Invoke(this, args);
                         }
                     }
@@ -450,7 +677,7 @@ namespace ImageFolderManager.ViewModels
                             Rating
                         );
 
-                        var args = new TagsUpdatedEventArgs(CurrentFolder, FolderTags, Rating);
+                        var args = CreateTagsUpdatedEventArgs(CurrentFolder, FolderTags, Rating);
                         TagsUpdated?.Invoke(this, args);
                     }
                 }
@@ -505,13 +732,13 @@ namespace ImageFolderManager.ViewModels
                 await LoadFolderMetadataAsync(CurrentFolder);
 
                 // Raise event to notify of tags update with the current tags
-                var args = new TagsUpdatedEventArgs(CurrentFolder, FolderTags, Rating);
+                var args = CreateTagsUpdatedEventArgs(CurrentFolder, FolderTags, Rating);
                 TagsUpdated?.Invoke(this, args);
             }
             else
             {
-                // If current folder wasn't affected, still notify but with empty tags
-                var args = new TagsUpdatedEventArgs(CurrentFolder); // Uses defaults for tags (empty list) and rating (0)
+                // If current folder wasn't affected, avoid pushing an empty tag snapshot onto it.
+                var args = new TagsUpdatedEventArgs();
                 TagsUpdated?.Invoke(this, args);
             }
         }
@@ -572,34 +799,52 @@ namespace ImageFolderManager.ViewModels
                                 progressDialog.UpdateProgress(progress,
                                     $"Updating folder {processed + 1} of {total}: {folder.Name}");
 
-                                // Get current tags
-                                var currentTags = await _tagService.GetTagsForFolderAsync(folder.FolderPath);
-                                var updatedTags = new List<string>(currentTags);
+                                // Get current tags with categories so we do not strip category data during batch edits.
+                                var currentTags = await _tagService.GetTagsWithCategoriesForFolderAsync(folder.FolderPath);
+                                var updatedTags = currentTags
+                                    .Where(tag => tag != null && !string.IsNullOrWhiteSpace(tag.TagName))
+                                    .Select(tag => new TagWithCategory
+                                    {
+                                        TagName = tag.TagName,
+                                        Category = tag.Category
+                                    })
+                                    .ToList();
 
                                 // Remove specified tags
                                 if (tagsToRemove.Count > 0)
                                 {
                                     updatedTags.RemoveAll(tag =>
-                                        tagsToRemove.Contains(tag, StringComparer.OrdinalIgnoreCase));
+                                        tagsToRemove.Any(tagExpression => MatchesTagOperation(tag, tagExpression)));
                                 }
 
                                 // Add new tags
                                 foreach (var tag in tagsToAdd)
                                 {
-                                    if (!updatedTags.Any(t =>
-                                        string.Equals(t, tag, StringComparison.OrdinalIgnoreCase)))
+                                    var parsedTag = TagHelper.ParseTagWithCategory(tag);
+                                    if (parsedTag == null || string.IsNullOrWhiteSpace(parsedTag.TagName))
+                                        continue;
+
+                                    if (!updatedTags.Any(existing =>
+                                        string.Equals(existing.TagName, parsedTag.TagName, StringComparison.OrdinalIgnoreCase) &&
+                                        string.Equals(existing.Category, parsedTag.Category, StringComparison.OrdinalIgnoreCase)))
                                     {
-                                        updatedTags.Add(tag);
+                                        updatedTags.Add(new TagWithCategory
+                                        {
+                                            TagName = parsedTag.TagName,
+                                            Category = parsedTag.Category
+                                        });
                                     }
                                 }
 
                                 // Get current rating
                                 int rating = await _tagService.GetRatingForFolderAsync(folder.FolderPath);
 
+                                var storedTags = ToStoredTagIdentifiers(updatedTags);
+
                                 // Save updated tags
                                 if (_coordinator != null)
                                 {
-                                    var result = await _coordinator.ExecuteTagUpdateAsync(folder.FolderPath, updatedTags, rating);
+                                    var result = await _coordinator.ExecuteTagUpdateAsync(folder.FolderPath, storedTags, rating);
                                     if (!result.Success)
                                     {
                                         throw new InvalidOperationException(result.Message);
@@ -614,7 +859,8 @@ namespace ImageFolderManager.ViewModels
                                 }
 
                                 // Update folder object
-                                folder.Tags = new ObservableCollection<string>(updatedTags);
+                                folder.Tags = new ObservableCollection<string>(ToSimpleTagNames(updatedTags));
+                                folder.CategorizedTags = new ObservableCollection<TagWithCategory>(updatedTags);
 
                                 await Task.Delay(10, cts.Token);
                             }
@@ -628,9 +874,6 @@ namespace ImageFolderManager.ViewModels
                         }
 
                         progressDialog.UpdateProgress(1.0, "Tag update completed");
-
-                        // Update tag cloud
-                        _tagCloud.InvalidateCache();
 
                         return true;
                     }
@@ -653,6 +896,19 @@ namespace ImageFolderManager.ViewModels
                 }
 
                 bool success = await updateTask;
+
+                if (success && !cts.IsCancellationRequested)
+                {
+                    await _tagCloud.ApplyFolderUpdatesAsync(folders);
+
+                    if (CurrentFolder != null &&
+                        folders.Any(folder => PathService.PathsEqual(folder.FolderPath, CurrentFolder.FolderPath)))
+                    {
+                        await LoadFolderMetadataAsync(CurrentFolder);
+                        var args = CreateTagsUpdatedEventArgs(CurrentFolder, FolderTags, Rating);
+                        TagsUpdated?.Invoke(this, args);
+                    }
+                }
 
                 UpdateStatus(success && !cts.IsCancellationRequested
                     ? $"Successfully updated tags for {folders.Count} folders"

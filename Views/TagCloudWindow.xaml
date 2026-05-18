@@ -1,53 +1,66 @@
-﻿<mah:MetroWindow x:Class="ImageFolderManager.Views.TagCloudWindow"
+<mah:MetroWindow x:Class="ImageFolderManager.Views.TagCloudWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:mah="http://metro.mahapps.com/winfx/xaml/controls"
         xmlns:views="clr-namespace:ImageFolderManager.Views"
-        xmlns:viewmodels="clr-namespace:ImageFolderManager.ViewModels"
         mc:Ignorable="d"
         Title="Tag Cloud"
-        Height="500"
-        Width="700"
-        MinWidth="600"
-        MinHeight="400"
+        Height="640"
+        Width="960"
+        MinWidth="780"
+        MinHeight="520"
         GlowBrush="{DynamicResource MahApps.Brushes.Accent}"
         BorderBrush="{DynamicResource MahApps.Brushes.Accent}"
         WindowStartupLocation="CenterOwner"
         Background="{DynamicResource App.Brush.Window}">
 
     <Window.Resources>
-        <!-- Style for tag buttons with animations and hover effects -->
+        <views:CategoryNameToVisibilityConverter x:Key="CategoryNameToVisibilityConverter"/>
+        <views:InverseBooleanToVisibilityConverter x:Key="InverseBooleanToVisibilityConverter"/>
+        <CollectionViewSource x:Key="TagItemsViewSource" Source="{Binding TagItems}"/>
+
         <Style x:Key="TagButtonStyle" TargetType="Button">
             <Setter Property="Background" Value="Transparent" />
-            <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="BorderBrush" Value="{DynamicResource App.Brush.Border}" />
-            <Setter Property="Margin" Value="4" />
-            <Setter Property="Padding" Value="8,4" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Margin" Value="6" />
+            <Setter Property="Padding" Value="0" />
             <Setter Property="Cursor" Value="Hand" />
             <Setter Property="CacheMode" Value="BitmapCache" />
             <Setter Property="AllowDrop" Value="True" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Border x:Name="border" Background="{TemplateBinding Background}" 
-                                BorderThickness="{TemplateBinding BorderThickness}" 
-                                BorderBrush="{TemplateBinding BorderBrush}" 
-                                CornerRadius="8">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        <Border x:Name="OuterBorder"
+                                Background="{DynamicResource App.Brush.Surface2}"
+                                BorderBrush="{DynamicResource App.Brush.Border}"
+                                BorderThickness="1"
+                                CornerRadius="14"
+                                SnapsToDevicePixels="True">
+                            <Grid>
+                                <Border Background="{Binding Color}"
+                                        Opacity="0.16"
+                                        CornerRadius="14"/>
+                                <ContentPresenter Margin="14,10"
+                                                  HorizontalAlignment="Stretch"
+                                                  VerticalAlignment="Center"/>
+                            </Grid>
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter Property="Opacity" Value="0.8" TargetName="border" />
-                                <Setter Property="Background" Value="{DynamicResource App.Brush.Surface2}" TargetName="border" />
-                                <Setter Property="BorderThickness" Value="1" TargetName="border" />
-                                <Setter Property="BorderBrush" Value="{Binding Color}" TargetName="border" />
+                                <Setter Property="BorderBrush" Value="{Binding Color}" TargetName="OuterBorder" />
+                                <Setter Property="Background" Value="{DynamicResource App.Brush.Surface3}" TargetName="OuterBorder" />
+                                <Setter Property="RenderTransform">
+                                    <Setter.Value>
+                                        <TranslateTransform Y="-2"/>
+                                    </Setter.Value>
+                                </Setter>
                             </Trigger>
                             <Trigger Property="IsPressed" Value="True">
                                 <Setter Property="RenderTransform">
                                     <Setter.Value>
-                                        <ScaleTransform ScaleX="0.95" ScaleY="0.95" />
+                                        <ScaleTransform ScaleX="0.97" ScaleY="0.97" />
                                     </Setter.Value>
                                 </Setter>
                                 <Setter Property="RenderTransformOrigin" Value="0.5,0.5" />
@@ -58,34 +71,32 @@
             </Setter>
         </Style>
 
-        <!-- Style for category tabs -->
         <Style x:Key="CategoryTabStyle" TargetType="TabItem">
             <Setter Property="Background" Value="{DynamicResource App.Brush.Surface2}" />
             <Setter Property="Foreground" Value="{DynamicResource App.Brush.TextPrimary}" />
             <Setter Property="BorderBrush" Value="{DynamicResource App.Brush.Border}" />
             <Setter Property="BorderThickness" Value="1,1,1,0" />
-            <Setter Property="Margin" Value="0,0,2,0" />
+            <Setter Property="Margin" Value="0,0,6,0" />
             <Setter Property="AllowDrop" Value="True" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="TabItem">
-                        <Border x:Name="Border" 
+                        <Border x:Name="Border"
                                 Background="{TemplateBinding Background}"
                                 BorderBrush="{TemplateBinding BorderBrush}"
                                 BorderThickness="{TemplateBinding BorderThickness}"
-                                CornerRadius="8,8,0,0"
+                                CornerRadius="12,12,0,0"
                                 Margin="{TemplateBinding Margin}">
                             <ContentPresenter x:Name="ContentSite"
-                                            VerticalAlignment="Center"
-                                            HorizontalAlignment="Center"
-                                            ContentSource="Header"
-                                            Margin="12,8,12,8"/>
+                                              VerticalAlignment="Center"
+                                              HorizontalAlignment="Center"
+                                              ContentSource="Header"
+                                              Margin="12,10"/>
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsSelected" Value="True">
                                 <Setter Property="Background" Value="{DynamicResource App.Brush.Surface1}" TargetName="Border"/>
                                 <Setter Property="BorderBrush" Value="{DynamicResource MahApps.Brushes.Accent}" TargetName="Border"/>
-                                <Setter Property="BorderThickness" Value="1,1,1,0" TargetName="Border"/>
                             </Trigger>
                             <Trigger Property="IsMouseOver" Value="True">
                                 <Setter Property="Background" Value="{DynamicResource App.Brush.Hover}" TargetName="Border"/>
@@ -96,7 +107,6 @@
             </Setter>
         </Style>
 
-        <!-- Drop zone highlight style -->
         <Style x:Key="DropZoneStyle" TargetType="Border">
             <Setter Property="BorderBrush" Value="Transparent"/>
             <Setter Property="BorderThickness" Value="2"/>
@@ -110,137 +120,293 @@
         </Style>
     </Window.Resources>
 
-    <Grid Margin="15">
+    <Grid Margin="18">
         <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <!-- Header with title and controls -->
-        <Border Grid.Row="0" Style="{StaticResource SectionCard}" Margin="0,0,0,10">
+        <Border Grid.Row="0" Style="{StaticResource SectionCard}" Padding="18" Margin="0,0,0,12">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
 
-                <TextBlock Grid.Column="0"
-                           Text="Tag Cloud"
-                           FontSize="20"
-                           FontWeight="Bold"
-                           Foreground="{DynamicResource App.Brush.TextPrimary}"/>
+                <StackPanel Grid.Column="0">
+                    <TextBlock Text="Tag Cloud"
+                               FontSize="26"
+                               FontWeight="SemiBold"
+                               Foreground="{DynamicResource App.Brush.TextPrimary}"/>
+                    <TextBlock x:Name="HeaderSummaryText"
+                               Margin="0,6,0,0"
+                               Text="Browse and organize your tag categories."
+                               Foreground="{DynamicResource App.Brush.TextSecondary}"/>
+                    <TextBlock x:Name="SelectedCategorySummaryText"
+                               Margin="0,8,0,0"
+                               Foreground="{DynamicResource App.Brush.TextMuted}"/>
+                </StackPanel>
 
-                <Button Grid.Column="1"
-                        Name="AddCategoryButton"
-                        Content="Add Category"
-                        MinWidth="100"
-                        Height="30"
-                        Style="{StaticResource SecondaryButton}"
-                        Click="AddCategoryButton_Click"
-                        Margin="0,0,10,0"/>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top" Margin="12,0,0,0">
+                    <Button Name="AddCategoryButton"
+                            Content="Add Category"
+                            MinWidth="112"
+                            Height="34"
+                            Style="{StaticResource SecondaryButton}"
+                            Click="AddCategoryButton_Click"
+                            Margin="0,0,10,0"/>
 
-                <Button Grid.Column="2"
-                        Name="RefreshButton"
-                        Content="Refresh"
-                        MinWidth="80"
-                        Height="30"
-                        Style="{StaticResource PrimaryButton}"
-                        Click="RefreshButton_Click"
-                        Margin="0,0,10,0"/>
+                    <Button Name="RefreshButton"
+                            Content="Refresh"
+                            MinWidth="88"
+                            Height="34"
+                            Style="{StaticResource PrimaryButton}"
+                            Click="RefreshButton_Click"/>
+                </StackPanel>
+
+                <Border Grid.Column="2"
+                        Margin="16,0,0,0"
+                        Padding="12,10"
+                        Background="{DynamicResource App.Brush.Surface2}"
+                        BorderBrush="{DynamicResource App.Brush.Border}"
+                        BorderThickness="1"
+                        CornerRadius="12">
+                    <StackPanel>
+                        <TextBlock Text="Visible Now"
+                                   Foreground="{DynamicResource App.Brush.TextMuted}"
+                                   FontSize="11"/>
+                        <TextBlock x:Name="VisibleTagStatsText"
+                                   Margin="0,4,0,0"
+                                   Foreground="{DynamicResource App.Brush.TextPrimary}"
+                                   FontSize="18"
+                                   FontWeight="SemiBold"/>
+                    </StackPanel>
+                </Border>
             </Grid>
         </Border>
 
-        <!-- Main content area with tabs -->
-        <Border Grid.Row="1" Style="{StaticResource SectionCard}">
+        <Border Grid.Row="1" Style="{StaticResource SectionCard}" Padding="14" Margin="0,0,0,12">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="2.1*"/>
+                    <ColumnDefinition Width="18"/>
+                    <ColumnDefinition Width="1.1*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <StackPanel Grid.Column="0">
+                    <TextBlock Text="Filter Current Category"
+                               Foreground="{DynamicResource App.Brush.TextMuted}"
+                               FontSize="11"/>
+                    <DockPanel Margin="0,6,0,0">
+                        <Button x:Name="ClearFilterButton"
+                                Content="Clear"
+                                MinWidth="64"
+                                Margin="10,0,0,0"
+                                DockPanel.Dock="Right"
+                                Style="{StaticResource SecondaryButton}"
+                                Click="ClearFilterButton_Click"/>
+                        <TextBox x:Name="TagFilterTextBox"
+                                 Height="34"
+                                 VerticalContentAlignment="Center"
+                                 TextChanged="TagFilterTextBox_TextChanged"
+                                 mah:TextBoxHelper.Watermark="Filter by tag name or category"
+                                 Background="{DynamicResource App.Brush.Surface2}"
+                                 Foreground="{DynamicResource App.Brush.TextPrimary}"
+                                 BorderBrush="{DynamicResource App.Brush.Border}"/>
+                    </DockPanel>
+                </StackPanel>
+
+                <StackPanel Grid.Column="2">
+                    <TextBlock Text="Sort"
+                               Foreground="{DynamicResource App.Brush.TextMuted}"
+                               FontSize="11"/>
+                    <ComboBox x:Name="SortModeComboBox"
+                              Margin="0,6,0,0"
+                              Height="34"
+                              SelectionChanged="SortModeComboBox_SelectionChanged"
+                              SelectedIndex="0"
+                              Background="{DynamicResource App.Brush.Surface2}"
+                              Foreground="{DynamicResource App.Brush.TextPrimary}"
+                              BorderBrush="{DynamicResource App.Brush.Border}">
+                        <ComboBoxItem Content="Popular first"/>
+                        <ComboBoxItem Content="A to Z"/>
+                        <ComboBoxItem Content="Z to A"/>
+                    </ComboBox>
+                </StackPanel>
+
+                <Border Grid.Column="3"
+                        Margin="18,18,0,0"
+                        Padding="12,8"
+                        Background="{DynamicResource App.Brush.Surface2}"
+                        BorderBrush="{DynamicResource App.Brush.Border}"
+                        BorderThickness="1"
+                        CornerRadius="10">
+                    <TextBlock x:Name="FilterHintText"
+                               Foreground="{DynamicResource App.Brush.TextMuted}"
+                               Text="Ctrl+F to focus filter"/>
+                </Border>
+            </Grid>
+        </Border>
+
+        <Border Grid.Row="2" Style="{StaticResource SectionCard}" Padding="0">
             <TabControl Name="CategoryTabControl"
                         Background="Transparent"
                         BorderThickness="0"
                         ItemsSource="{Binding Categories}"
                         SelectedItem="{Binding SelectedCategory}"
                         SelectionChanged="CategoryTabControl_SelectionChanged">
+                <TabControl.ItemTemplate>
+                    <DataTemplate>
+                        <StackPanel Orientation="Horizontal"
+                                    AllowDrop="True"
+                                    Drop="TabHeader_Drop"
+                                    DragOver="TabHeader_DragOver"
+                                    DragLeave="TabHeader_DragLeave"
+                                    MouseRightButtonDown="TabHeader_RightClick">
+                            <TextBlock Text="{Binding Name}"
+                                       Foreground="{DynamicResource App.Brush.TextPrimary}"
+                                       VerticalAlignment="Center"
+                                       FontWeight="SemiBold"/>
+                            <Border Margin="8,0,0,0"
+                                    Padding="7,1"
+                                    Background="{DynamicResource App.Brush.Surface3}"
+                                    CornerRadius="999">
+                                <TextBlock Text="{Binding TagCount}"
+                                           Foreground="{DynamicResource App.Brush.TextSecondary}"
+                                           FontSize="11"/>
+                            </Border>
+                            <Button Tag="{Binding}"
+                                    Content="×"
+                                    Width="18"
+                                    Height="18"
+                                    Margin="8,0,0,0"
+                                    Padding="0"
+                                    Click="CloseTabButton_Click"
+                                    Visibility="{Binding Name, Converter={StaticResource CategoryNameToVisibilityConverter}}"
+                                    Background="Transparent"
+                                    BorderThickness="0"
+                                    Foreground="{DynamicResource App.Brush.TextMuted}"
+                                    Cursor="Hand"/>
+                        </StackPanel>
+                    </DataTemplate>
+                </TabControl.ItemTemplate>
 
-            <!-- Tab header template -->
-            <TabControl.ItemTemplate>
-                <DataTemplate>
-                    <StackPanel Orientation="Horizontal" 
+                <TabControl.ContentTemplate>
+                    <DataTemplate>
+                        <Border Style="{StaticResource DropZoneStyle}"
                                 AllowDrop="True"
-                                Drop="TabHeader_Drop"
-                                DragOver="TabHeader_DragOver"
-                                DragLeave="TabHeader_DragLeave"
-                                MouseRightButtonDown="TabHeader_RightClick">
-                        <TextBlock Text="{Binding DisplayName}" 
-                                   Foreground="{DynamicResource App.Brush.TextPrimary}" 
-                                   VerticalAlignment="Center"/>
+                                Drop="CategoryContent_Drop"
+                                DragOver="CategoryContent_DragOver"
+                                DragLeave="CategoryContent_DragLeave"
+                                Padding="8">
+                            <Grid>
+                                <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                              HorizontalScrollBarVisibility="Disabled"
+                                              x:Name="TagScrollViewer">
+                                    <ItemsControl ItemsSource="{Binding Source={StaticResource TagItemsViewSource}}"
+                                                  x:Name="TagItemsControl">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <WrapPanel Orientation="Horizontal"
+                                                           IsItemsHost="True"
+                                                           Width="{Binding ActualWidth, RelativeSource={RelativeSource AncestorType=ScrollViewer}}" />
+                                            </ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Button Style="{StaticResource TagButtonStyle}"
+                                                        Click="TagButton_Click"
+                                                        Tag="{Binding}"
+                                                        MouseRightButtonDown="TagButton_RightClick"
+                                                        PreviewMouseLeftButtonDown="TagButton_PreviewMouseDown"
+                                                        PreviewMouseMove="TagButton_PreviewMouseMove"
+                                                        PreviewMouseLeftButtonUp="TagButton_PreviewMouseUp"
+                                                        AllowDrop="True"
+                                                        ToolTip="{Binding CountDisplay}">
+                                                    <StackPanel>
+                                                        <DockPanel LastChildFill="False">
+                                                            <Border DockPanel.Dock="Right"
+                                                                    Padding="8,3"
+                                                                    Background="{DynamicResource App.Brush.Surface1}"
+                                                                    BorderBrush="{DynamicResource App.Brush.Border}"
+                                                                    BorderThickness="1"
+                                                                    CornerRadius="999">
+                                                                <TextBlock Text="{Binding Count}"
+                                                                           Foreground="{DynamicResource App.Brush.TextSecondary}"
+                                                                           FontSize="11"
+                                                                           FontWeight="SemiBold"/>
+                                                            </Border>
+                                                            <StackPanel Orientation="Horizontal">
+                                                                <TextBlock Text="#"
+                                                                           Foreground="{Binding Color}"
+                                                                           FontSize="{Binding FontSize}"
+                                                                           FontWeight="SemiBold"/>
+                                                                <TextBlock Text="{Binding Tag}"
+                                                                           Margin="1,0,0,0"
+                                                                           Foreground="{Binding Color}"
+                                                                           FontSize="{Binding FontSize}"
+                                                                           FontWeight="SemiBold"/>
+                                                            </StackPanel>
+                                                        </DockPanel>
+                                                        <TextBlock Margin="0,6,0,0"
+                                                                   Text="{Binding CountDisplay}"
+                                                                   Foreground="{DynamicResource App.Brush.TextMuted}"
+                                                                   FontSize="11"/>
+                                                    </StackPanel>
+                                                </Button>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </ScrollViewer>
 
-                       
-                    </StackPanel>
-                </DataTemplate>
-            </TabControl.ItemTemplate>
+                                <Border x:Name="EmptyStatePanel"
+                                        Visibility="{Binding HasVisibleTags, RelativeSource={RelativeSource AncestorType=views:TagCloudWindow}, Converter={StaticResource InverseBooleanToVisibilityConverter}}"
+                                        Background="{DynamicResource App.Brush.Surface1}">
+                                    <StackPanel HorizontalAlignment="Center"
+                                                VerticalAlignment="Center"
+                                                MaxWidth="360">
+                                        <TextBlock Text="No tags to show"
+                                                   HorizontalAlignment="Center"
+                                                   Foreground="{DynamicResource App.Brush.TextPrimary}"
+                                                   FontSize="22"
+                                                   FontWeight="SemiBold"/>
+                                        <TextBlock Margin="0,10,0,0"
+                                                   Text="{Binding EmptyStateMessage, RelativeSource={RelativeSource AncestorType=views:TagCloudWindow}}"
+                                                   TextAlignment="Center"
+                                                   Foreground="{DynamicResource App.Brush.TextMuted}"
+                                                   TextWrapping="Wrap"/>
+                                    </StackPanel>
+                                </Border>
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </TabControl.ContentTemplate>
 
-            <!-- Tab content template -->
-            <TabControl.ContentTemplate>
-                <DataTemplate>
-                    <Border Style="{StaticResource DropZoneStyle}"
-                            AllowDrop="True"
-                            Drop="CategoryContent_Drop"
-                            DragOver="CategoryContent_DragOver"
-                            DragLeave="CategoryContent_DragLeave">
-
-                        <ScrollViewer VerticalScrollBarVisibility="Auto" 
-                                      HorizontalScrollBarVisibility="Disabled"
-                                      x:Name="TagScrollViewer">
-
-                            <!-- Tag cloud content -->
-                            <ItemsControl ItemsSource="{Binding DataContext.TagItems, RelativeSource={RelativeSource AncestorType=Window}}"
-                                          x:Name="TagItemsControl">
-                                <ItemsControl.ItemsPanel>
-                                    <ItemsPanelTemplate>
-                                        <WrapPanel Orientation="Horizontal" IsItemsHost="True"
-                                                   Width="{Binding ActualWidth, RelativeSource={RelativeSource AncestorType=ScrollViewer}}" />
-                                    </ItemsPanelTemplate>
-                                </ItemsControl.ItemsPanel>
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate>
-                                        <Button Style="{StaticResource TagButtonStyle}"
-                                                Click="TagButton_Click"
-                                                Tag="{Binding}"
-                                                MouseRightButtonDown="TagButton_RightClick"
-                                                PreviewMouseLeftButtonDown="TagButton_PreviewMouseDown"
-                                                PreviewMouseMove="TagButton_PreviewMouseMove"
-                                                PreviewMouseLeftButtonUp="TagButton_PreviewMouseUp"
-                                                AllowDrop="True"
-                                                ToolTip="{Binding CountDisplay}">
-                                            <StackPanel Orientation="Horizontal">
-                                                <TextBlock Text="#" Foreground="{Binding Color}" FontSize="{Binding FontSize}" />
-                                                <TextBlock Text="{Binding Tag}" Foreground="{Binding Color}" FontSize="{Binding FontSize}" />
-                                                <TextBlock Text="{Binding Count}" Foreground="{DynamicResource App.Brush.TextMuted}" FontSize="10" 
-                                                           VerticalAlignment="Top" Margin="2,0,0,0" />
-                                            </StackPanel>
-                                        </Button>
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
-                        </ScrollViewer>
-                    </Border>
-                </DataTemplate>
-            </TabControl.ContentTemplate>
-
-            <!-- Custom tab item container style -->
-            <TabControl.ItemContainerStyle>
-                <Style TargetType="TabItem" BasedOn="{StaticResource CategoryTabStyle}"/>
-            </TabControl.ItemContainerStyle>
+                <TabControl.ItemContainerStyle>
+                    <Style TargetType="TabItem" BasedOn="{StaticResource CategoryTabStyle}"/>
+                </TabControl.ItemContainerStyle>
             </TabControl>
         </Border>
 
-        <!-- Footer with status -->
-        <Border Grid.Row="2" Style="{StaticResource SectionCard}" Margin="0,10,0,0" Padding="10,8">
-            <TextBlock x:Name="StatusText" 
-                       Text="Right-click on tags to move them between categories" 
-                       Foreground="{DynamicResource App.Brush.TextMuted}"
-                       HorizontalAlignment="Center"/>
+        <Border Grid.Row="3" Style="{StaticResource SectionCard}" Margin="0,12,0,0" Padding="14,10">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <TextBlock x:Name="StatusText"
+                           Text="Drag tags between categories, or right-click for more actions."
+                           Foreground="{DynamicResource App.Brush.TextMuted}"/>
+
+                <TextBlock Grid.Column="1"
+                           Text="Tip: Drag to recategorize, right-click to rename, search, copy, or delete."
+                           Foreground="{DynamicResource App.Brush.TextMuted}"/>
+            </Grid>
         </Border>
     </Grid>
 </mah:MetroWindow>

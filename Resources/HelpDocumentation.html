@@ -429,7 +429,7 @@
             <div id="search-guide" class="tab-content" role="tabpanel" aria-labelledby="search-guide-tab">
                 <h1><span class="emoji" aria-hidden="true">🔍</span>Advanced Search Guide</h1>
 
-                <p>The Image Folder Manager features a powerful search system with special syntax for precise filtering using OR groups and AND logic.</p>
+                <p>The Image Folder Manager features a powerful search system with special syntax for precise filtering using space-separated OR clauses and parenthesized AND groups.</p>
 
                 <h2><span class="emoji" aria-hidden="true">🎯</span>Search Syntax Overview</h2>
                 <table class="search-syntax-table">
@@ -463,51 +463,52 @@
                         </tr>
                         <tr>
                             <td>(term1 term2)</td>
-                            <td>OR group - any term matches</td>
-                            <td>(#nature #landscape)</td>
+                            <td>AND group - all terms inside must match</td>
+                            <td>(#nature *&gt;=4)</td>
                         </tr>
                         <tr>
-                            <td>group1 group2</td>
-                            <td>AND logic between groups</td>
-                            <td>(#nature) *>3</td>
+                            <td>term1 term2</td>
+                            <td>OR logic between terms or groups</td>
+                            <td>#nature *&gt;=4</td>
                         </tr>
                     </tbody>
                 </table>
 
                 <h2><span class="emoji" aria-hidden="true">🔗</span>Search Logic</h2>
                 <div class="info-box">
-                    <strong>OR Groups:</strong><br>
-                    • Use parentheses <code>()</code> to group terms with OR logic<br>
-                    • Example: <code>(#nature #landscape)</code> finds folders with nature OR landscape tags<br>
-                    • Each term in parentheses acts as an alternative match
+                    <strong>OR Logic:</strong><br>
+                    • Terms or groups separated by spaces use OR logic<br>
+                    • Example: <code>#vacation *&gt;=4</code> finds vacation-tagged folders OR folders rated 4+<br>
+                    • A folder only needs to satisfy one top-level term or group
                 </div>
                 <div class="info-box">
-                    <strong>AND Logic:</strong><br>
-                    • Terms or groups separated by spaces use AND logic<br>
-                    • Example: <code>#vacation *>=4</code> finds vacation-tagged folders AND 4+ star rating<br>
-                    • All conditions must be satisfied for a match
+                    <strong>AND Groups:</strong><br>
+                    • Use parentheses <code>()</code> to require all terms inside the group<br>
+                    • Example: <code>(#vacation *&gt;=4)</code> finds vacation-tagged folders with 4+ star rating<br>
+                    • Every condition inside the parentheses must be satisfied
                 </div>
 
                 <h2><span class="emoji" aria-hidden="true">📝</span>Search Examples</h2>
 
                 <div class="step-box">
                     <strong>Example A: Mixed Content Search</strong><br>
-                    <code>(@man @people) #photon *>3</code><br>
-                    <strong>Logic:</strong> (Folder name contains "man" OR "people") AND tagged with "photon" AND rating > 3 stars<br>
+                    <code>@man @people (#photon *&gt;3)</code><br>
+                    <strong>Logic:</strong> Folder name contains "man", OR folder name contains "people", OR the folder is tagged with "photon" and rated above 3 stars<br>
                     <strong>Matches:</strong><br>
-                    • "old_man_photos" folder with #photon tag and 4-star rating ✓<br>
-                    • "people_gathering" folder with #photon tag and 5-star rating ✓<br>
-                    • "family_portraits" folder with #photon tag and 2-star rating ✗ (rating too low)
+                    • "old_man_photos" folder ✓ (name contains "man")<br>
+                    • "people_gathering" folder ✓ (name contains "people")<br>
+                    • "night_photon_set" folder with 4-star rating ✓<br>
+                    • "family_portraits" folder with #photon tag and 2-star rating ✗ (group condition not satisfied)
                 </div>
 
                 <div class="step-box">
                     <strong>Example B: Location and Theme Search</strong><br>
-                    <code>(@sea @river) (#photon #landscape)</code><br>
-                    <strong>Logic:</strong> (Folder name contains "sea" OR "river") AND (tagged with "photon" OR "landscape")<br>
+                    <code>(@sea #landscape) (@river *&gt;=4)</code><br>
+                    <strong>Logic:</strong> Either the folder name contains "sea" and it has the "landscape" tag, OR the folder name contains "river" and it is rated 4 or higher<br>
                     <strong>Matches:</strong><br>
                     • "sea_sunset" folder with #landscape tag ✓<br>
-                    • "river_walk" folder with #photon tag ✓<br>
-                    • "mountain_lake" folder with #landscape tag ✗ (no sea/river in name)
+                    • "river_walk" folder with 5-star rating ✓<br>
+                    • "mountain_lake" folder with #landscape tag ✗ (does not satisfy either group)
                 </div>
 
                 <h2><span class="emoji" aria-hidden="true">🏷️</span>Tag Search Details</h2>
@@ -517,7 +518,11 @@
                 </div>
                 <div class="step-box">
                     <strong>Multiple Tags (OR):</strong><br>
-                    <code>(#vacation #beach)</code> - Find folders with vacation OR beach tags
+                    <code>#vacation #beach</code> - Find folders with vacation OR beach tags
+                </div>
+                <div class="step-box">
+                    <strong>Multiple Tags (AND):</strong><br>
+                    <code>(#vacation #beach)</code> - Find folders that have both vacation and beach tags
                 </div>
                 <div class="step-box">
                     <strong>Category Tags:</strong><br>
@@ -528,7 +533,8 @@
                 <div class="step-box">
                     <strong>Using @ Symbol:</strong><br>
                     <code>@hawaii</code> - Find folders with "hawaii" in the name<br>
-                    <code>(@2023 @2024)</code> - Find folders with "2023" OR "2024" in the name
+                    <code>@2023 @2024</code> - Find folders with "2023" OR "2024" in the name<br>
+                    <code>(@hawaii @2024)</code> - Find folders whose name contains both "hawaii" and "2024"
                 </div>
 
                 <h2><span class="emoji" aria-hidden="true">⭐</span>Rating Search</h2>
@@ -543,25 +549,25 @@
 
                 <h2><span class="emoji" aria-hidden="true">🔄</span>More Complex Examples</h2>
                 <div class="code-block">
-                    (#nature #landscape) *>=4
-                    Find nature OR landscape folders with 4+ star rating
+                    #nature *>=4
+                    Find nature folders OR any folders with 4+ star rating
 
-                    (@beach @ocean @lake) #summer
-                    Find folders with beach/ocean/lake in name AND summer tag
+                    (#nature *>=4) (@beach #summer)
+                    Find folders that are both nature-tagged and 4+ stars, OR folders with beach in the name and a summer tag
 
-                    (#location:paris #location:london) (@vacation @trip) *=5
-                    Find Paris OR London locations AND vacation/trip folders with 5 stars
+                    (#location::paris @vacation) (#location::london *=5)
+                    Find Paris vacation folders OR London folders with 5 stars
 
-                    #family (@2023 @2024) *>2
-                    Find family-tagged folders from 2023 OR 2024 with 3+ stars
+                    (#family @2024 *>2) #favorites
+                    Find family folders from 2024 with more than 2 stars, OR anything tagged favorites
                 </div>
 
                 <div class="info-box">
                     <strong>Search Behavior:</strong><br>
                     • Searches are case-insensitive<br>
-                    • Parentheses create OR groups, spaces create AND logic<br>
+                    • Spaces create OR logic, parentheses create AND groups<br>
                     • Partial matches are supported<br>
-                    • Results update in real-time as you type<br>
+                    • Suggestions update as you type; press Enter or click Search to run<br>
                     • Empty parentheses are ignored
                 </div>
             </div>

@@ -2,6 +2,8 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
+using System.Text;
 using Newtonsoft.Json;
 
 namespace ImageFolderManager.Services
@@ -11,32 +13,69 @@ namespace ImageFolderManager.Services
     /// </summary>
     public class TagCategoryService
     {
-        private readonly string _categoryMappingFilePath;
-        private readonly string _categoriesFilePath;
+        private readonly string _baseStorageDirectory;
+        private string _categoryMappingFilePath;
+        private string _categoriesFilePath;
         private Dictionary<string, string> _tagCategoryMappings;
         private HashSet<string> _categories;
         private readonly object _syncRoot = new object();
+        private string _currentStorageDirectory;
+        private string _currentRootScope;
 
 
         public TagCategoryService(string storageDirectory = null)
         {
-            string appDataPath = string.IsNullOrWhiteSpace(storageDirectory)
+            _baseStorageDirectory = string.IsNullOrWhiteSpace(storageDirectory)
                 ? Path.Combine(
                     Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
                     "ImageFolderManager")
                 : storageDirectory;
 
-            _categoryMappingFilePath = Path.Combine(appDataPath, "tagCategories.json");
-            _categoriesFilePath = Path.Combine(appDataPath, "categories.json");
+            ConfigureStorageDirectory(_baseStorageDirectory);
+        }
 
-            // Ensure directory exists
-            if (!Directory.Exists(appDataPath))
+        public string CurrentStorageDirectory
+        {
+            get
             {
-                Directory.CreateDirectory(appDataPath);
+                lock (_syncRoot)
+                {
+                    return _currentStorageDirectory;
+                }
             }
+        }
 
-            LoadMappings();
-            LoadCategories();
+        public string CurrentRootScope
+        {
+            get
+            {
+                lock (_syncRoot)
+                {
+                    return _currentRootScope;
+                }
+            }
+        }
+
+        public void SetRootDirectoryScope(string rootDirectory)
+        {
+            string normalizedRoot = string.IsNullOrWhiteSpace(rootDirectory)
+                ? string.Empty
+                : PathService.NormalizePath(rootDirectory);
+            string targetDirectory = string.IsNullOrWhiteSpace(normalizedRoot)
+                ? _baseStorageDirectory
+                : BuildRootScopedStorageDirectory(normalizedRoot);
+
+            lock (_syncRoot)
+            {
+                if (string.Equals(_currentStorageDirectory, targetDirectory, StringComparison.OrdinalIgnoreCase))
+                {
+                    _currentRootScope = normalizedRoot;
+                    return;
+                }
+
+                ConfigureStorageDirectory(targetDirectory);
+                _currentRootScope = normalizedRoot;
+            }
         }
 
         /// <summary>
@@ -260,6 +299,56 @@ namespace ImageFolderManager.Services
         }
 
         #region Private Methods
+
+        private void ConfigureStorageDirectory(string storageDirectory)
+        {
+            if (string.IsNullOrWhiteSpace(storageDirectory))
+                throw new ArgumentException("Storage directory cannot be empty.", nameof(storageDirectory));
+
+            if (!Directory.Exists(storageDirectory))
+            {
+                Directory.CreateDirectory(storageDirectory);
+            }
+
+            _currentStorageDirectory = storageDirectory;
+            _categoryMappingFilePath = Path.Combine(storageDirectory, "tagCategories.json");
+            _categoriesFilePath = Path.Combine(storageDirectory, "categories.json");
+
+            LoadMappings();
+            LoadCategories();
+        }
+
+        private string BuildRootScopedStorageDirectory(string normalizedRoot)
+        {
+            string safeRootName = GetSafeRootName(normalizedRoot);
+            string rootHash = ComputeStableHash(normalizedRoot);
+            return Path.Combine(_baseStorageDirectory, "RootScopes", $"{safeRootName}_{rootHash}");
+        }
+
+        private static string GetSafeRootName(string normalizedRoot)
+        {
+            string rootName = Path.GetFileName(normalizedRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+            if (string.IsNullOrWhiteSpace(rootName))
+            {
+                rootName = "root";
+            }
+
+            var invalidChars = Path.GetInvalidFileNameChars();
+            var builder = new StringBuilder(rootName.Length);
+            foreach (char character in rootName)
+            {
+                builder.Append(invalidChars.Contains(character) ? '_' : character);
+            }
+
+            return builder.ToString();
+        }
+
+        private static string ComputeStableHash(string value)
+        {
+            using var sha256 = SHA256.Create();
+            byte[] bytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(value ?? string.Empty));
+            return string.Concat(bytes.Take(8).Select(b => b.ToString("x2")));
+        }
 
         private void LoadMappings()
         {

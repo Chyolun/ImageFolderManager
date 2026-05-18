@@ -6,7 +6,7 @@
         xmlns:mah="http://metro.mahapps.com/winfx/xaml/controls"
         mc:Ignorable="d"
         Title="Batch Tags"
-        Height="460"
+        Height="480"
         Width="450"
         ResizeMode="NoResize"
         WindowStartupLocation="CenterOwner"

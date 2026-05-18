@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Windows.Input;
 using ImageFolderManager.Models;
+using ImageFolderManager.Services;
 
 namespace ImageFolderManager.ViewModels
 {
@@ -56,6 +57,11 @@ namespace ImageFolderManager.ViewModels
         public List<string> Tags { get; set; } = new List<string>();
 
         /// <summary>
+        /// The updated collection of categorized tags (never null)
+        /// </summary>
+        public List<TagWithCategory> CategorizedTags { get; set; } = new List<TagWithCategory>();
+
+        /// <summary>
         /// The folder's rating
         /// </summary>
         public int Rating { get; set; }
@@ -67,6 +73,7 @@ namespace ImageFolderManager.ViewModels
         {
             // Initialize with default values
             Tags = new List<string>();
+            CategorizedTags = new List<TagWithCategory>();
             Rating = 0;
         }
 
@@ -80,6 +87,7 @@ namespace ImageFolderManager.ViewModels
         {
             Folder = folder;
             Tags = tags != null ? new List<string>(tags) : new List<string>();
+            CategorizedTags = new List<TagWithCategory>();
             Rating = rating;
         }
     }

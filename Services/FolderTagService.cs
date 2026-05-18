@@ -239,6 +239,204 @@ namespace ImageFolderManager.Services
             });
         }
 
+        public Task MoveTagToCategoryAsync(
+            string tagName,
+            string oldCategory,
+            string newCategory,
+            IEnumerable<string> folderPaths)
+        {
+            if (string.IsNullOrWhiteSpace(tagName) || string.IsNullOrWhiteSpace(newCategory))
+                return Task.CompletedTask;
+
+            tagName = tagName.Trim();
+            oldCategory = string.IsNullOrWhiteSpace(oldCategory) ? "Uncategorized" : oldCategory.Trim();
+            newCategory = newCategory.Trim();
+            var pathsToProcess = folderPaths?.ToList() ?? new List<string>();
+
+            return Task.Run(() =>
+            {
+                try
+                {
+                    lock (_syncRoot)
+                    {
+                        foreach (var folderPath in pathsToProcess)
+                        {
+                            string normalizedPath = PathService.NormalizePath(folderPath);
+                            if (!PathService.DirectoryExists(normalizedPath))
+                                continue;
+
+                            var tagsAndRating = LoadTagsAndRatingFromFile(normalizedPath);
+                            var tags = CloneTags(tagsAndRating.Item1);
+                            int rating = tagsAndRating.Item2;
+                            bool hasChanges = false;
+
+                            for (int i = 0; i < tags.Count; i++)
+                            {
+                                if (!tags[i].TagName.Equals(tagName, StringComparison.OrdinalIgnoreCase))
+                                    continue;
+
+                                string category = string.IsNullOrWhiteSpace(tags[i].Category)
+                                    ? "Uncategorized"
+                                    : tags[i].Category;
+                                if (!category.Equals(oldCategory, StringComparison.OrdinalIgnoreCase))
+                                    continue;
+
+                                tags[i] = new TagWithCategory
+                                {
+                                    TagName = tags[i].TagName,
+                                    Category = newCategory
+                                };
+                                hasChanges = true;
+                            }
+
+                            if (hasChanges)
+                            {
+                                SaveTagsAndRatingForFolderInternal(normalizedPath, NormalizeTags(tags), rating);
+                            }
+                        }
+
+                        _categoryService.SetTagCategory(tagName, newCategory);
+                        if (EnableCaching)
+                        {
+                            ClearCache();
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"Error moving tag '{tagName}' from '{oldCategory}' to '{newCategory}': {ex.Message}");
+                }
+            });
+        }
+
+        public Task RenameCategoryAsync(string oldCategory, string newCategory, IEnumerable<string> folderPaths)
+        {
+            if (string.IsNullOrWhiteSpace(oldCategory) || string.IsNullOrWhiteSpace(newCategory))
+                return Task.CompletedTask;
+
+            oldCategory = oldCategory.Trim();
+            newCategory = newCategory.Trim();
+
+            if (oldCategory.Equals(newCategory, StringComparison.OrdinalIgnoreCase))
+                return Task.CompletedTask;
+
+            var pathsToProcess = folderPaths?.ToList() ?? new List<string>();
+
+            return Task.Run(() =>
+            {
+                try
+                {
+                    lock (_syncRoot)
+                    {
+                        foreach (var folderPath in pathsToProcess)
+                        {
+                            string normalizedPath = PathService.NormalizePath(folderPath);
+                            if (!PathService.DirectoryExists(normalizedPath))
+                                continue;
+
+                            var tagsAndRating = LoadTagsAndRatingFromFile(normalizedPath);
+                            var tags = CloneTags(tagsAndRating.Item1);
+                            int rating = tagsAndRating.Item2;
+                            bool hasChanges = false;
+
+                            for (int i = 0; i < tags.Count; i++)
+                            {
+                                string category = string.IsNullOrWhiteSpace(tags[i].Category)
+                                    ? "Uncategorized"
+                                    : tags[i].Category;
+                                if (!category.Equals(oldCategory, StringComparison.OrdinalIgnoreCase))
+                                    continue;
+
+                                tags[i] = new TagWithCategory
+                                {
+                                    TagName = tags[i].TagName,
+                                    Category = newCategory
+                                };
+                                hasChanges = true;
+                            }
+
+                            if (hasChanges)
+                            {
+                                SaveTagsAndRatingForFolderInternal(normalizedPath, NormalizeTags(tags), rating);
+                            }
+                        }
+
+                        _categoryService.RenameCategory(oldCategory, newCategory);
+                        if (EnableCaching)
+                        {
+                            ClearCache();
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"Error renaming category '{oldCategory}' to '{newCategory}': {ex.Message}");
+                }
+            });
+        }
+
+        public Task DeleteCategoryAsync(string categoryName, IEnumerable<string> folderPaths)
+        {
+            if (string.IsNullOrWhiteSpace(categoryName) ||
+                categoryName.Equals("Uncategorized", StringComparison.OrdinalIgnoreCase))
+                return Task.CompletedTask;
+
+            categoryName = categoryName.Trim();
+            var pathsToProcess = folderPaths?.ToList() ?? new List<string>();
+
+            return Task.Run(() =>
+            {
+                try
+                {
+                    lock (_syncRoot)
+                    {
+                        foreach (var folderPath in pathsToProcess)
+                        {
+                            string normalizedPath = PathService.NormalizePath(folderPath);
+                            if (!PathService.DirectoryExists(normalizedPath))
+                                continue;
+
+                            var tagsAndRating = LoadTagsAndRatingFromFile(normalizedPath);
+                            var tags = CloneTags(tagsAndRating.Item1);
+                            int rating = tagsAndRating.Item2;
+                            bool hasChanges = false;
+
+                            for (int i = 0; i < tags.Count; i++)
+                            {
+                                string category = string.IsNullOrWhiteSpace(tags[i].Category)
+                                    ? "Uncategorized"
+                                    : tags[i].Category;
+                                if (!category.Equals(categoryName, StringComparison.OrdinalIgnoreCase))
+                                    continue;
+
+                                tags[i] = new TagWithCategory
+                                {
+                                    TagName = tags[i].TagName,
+                                    Category = "Uncategorized"
+                                };
+                                hasChanges = true;
+                            }
+
+                            if (hasChanges)
+                            {
+                                SaveTagsAndRatingForFolderInternal(normalizedPath, NormalizeTags(tags), rating);
+                            }
+                        }
+
+                        _categoryService.RemoveCategory(categoryName);
+                        if (EnableCaching)
+                        {
+                            ClearCache();
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"Error deleting category '{categoryName}': {ex.Message}");
+                }
+            });
+        }
+
         /// <summary>
         /// Tries to get tags from cache
         /// </summary>
@@ -335,27 +533,22 @@ namespace ImageFolderManager.Services
                 var parts = tagString.Split(new[] { CategorySeparator }, 2, StringSplitOptions.None);
                 if (parts.Length == 2)
                 {
-                    var parsedTag = new TagWithCategory
+                    return new TagWithCategory
                     {
                         TagName = parts[1].Trim(),
                         Category = parts[0].Trim()
                     };
-                    if (!string.IsNullOrWhiteSpace(parsedTag.TagName) &&
-                        !string.IsNullOrWhiteSpace(parsedTag.Category) &&
-                        !parsedTag.Category.Equals("Uncategorized", StringComparison.OrdinalIgnoreCase))
-                        {
-                              _categoryService.SetTagCategory(parsedTag.TagName, parsedTag.Category);
-                         }
-                         return parsedTag;
                 }
             }
 
-            // Get category from category service or default to "Uncategorized"
-            string category = _categoryService.GetTagCategory(tagString);
+            // Reads must stay side-effect free. Persisted category definitions are managed by
+            // write paths such as SetTagsAndRatingForFolderAsync/DeleteCategoryAsync rather than
+            // by parsing existing files during refresh.
+            // Tags without an explicit category separator are stored as uncategorized.
             return new TagWithCategory
             {
                 TagName = tagString,
-                Category = category
+                Category = "Uncategorized"
             };
         }
 

@@ -43,27 +43,35 @@ namespace ImageFolderManager.ViewModels
 
             try
             {
+                string normalizedTargetPath = PathService.NormalizePath(path);
+                bool rootDirectoryChanged = !PathService.PathsEqual(CurrentRootDirectory, normalizedTargetPath);
+
                 StatusMessage = "Initializing directory monitoring...";
 
                 // Step 1: Stop any existing monitoring first
                 await StopMonitoringAsync();
 
+                if (rootDirectoryChanged)
+                {
+                    await PrepareForRootDirectoryChangeAsync(normalizedTargetPath);
+                }
+
                 // Step 2: Initialize TreeView completely BEFORE starting monitoring
                 if (_shellTreeView != null)
                 {
                     StatusMessage = "Initializing TreeView...";
-                    await InitializeTreeViewAsync(path);
+                    await InitializeTreeViewAsync(normalizedTargetPath);
                 }
 
                 // Step 3: Only start monitoring after TreeView is ready
                 StatusMessage = "Starting real-time monitoring...";
-                await StartMonitoringAsync(path);
+                await StartMonitoringAsync(normalizedTargetPath);
 
                 // Step 4: Final verification
-                await VerifyInitializationAsync(path);
+                await VerifyInitializationAsync(normalizedTargetPath);
 
                 // Keep recent root directories in sync with actual successful loads.
-                AppSettings.Instance.AddRecentFolder(path);
+                AppSettings.Instance.AddRecentFolder(normalizedTargetPath);
 
                 StatusMessage = $"Directory loaded successfully. Monitoring {_unifiedFolderService.IndexedFolderCount} folders.";
             }
@@ -248,6 +256,28 @@ namespace ImageFolderManager.ViewModels
             {
                 Debug.WriteLine($"Error during cleanup: {ex.Message}");
             }
+        }
+
+        private async Task PrepareForRootDirectoryChangeAsync(string newRootDirectory)
+        {
+            _categoryService.SetRootDirectoryScope(newRootDirectory);
+            _tagService.ClearCache();
+            Search.InvalidateSearchIndex();
+            SelectedFolder = null;
+
+            var dispatcher = Application.Current?.Dispatcher ?? System.Windows.Threading.Dispatcher.CurrentDispatcher;
+            await dispatcher.InvokeAsync(() =>
+            {
+                Search.SearchResultFolders.Clear();
+            });
+
+            lock (_allLoadedFoldersLock)
+            {
+                _allLoadedFolders.Clear();
+            }
+
+            TagManagement.TagCloud.InvalidateCache();
+            await TagManagement.UpdateTagCloudAsync(Array.Empty<FolderInfo>());
         }
 
         public async Task UpdateTagCloudAsync()

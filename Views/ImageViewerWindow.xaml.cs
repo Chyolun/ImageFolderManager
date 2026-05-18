@@ -12,6 +12,7 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using System.Windows.Controls;
+using ImageFolderManager.Services;
 
 namespace ImageFolderManager.Views
 {
@@ -53,15 +54,33 @@ namespace ImageFolderManager.Views
         {
             InitializeComponent();
 
-            _imagePaths = imagePaths?.Where(p => !string.IsNullOrWhiteSpace(p)).Distinct(StringComparer.OrdinalIgnoreCase).ToList()
+            var sourcePaths = imagePaths?
+                .Where(p => !string.IsNullOrWhiteSpace(p))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList()
                 ?? new List<string>();
+
+            string initialPath = initialIndex >= 0 && initialIndex < sourcePaths.Count
+                ? sourcePaths[initialIndex]
+                : null;
+
+            _imagePaths = sourcePaths
+                .OrderBy(path => Path.GetFileName(path), WindowsNaturalStringComparer.Instance)
+                .ToList();
 
             if (_imagePaths.Count == 0)
             {
                 throw new ArgumentException("No image paths provided.", nameof(imagePaths));
             }
 
-            _currentIndex = Math.Max(0, Math.Min(initialIndex, _imagePaths.Count - 1));
+            _currentIndex = !string.IsNullOrWhiteSpace(initialPath)
+                ? _imagePaths.FindIndex(path => string.Equals(path, initialPath, StringComparison.OrdinalIgnoreCase))
+                : -1;
+
+            if (_currentIndex < 0)
+            {
+                _currentIndex = Math.Max(0, Math.Min(initialIndex, _imagePaths.Count - 1));
+            }
 
             _animationTimer = new DispatcherTimer(DispatcherPriority.Render)
             {
@@ -115,11 +134,13 @@ namespace ImageFolderManager.Views
             _isAnimated = false;
 
             var extension = Path.GetExtension(filePath)?.ToLowerInvariant() ?? string.Empty;
-            if (extension == ".gif" || extension == ".webp")
+            if (extension == ".gif")
             {
-                // Skip static full-file decode for animated formats.
-                // This avoids UI hitch before playback starts.
                 _ = TryLoadAnimatedAsync(filePath);
+            }
+            else if (extension == ".webp")
+            {
+                _ = TryLoadWebpAsync(filePath);
             }
             else
             {
@@ -327,6 +348,72 @@ namespace ImageFolderManager.Views
                 {
                     _animationLoadCts = null;
                 }
+                cts.Dispose();
+            }
+        }
+
+        private async Task TryLoadWebpAsync(string filePath)
+        {
+            CancelAnimationLoad();
+
+            var cts = new CancellationTokenSource();
+            _animationLoadCts = cts;
+            int requestId = unchecked(++_animationLoadRequestId);
+
+            bool IsRequestStillValid()
+            {
+                return !cts.IsCancellationRequested &&
+                       requestId == _animationLoadRequestId &&
+                       _currentIndex >= 0 &&
+                       _currentIndex < _imagePaths.Count &&
+                       string.Equals(_imagePaths[_currentIndex], filePath, StringComparison.OrdinalIgnoreCase);
+            }
+
+            try
+            {
+                var previewFrame = await Task.Run(
+                    () => TryDecodeWebpPreviewFrame(filePath, cts.Token),
+                    cts.Token);
+
+                if (previewFrame != null && IsRequestStillValid())
+                {
+                    await Dispatcher.InvokeAsync(() =>
+                    {
+                        if (!IsRequestStillValid())
+                        {
+                            return;
+                        }
+
+                        ViewerImage.Source = previewFrame;
+                        RenderOptions.SetBitmapScalingMode(ViewerImage, BitmapScalingMode.HighQuality);
+
+                        if (_isFitMode)
+                        {
+                            Dispatcher.BeginInvoke(new Action(FitToWindow), DispatcherPriority.Loaded);
+                        }
+                    }, DispatcherPriority.Render, cts.Token);
+                }
+
+                if (IsRequestStillValid())
+                {
+                    await TryLoadAnimatedAsync(filePath);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // ignore
+            }
+            catch
+            {
+                Debug.WriteLine($"TryLoadWebpAsync failed: {filePath}");
+            }
+            finally
+            {
+                if (ReferenceEquals(_animationLoadCts, cts))
+                {
+                    _animationLoadCts = null;
+                }
+
                 cts.Dispose();
             }
         }
@@ -546,6 +633,26 @@ namespace ImageFolderManager.Views
                 stride);
             bitmap.Freeze();
             return bitmap;
+        }
+
+        private static BitmapSource TryDecodeWebpPreviewFrame(string filePath, CancellationToken ct)
+        {
+            using (var collection = new MagickImageCollection(filePath))
+            {
+                ct.ThrowIfCancellationRequested();
+                if (collection.Count == 0)
+                {
+                    return null;
+                }
+
+                var firstFrame = collection[0];
+                var decoded = DecodeFrame(firstFrame, maxDimension: 0);
+                return CreateBitmapSourceFromDecoded(new DecodedAnimationFrame(
+                    decoded.Width,
+                    decoded.Height,
+                    decoded.Pixels,
+                    MinFrameDelayMs));
+            }
         }
 
         private void StopAnimation()

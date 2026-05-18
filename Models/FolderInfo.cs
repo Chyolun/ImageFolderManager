@@ -79,6 +79,17 @@ namespace ImageFolderManager.Models
             }
         }
 
+        private ObservableCollection<TagWithCategory> _categorizedTags = new();
+        public ObservableCollection<TagWithCategory> CategorizedTags
+        {
+            get => _categorizedTags;
+            set
+            {
+                _categorizedTags = value;
+                OnPropertyChanged();
+            }
+        }
+
         private int _rating;
         public int Rating
         {
@@ -124,6 +135,7 @@ namespace ImageFolderManager.Models
             FolderPath = PathService.NormalizePath(path);
             Parent = parent;
             Tags = new ObservableCollection<string>();
+            CategorizedTags = new ObservableCollection<TagWithCategory>();
             Children = new ObservableCollection<FolderInfo>();
             Images = new ObservableCollection<ImageInfo>();
 

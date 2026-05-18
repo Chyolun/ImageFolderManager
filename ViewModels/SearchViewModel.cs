@@ -36,10 +36,10 @@ namespace ImageFolderManager.ViewModels
     ///    Each folder's tags are lower-cased once into a HashSet so predicate
     ///    evaluation avoids repeated ToLowerInvariant() allocations per call.
     ///
-    /// 5. SMART CANDIDATE INTERSECTION
-    ///    When the query has both tag terms AND name/general terms the two
-    ///    candidate sets are intersected before predicate evaluation, so only
-    ///    the truly relevant folders reach the per-folder Matches() check.
+    /// 5. CLAUSE-AWARE CANDIDATE PRUNING
+    ///    Top-level space-separated terms are treated as OR clauses, while
+    ///    parenthesized groups are treated as AND clauses. Indexed tag/name
+    ///    terms narrow each clause before final predicate evaluation.
     ///
     /// 6. O(1) RESULT-SYNC IN PerformSilentSearchAsync
     ///    A HashSet replaces the O(n²) nested Any(PathsEqual) loops that
@@ -67,10 +67,6 @@ namespace ImageFolderManager.ViewModels
         private readonly List<FolderInfo> _allLoadedFolders;
         private readonly object _allLoadedFoldersLock;
         private CancellationTokenSource _searchCancellationTokenSource;
-
-        // ── Compiled regex (one allocation for the lifetime of the process) ───
-        private static readonly Regex OrGroupRegex =
-            new Regex(@"\(([^)]+)\)", RegexOptions.Compiled);
 
         // ── Performance indexes ───────────────────────────────────────────────
 
@@ -235,15 +231,45 @@ namespace ImageFolderManager.ViewModels
                             string lower = tag.ToLowerInvariant();
                             normTags.Add(lower);
                             AddToIndex(tagIdx, lower, path);
+                        }
+                    }
 
-                            if (_categoryService != null)
+                    if (folder.CategorizedTags != null && folder.CategorizedTags.Count > 0)
+                    {
+                        foreach (var tag in folder.CategorizedTags)
+                        {
+                            if (tag == null ||
+                                string.IsNullOrWhiteSpace(tag.TagName) ||
+                                string.IsNullOrWhiteSpace(tag.Category))
                             {
-                                string category = _categoryService.GetTagCategory(tag)?.ToLowerInvariant() ?? string.Empty;
-                                if (!string.IsNullOrWhiteSpace(category))
-                                {
-                                    AddToIndex(fullTagIdx, $"{category}::{lower}", path);
-                                }
+                                continue;
                             }
+
+                            AddToIndex(
+                                fullTagIdx,
+                                $"{tag.Category.ToLowerInvariant()}::{tag.TagName.ToLowerInvariant()}",
+                                path);
+                        }
+                    }
+                    else if (folder.Tags != null)
+                    {
+                        foreach (var tag in folder.Tags)
+                        {
+                            if (string.IsNullOrWhiteSpace(tag) || !tag.Contains("::", StringComparison.Ordinal))
+                                continue;
+
+                            var parsed = TagHelper.ParseTagWithCategory(tag);
+                            if (parsed == null ||
+                                string.IsNullOrWhiteSpace(parsed.TagName) ||
+                                string.IsNullOrWhiteSpace(parsed.Category))
+                            {
+                                continue;
+                            }
+
+                            AddToIndex(
+                                fullTagIdx,
+                                $"{parsed.Category.ToLowerInvariant()}::{parsed.TagName.ToLowerInvariant()}",
+                                path);
                         }
                     }
                     normCache[path] = normTags;
@@ -347,69 +373,74 @@ namespace ImageFolderManager.ViewModels
         }
 
         /// <summary>
-        /// Returns the minimal candidate folder-path list for the query by using
-        /// the appropriate index strategy per term type:
+        /// Returns the minimal candidate folder-path list for the query.
         ///
-        ///   #tag   → inverted tag index (AND across terms = intersection)
-        ///   @name  → folder-name index  (OR  across terms = union)
-        ///   plain  → folder-name index  (OR  across terms = union)
-        ///   *rate  → no index; full scan required
-        ///
-        /// Tag candidates and name candidates are intersected when both appear,
-        /// so mixed queries like "#landscape @sea" touch only the folders that
-        /// have the tag AND match the name substring.
+        /// Top-level terms are OR clauses. Parenthesized terms form a single
+        /// AND clause. Each clause uses the available indexes to narrow the
+        /// candidate set; clauses that rely only on general text and/or rating
+        /// fall back to a full scan.
         /// </summary>
         private List<string> GetCandidateFolders(string searchText)
         {
-            var tagTerms = new List<string>();
-            var nameTerms = new List<string>();
-            var generalTerms = new List<string>();
-            bool hasRating = false;
+            var clauses = SearchQueryParser.ParseClauses(searchText);
+            if (clauses.Count == 0)
+                return _folderByPath.Keys.ToList();
 
-            // Parse OR groups
-            foreach (Match m in OrGroupRegex.Matches(searchText))
+            var candidates = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var clause in clauses)
             {
-                foreach (var part in m.Groups[1].Value
-                    .Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries))
-                    ClassifyTerm(part, tagTerms, nameTerms, generalTerms, ref hasRating);
+                var clauseCandidates = BuildClauseCandidates(clause);
+                if (clauseCandidates == null)
+                    return _folderByPath.Keys.ToList();
+
+                candidates.UnionWith(clauseCandidates);
             }
 
-            // Individual terms
-            var remaining = OrGroupRegex.Replace(searchText, " ");
-            foreach (var part in remaining.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries))
-                ClassifyTerm(part, tagTerms, nameTerms, generalTerms, ref hasRating);
+            return candidates.ToList();
+        }
 
-            bool hasTags = tagTerms.Count > 0;
-            bool hasNames = nameTerms.Count > 0 || generalTerms.Count > 0;
+        private HashSet<string> BuildClauseCandidates(SearchClause clause)
+        {
+            if (clause == null || clause.Terms.Count == 0)
+                return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-            // Pure rating query — no index can help
-            if (hasRating && !hasTags && !hasNames)
-                return _folderByPath.Keys.ToList();
+            var tagTerms = new List<string>();
+            var nameTerms = new List<string>();
+            bool hasGeneral = false;
+            bool hasRating = false;
+
+            foreach (var term in clause.Terms)
+                ClassifyTerm(term, tagTerms, nameTerms, ref hasGeneral, ref hasRating);
 
             HashSet<string> candidates = null;
 
-            // 1. Narrow by tag (AND across tag terms)
-            if (hasTags)
+            if (tagTerms.Count > 0)
             {
                 candidates = BuildTagCandidates(tagTerms);
-                if (candidates.Count == 0) return new List<string>();
+                if (candidates.Count == 0)
+                    return candidates;
             }
 
-            // 2. Narrow / expand by name/general (union across name terms,
-            //    then intersect with tag candidates if they exist)
-            if (hasNames)
+            if (nameTerms.Count > 0)
             {
-                var nameCandidates = BuildNameCandidates(nameTerms, generalTerms);
+                var nameCandidates = BuildNameCandidates(nameTerms);
                 if (candidates == null)
+                {
                     candidates = nameCandidates;
+                }
                 else
                 {
                     candidates.IntersectWith(nameCandidates);
-                    if (candidates.Count == 0) return new List<string>();
+                    if (candidates.Count == 0)
+                        return candidates;
                 }
             }
 
-            return candidates?.ToList() ?? _folderByPath.Keys.ToList();
+            if (candidates == null && (hasGeneral || hasRating))
+                return null;
+
+            return candidates ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         }
 
         private HashSet<string> BuildTagCandidates(List<string> tagTerms)
@@ -443,28 +474,40 @@ namespace ImageFolderManager.ViewModels
             return result ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         }
 
-        private HashSet<string> BuildNameCandidates(
-            List<string> nameTerms, List<string> generalTerms)
+        private HashSet<string> BuildNameCandidates(List<string> nameTerms)
         {
-            var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            HashSet<string> result = null;
 
-            foreach (var term in nameTerms.Concat(generalTerms))
+            foreach (var term in nameTerms)
             {
+                var matched = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 foreach (var kvp in _nameIndex)
                 {
                     if (kvp.Key.Contains(term))
                     {
-                        foreach (var p in kvp.Value) result.Add(p);
+                        foreach (var p in kvp.Value)
+                            matched.Add(p);
                     }
                 }
+
+                if (result == null)
+                {
+                    result = matched;
+                }
+                else
+                {
+                    result.IntersectWith(matched);
+                    if (result.Count == 0)
+                        return result;
+                }
             }
-            return result;
+
+            return result ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         }
 
         private static void ClassifyTerm(
-            string term,
-            List<string> tagTerms, List<string> nameTerms, List<string> generalTerms,
-            ref bool hasRating)
+            string term, List<string> tagTerms, List<string> nameTerms,
+            ref bool hasGeneral, ref bool hasRating)
         {
             if (string.IsNullOrWhiteSpace(term)) return;
 
@@ -475,7 +518,7 @@ namespace ImageFolderManager.ViewModels
             else if (term.StartsWith("*"))
                 hasRating = true;
             else
-                generalTerms.Add(term.ToLowerInvariant());
+                hasGeneral = true;
         }
 
         // ── Silent search ─────────────────────────────────────────────────────
@@ -568,11 +611,11 @@ namespace ImageFolderManager.ViewModels
     // =========================================================================
 
     /// <summary>
-    /// Parses a search string into AND-groups of OR-predicates and evaluates
-    /// them against a FolderInfo.
+    /// Parses a search string into OR clauses. Each parenthesized clause uses
+    /// AND logic internally.
     ///
     /// Changes vs original:
-    ///   • OrGroupRegex compiled once at class level.
+    ///   • Shared clause parsing centralizes the space=OR / parentheses=AND rules.
     ///   • Tag predicates capture the lower-cased term in closure (one allocation
     ///     per parsed term, not per folder evaluation).
     ///   • Matches() uses a plain foreach + break instead of LINQ .Any() to avoid
@@ -580,11 +623,8 @@ namespace ImageFolderManager.ViewModels
     /// </summary>
     internal class SearchTerms
     {
-        private static readonly Regex OrGroupRegex =
-            new Regex(@"\(([^)]+)\)", RegexOptions.Compiled);
-
         private readonly TagCategoryService _categoryService;
-        private readonly List<List<Predicate<FolderInfo>>> _andGroups =
+        private readonly List<List<Predicate<FolderInfo>>> _orClauses =
             new List<List<Predicate<FolderInfo>>>();
 
         public SearchTerms(string searchText, TagCategoryService categoryService = null)
@@ -592,30 +632,22 @@ namespace ImageFolderManager.ViewModels
             _categoryService = categoryService;
             if (string.IsNullOrWhiteSpace(searchText)) return;
 
-            foreach (Match m in OrGroupRegex.Matches(searchText))
+            foreach (var clause in SearchQueryParser.ParseClauses(searchText))
             {
-                var preds = ParseGroup(m.Groups[1].Value);
-                if (preds.Count > 0) _andGroups.Add(preds);
-            }
-
-            var remaining = OrGroupRegex.Replace(searchText, " ");
-            foreach (var token in remaining.Split(
-                new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries))
-            {
-                var p = CreatePredicateForTerm(token.Trim());
-                if (p != null)
-                    _andGroups.Add(new List<Predicate<FolderInfo>> { p });
+                var preds = ParseClause(clause.Terms);
+                if (preds.Count > 0)
+                    _orClauses.Add(preds);
             }
         }
 
-        private List<Predicate<FolderInfo>> ParseGroup(string groupText)
+        private List<Predicate<FolderInfo>> ParseClause(IEnumerable<string> terms)
         {
             var list = new List<Predicate<FolderInfo>>();
-            foreach (var term in groupText.Split(
-                new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries))
+            foreach (var term in terms)
             {
                 var p = CreatePredicateForTerm(term.Trim());
-                if (p != null) list.Add(p);
+                if (p != null)
+                    list.Add(p);
             }
             return list;
         }
@@ -639,18 +671,39 @@ namespace ImageFolderManager.ViewModels
 
                     return folder =>
                     {
-                        if (folder?.Tags == null) return false;
-                        foreach (var tag in folder.Tags)
+                        if (folder?.CategorizedTags != null && folder.CategorizedTags.Count > 0)
                         {
-                            if (tag == null || !tag.ToLowerInvariant().Contains(tagNameTerm))
-                                continue;
+                            foreach (var tag in folder.CategorizedTags)
+                            {
+                                if (tag == null || string.IsNullOrWhiteSpace(tag.TagName))
+                                    continue;
 
-                            if (_categoryService == null)
-                                return true; // fallback: treat as tag-only match
+                                if (!tag.TagName.ToLowerInvariant().Contains(tagNameTerm))
+                                    continue;
 
-                            string category = _categoryService.GetTagCategory(tag)?.ToLowerInvariant() ?? string.Empty;
-                            if (category.Contains(categoryTerm))
-                                return true;
+                                string category = tag.Category?.ToLowerInvariant() ?? string.Empty;
+                                if (category.Contains(categoryTerm))
+                                    return true;
+                            }
+                        }
+                        else if (folder?.Tags != null)
+                        {
+                            foreach (var tag in folder.Tags)
+                            {
+                                if (string.IsNullOrWhiteSpace(tag) || !tag.Contains("::", StringComparison.Ordinal))
+                                    continue;
+
+                                var parsed = TagHelper.ParseTagWithCategory(tag);
+                                if (parsed == null || string.IsNullOrWhiteSpace(parsed.TagName))
+                                    continue;
+
+                                if (!parsed.TagName.ToLowerInvariant().Contains(tagNameTerm))
+                                    continue;
+
+                                string category = parsed.Category?.ToLowerInvariant() ?? string.Empty;
+                                if (category.Contains(categoryTerm))
+                                    return true;
+                            }
                         }
                         return false;
                     };
@@ -715,19 +768,72 @@ namespace ImageFolderManager.ViewModels
             };
         }
 
-        /// <summary>All AND groups must pass; each group uses OR logic internally.</summary>
+        /// <summary>Any top-level clause may match; each parenthesized clause uses AND logic.</summary>
         public bool Matches(FolderInfo folder)
         {
-            if (_andGroups.Count == 0) return true;
+            if (_orClauses.Count == 0) return true;
 
-            foreach (var orGroup in _andGroups)
+            foreach (var andClause in _orClauses)
             {
-                bool any = false;
-                foreach (var p in orGroup)
-                    if (p(folder)) { any = true; break; }
-                if (!any) return false;
+                bool all = true;
+                foreach (var p in andClause)
+                {
+                    if (p(folder))
+                        continue;
+
+                    all = false;
+                    break;
+                }
+
+                if (all)
+                    return true;
             }
-            return true;
+
+            return false;
         }
+    }
+
+    internal sealed class SearchClause
+    {
+        public SearchClause(IEnumerable<string> terms)
+        {
+            Terms = terms?
+                .Where(term => !string.IsNullOrWhiteSpace(term))
+                .Select(term => term.Trim())
+                .ToList()
+                ?? new List<string>();
+        }
+
+        public List<string> Terms { get; }
+    }
+
+    internal static class SearchQueryParser
+    {
+        private static readonly Regex GroupRegex =
+            new Regex(@"\(([^)]+)\)", RegexOptions.Compiled);
+
+        public static IReadOnlyList<SearchClause> ParseClauses(string searchText)
+        {
+            var clauses = new List<SearchClause>();
+            if (string.IsNullOrWhiteSpace(searchText))
+                return clauses;
+
+            foreach (Match match in GroupRegex.Matches(searchText))
+            {
+                var clause = new SearchClause(SplitTerms(match.Groups[1].Value));
+                if (clause.Terms.Count > 0)
+                    clauses.Add(clause);
+            }
+
+            var remaining = GroupRegex.Replace(searchText, " ");
+            foreach (var term in SplitTerms(remaining))
+                clauses.Add(new SearchClause(new[] { term }));
+
+            return clauses;
+        }
+
+        private static IEnumerable<string> SplitTerms(string text) =>
+            (text ?? string.Empty).Split(
+                new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
     }
 }

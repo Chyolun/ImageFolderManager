@@ -87,8 +87,10 @@ namespace ImageFolderManager.ViewModels
         // Current list of used tags for quick lookups during updates
         private Dictionary<string, TagCloudItem> _currentTags = new Dictionary<string, TagCloudItem>(StringComparer.OrdinalIgnoreCase);
 
-        // Cache for tag counts to avoid recalculation during small updates
+        // Cache for aggregate tag counts to avoid recalculation during small updates
         private Dictionary<string, TagCloudItemData> _cachedTagData = new Dictionary<string, TagCloudItemData>(StringComparer.OrdinalIgnoreCase);
+        private Dictionary<string, Dictionary<string, int>> _folderTagContributions =
+            new Dictionary<string, Dictionary<string, int>>(StringComparer.OrdinalIgnoreCase);
         private bool _isFullUpdateNeeded = true;
         private int _lastFolderCount = 0;
         private readonly object _cacheSync = new object();
@@ -204,43 +206,32 @@ namespace ImageFolderManager.ViewModels
         {
             if (forceFullUpdate)
             {
+                var folderContributionCache =
+                    new Dictionary<string, Dictionary<string, int>>(StringComparer.OrdinalIgnoreCase);
                 var tagData = new Dictionary<string, TagCloudItemData>(StringComparer.OrdinalIgnoreCase);
 
-                // Get all folder tags with category information
                 foreach (var folder in allFolders)
                 {
-                    if (folder?.Tags == null)
+                    if (folder == null || string.IsNullOrWhiteSpace(folder.FolderPath))
                         continue;
 
-                    foreach (var tag in folder.Tags)
+                    string normalizedPath = PathService.NormalizePath(folder.FolderPath);
+                    var contribution = BuildFolderContributionMap(folder);
+                    folderContributionCache[normalizedPath] = contribution;
+
+                    foreach (var kvp in contribution)
                     {
-                        if (string.IsNullOrWhiteSpace(tag)) continue;
-
-                        // Parse category from tag (if stored with category)
-                        var (category, tagName) = ParseTagWithCategory(tag);
-
-                        string key = $"{category}::{tagName}";
-
-                        if (tagData.ContainsKey(key))
-                        {
-                            tagData[key].Count++;
-                        }
-                        else
-                        {
-                            tagData[key] = new TagCloudItemData
-                            {
-                                Tag = tagName,
-                                Category = category,
-                                Count = 1
-                            };
-                        }
+                        var (category, tagName) = ParseTagKey(kvp.Key);
+                        ApplyTagDelta(tagData, category, tagName, kvp.Value);
                     }
                 }
 
                 lock (_cacheSync)
                 {
                     _cachedTagData = CloneTagData(tagData);
+                    _folderTagContributions = CloneFolderContributionMap(folderContributionCache);
                     _isFullUpdateNeeded = false;
+                    _lastFolderCount = folderContributionCache.Count;
                 }
 
                 Debug.WriteLine($"Performed full tag count with categories, found {tagData.Count} unique tags");
@@ -256,26 +247,160 @@ namespace ImageFolderManager.ViewModels
             }
         }
 
+        public Task ApplyFolderUpdateAsync(FolderInfo folder, CancellationToken cancellationToken = default)
+        {
+            if (folder == null)
+                return Task.CompletedTask;
+
+            return ApplyFolderUpdatesAsync(new[] { folder }, cancellationToken);
+        }
+
+        public async Task ApplyFolderUpdatesAsync(
+            IEnumerable<FolderInfo> folders,
+            CancellationToken cancellationToken = default)
+        {
+            if (folders == null)
+                return;
+
+            long updateRequestId = Interlocked.Increment(ref _latestUpdateRequestId);
+            var folderSnapshots = CreateFolderSnapshot(folders);
+            if (folderSnapshots.Count == 0)
+                return;
+
+            Dictionary<string, TagCloudItemData> updatedTagData;
+            lock (_cacheSync)
+            {
+                foreach (var folder in folderSnapshots)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    ApplyFolderContribution(folder);
+                }
+
+                _lastFolderCount = _folderTagContributions.Count;
+                _isFullUpdateNeeded = false;
+                updatedTagData = CloneTagData(_cachedTagData);
+            }
+
+            var updatedTagsByCategory = await CreateCategorizedTagItemsAsync(updatedTagData, cancellationToken);
+            if (cancellationToken.IsCancellationRequested || !IsLatestUpdateRequest(updateRequestId))
+                return;
+
+            await UpdateCategorizedUIAsync(updatedTagsByCategory, cancellationToken, updateRequestId);
+        }
+
+        public async Task RemoveFoldersAsync(
+            IEnumerable<string> folderPaths,
+            CancellationToken cancellationToken = default)
+        {
+            if (folderPaths == null)
+                return;
+
+            long updateRequestId = Interlocked.Increment(ref _latestUpdateRequestId);
+            var normalizedPaths = folderPaths
+                .Where(path => !string.IsNullOrWhiteSpace(path))
+                .Select(PathService.NormalizePath)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            if (normalizedPaths.Count == 0)
+                return;
+
+            Dictionary<string, TagCloudItemData> updatedTagData;
+            lock (_cacheSync)
+            {
+                foreach (var folderPath in normalizedPaths)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    RemoveFolderContribution(folderPath);
+                }
+
+                _lastFolderCount = _folderTagContributions.Count;
+                _isFullUpdateNeeded = false;
+                updatedTagData = CloneTagData(_cachedTagData);
+            }
+
+            var updatedTagsByCategory = await CreateCategorizedTagItemsAsync(updatedTagData, cancellationToken);
+            if (cancellationToken.IsCancellationRequested || !IsLatestUpdateRequest(updateRequestId))
+                return;
+
+            await UpdateCategorizedUIAsync(updatedTagsByCategory, cancellationToken, updateRequestId);
+        }
+
+        public Task RenameFolderPathsAsync(IEnumerable<(string oldPath, string newPath)> renames)
+        {
+            if (renames == null)
+                return Task.CompletedTask;
+
+            lock (_cacheSync)
+            {
+                foreach (var (oldPath, newPath) in renames)
+                {
+                    string normalizedOldPath = PathService.NormalizePath(oldPath);
+                    string normalizedNewPath = PathService.NormalizePath(newPath);
+
+                    if (string.IsNullOrWhiteSpace(normalizedOldPath) ||
+                        string.IsNullOrWhiteSpace(normalizedNewPath) ||
+                        normalizedOldPath.Equals(normalizedNewPath, StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    if (_folderTagContributions.TryGetValue(normalizedOldPath, out var contribution))
+                    {
+                        _folderTagContributions.Remove(normalizedOldPath);
+                        _folderTagContributions[normalizedNewPath] = contribution;
+                    }
+                }
+            }
+
+            return Task.CompletedTask;
+        }
+
+        private IEnumerable<TagWithCategory> EnumerateCategorizedTags(FolderInfo folder)
+        {
+            if (folder?.CategorizedTags != null && folder.CategorizedTags.Count > 0)
+            {
+                foreach (var tag in folder.CategorizedTags)
+                {
+                    if (tag != null && !string.IsNullOrWhiteSpace(tag.TagName))
+                        yield return tag;
+                }
+                yield break;
+            }
+
+            if (folder?.Tags == null)
+                yield break;
+
+            foreach (var tag in folder.Tags)
+            {
+                if (string.IsNullOrWhiteSpace(tag))
+                    continue;
+
+                var (category, tagName) = ParseTagWithCategory(tag);
+                if (!string.IsNullOrWhiteSpace(tagName))
+                {
+                    yield return new TagWithCategory
+                    {
+                        TagName = tagName,
+                        Category = category
+                    };
+                }
+            }
+        }
+
         /// <summary>
         /// Parse tag to extract category and tag name
         /// </summary>
         private (string category, string tagName) ParseTagWithCategory(string fullTag)
         {
-            // Check if tag contains category separator
-            if (fullTag.Contains("::"))
+            var parsed = TagHelper.ParseTagWithCategory(fullTag, DEFAULT_CATEGORY);
+            if (parsed != null && !string.IsNullOrWhiteSpace(parsed.TagName))
             {
-                var parts = fullTag.Split(new[] { "::" }, 2, StringSplitOptions.None);
-                return (parts[0], parts[1]);
+                return (
+                    string.IsNullOrWhiteSpace(parsed.Category) ? DEFAULT_CATEGORY : parsed.Category,
+                    parsed.TagName);
             }
 
-            // Check if we have stored category mapping for this tag
-            string storedCategory = _categoryService.GetTagCategory(fullTag);
-            if (!string.IsNullOrEmpty(storedCategory))
-            {
-                return (storedCategory, fullTag);
-            }
-
-            // Default to uncategorized
             return (DEFAULT_CATEGORY, fullTag);
         }
 
@@ -379,6 +504,14 @@ namespace ImageFolderManager.ViewModels
                     foreach (var tag in kvp.Value)
                     {
                         newCurrentTags[$"{tag.Category}::{tag.Tag}"] = tag;
+                    }
+                }
+
+                foreach (var categoryName in _categoryService.GetAllCategories())
+                {
+                    if (!_tagsByCategory.ContainsKey(categoryName))
+                    {
+                        _tagsByCategory[categoryName] = new List<TagCloudItem>();
                     }
                 }
 
@@ -740,6 +873,144 @@ namespace ImageFolderManager.ViewModels
             }
 
             return clone;
+        }
+
+        private static Dictionary<string, Dictionary<string, int>> CloneFolderContributionMap(
+            Dictionary<string, Dictionary<string, int>> source)
+        {
+            var clone = new Dictionary<string, Dictionary<string, int>>(StringComparer.OrdinalIgnoreCase);
+            if (source == null)
+                return clone;
+
+            foreach (var kvp in source)
+            {
+                clone[kvp.Key] = kvp.Value != null
+                    ? new Dictionary<string, int>(kvp.Value, StringComparer.OrdinalIgnoreCase)
+                    : new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            }
+
+            return clone;
+        }
+
+        private void ApplyFolderContribution(FolderInfo folder)
+        {
+            if (folder == null || string.IsNullOrWhiteSpace(folder.FolderPath))
+                return;
+
+            string normalizedPath = PathService.NormalizePath(folder.FolderPath);
+            RemoveFolderContribution(normalizedPath);
+
+            var newContribution = BuildFolderContributionMap(folder);
+            if (newContribution.Count == 0)
+            {
+                _folderTagContributions[normalizedPath] = newContribution;
+                return;
+            }
+
+            foreach (var kvp in newContribution)
+            {
+                var (category, tagName) = ParseTagKey(kvp.Key);
+                ApplyTagDelta(_cachedTagData, category, tagName, kvp.Value);
+            }
+
+            _folderTagContributions[normalizedPath] = newContribution;
+        }
+
+        private void RemoveFolderContribution(string folderPath)
+        {
+            if (string.IsNullOrWhiteSpace(folderPath))
+                return;
+
+            if (!_folderTagContributions.TryGetValue(folderPath, out var existingContribution))
+                return;
+
+            foreach (var kvp in existingContribution)
+            {
+                var (category, tagName) = ParseTagKey(kvp.Key);
+                ApplyTagDelta(_cachedTagData, category, tagName, -kvp.Value);
+            }
+
+            _folderTagContributions.Remove(folderPath);
+        }
+
+        private IEnumerable<TagWithCategory> EnumerateCategorizedTagsForContribution(FolderInfo folder)
+            => EnumerateCategorizedTags(folder);
+
+        private Dictionary<string, int> BuildFolderContributionMap(FolderInfo folder)
+        {
+            var contribution = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            if (folder == null)
+                return contribution;
+
+            foreach (var tag in EnumerateCategorizedTagsForContribution(folder))
+            {
+                if (tag == null || string.IsNullOrWhiteSpace(tag.TagName))
+                    continue;
+
+                string category = string.IsNullOrWhiteSpace(tag.Category)
+                    ? DEFAULT_CATEGORY
+                    : tag.Category;
+                string tagKey = CreateTagKey(category, tag.TagName);
+                contribution[tagKey] = contribution.TryGetValue(tagKey, out int count)
+                    ? count + 1
+                    : 1;
+            }
+
+            return contribution;
+        }
+
+        private static void ApplyTagDelta(
+            Dictionary<string, TagCloudItemData> tagData,
+            string category,
+            string tagName,
+            int delta)
+        {
+            if (tagData == null || string.IsNullOrWhiteSpace(tagName) || delta == 0)
+                return;
+
+            category = string.IsNullOrWhiteSpace(category) ? DEFAULT_CATEGORY : category;
+            string tagKey = CreateTagKey(category, tagName);
+
+            if (tagData.TryGetValue(tagKey, out var existingItem))
+            {
+                existingItem.Count += delta;
+                if (existingItem.Count <= 0)
+                {
+                    tagData.Remove(tagKey);
+                }
+
+                return;
+            }
+
+            if (delta > 0)
+            {
+                tagData[tagKey] = new TagCloudItemData
+                {
+                    Tag = tagName,
+                    Category = category,
+                    Count = delta
+                };
+            }
+        }
+
+        private static string CreateTagKey(string category, string tagName)
+        {
+            string normalizedCategory = string.IsNullOrWhiteSpace(category) ? DEFAULT_CATEGORY : category;
+            return $"{normalizedCategory}::{tagName}";
+        }
+
+        private static (string category, string tagName) ParseTagKey(string tagKey)
+        {
+            if (string.IsNullOrWhiteSpace(tagKey))
+                return (DEFAULT_CATEGORY, string.Empty);
+
+            int separatorIndex = tagKey.IndexOf("::", StringComparison.Ordinal);
+            if (separatorIndex <= 0 || separatorIndex >= tagKey.Length - 2)
+                return (DEFAULT_CATEGORY, tagKey);
+
+            return (
+                tagKey.Substring(0, separatorIndex),
+                tagKey.Substring(separatorIndex + 2));
         }
 
         private static List<FolderInfo> CreateFolderSnapshot(IEnumerable<FolderInfo> allFolders)

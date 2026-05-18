@@ -147,7 +147,7 @@ namespace ImageFolderManager.ViewModels
             return Directory.GetFiles(path)
                 .Where(file => supportedExtensions.Contains(
                     Path.GetExtension(file).ToLowerInvariant()))
-                .OrderBy(file => Path.GetFileName(file))
+                .OrderBy(file => Path.GetFileName(file), WindowsNaturalStringComparer.Instance)
                 .ToList();
         }
 
@@ -249,7 +249,9 @@ namespace ImageFolderManager.ViewModels
                 {
                     await Application.Current.Dispatcher.InvokeAsync(() =>
                     {
-                        var sortedResults = batchResults.OrderBy(img => Path.GetFileName(img.FilePath)).ToList();
+                        var sortedResults = batchResults
+                            .OrderBy(img => Path.GetFileName(img.FilePath), WindowsNaturalStringComparer.Instance)
+                            .ToList();
                         foreach (var img in sortedResults)
                         {
                             Images.Add(img);

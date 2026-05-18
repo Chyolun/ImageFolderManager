@@ -37,7 +37,7 @@ namespace ImageFolderManager.ViewModels
                     }
                     Search.InvalidateSearchIndex();
                     await Search.PerformSilentSearchAsync();
-                    await UpdateTagCloudAsync();
+                    await TagManagement.TagCloud.ApplyFolderUpdateAsync(newFolder);
                 }
             }
             catch (Exception ex)
@@ -55,15 +55,23 @@ namespace ImageFolderManager.ViewModels
         {
             try
             {
+                List<string> removedFolderPaths;
                 lock (_allLoadedFoldersLock)
                 {
+                    removedFolderPaths = _allLoadedFolders
+                        .Where(f =>
+                            PathService.PathsEqual(f.FolderPath, folderPath) ||
+                            PathService.IsPathWithin(folderPath, f.FolderPath))
+                        .Select(f => f.FolderPath)
+                        .ToList();
+
                     _allLoadedFolders.RemoveAll(f =>
                         PathService.PathsEqual(f.FolderPath, folderPath) ||
                         PathService.IsPathWithin(folderPath, f.FolderPath));
                 }
                 Search.InvalidateSearchIndex();
                 await Search.PerformSilentSearchAsync();
-                await UpdateTagCloudAsync();
+                await TagManagement.TagCloud.RemoveFoldersAsync(removedFolderPaths);
             }
             catch (Exception ex)
             {
@@ -82,6 +90,7 @@ namespace ImageFolderManager.ViewModels
             {
                 // Collect items to modify first
                 var itemsToUpdate = new List<(FolderInfo folder, string newPath)>();
+                var renames = new List<(string oldPath, string newPath)>();
 
                 lock (_allLoadedFoldersLock)
                 {
@@ -91,10 +100,13 @@ namespace ImageFolderManager.ViewModels
                         if (folder.FolderPath == oldPath)
                         {
                             itemsToUpdate.Add((folder, newPath));
+                            renames.Add((folder.FolderPath, newPath));
                         }
                         else if (PathService.IsPathWithin(oldPath, folder.FolderPath))
                         {
-                            itemsToUpdate.Add((folder, newPath + folder.FolderPath.Substring(oldPath.Length)));
+                            string updatedPath = newPath + folder.FolderPath.Substring(oldPath.Length);
+                            itemsToUpdate.Add((folder, updatedPath));
+                            renames.Add((folder.FolderPath, updatedPath));
                         }
                     }
                 }
@@ -107,7 +119,7 @@ namespace ImageFolderManager.ViewModels
 
                 Search.InvalidateSearchIndex();
                 await Search.PerformSilentSearchAsync();
-                await UpdateTagCloudAsync();
+                await TagManagement.TagCloud.RenameFolderPathsAsync(renames);
             }
             catch (Exception ex)
             {
@@ -126,22 +138,7 @@ namespace ImageFolderManager.ViewModels
             {
                 StatusMessage = "Rebuilding folder cache from index...";
 
-                var rebuiltFolders = new List<FolderInfo>();
-                foreach (var folderPath in allFolders)
-                {
-                    try
-                    {
-                        var folder = await _unifiedFolderService.CreateFolderInfoWithoutImagesAsync(folderPath);
-                        if (folder != null)
-                        {
-                            rebuiltFolders.Add(folder);
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        Debug.WriteLine($"Error creating FolderInfo for {folderPath}: {ex.Message}");
-                    }
-                }
+                var rebuiltFolders = await _unifiedFolderService.CreateFolderInfosWithoutImagesAsync(allFolders);
 
                 lock (_allLoadedFoldersLock)
                 {

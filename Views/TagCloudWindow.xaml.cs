@@ -1,5 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Collections.Specialized;
+using System.ComponentModel;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
@@ -23,6 +25,8 @@ namespace ImageFolderManager.Views
     {
         private readonly MainViewModel _mainViewModel;
         private readonly Dictionary<string, Storyboard> _animationCache = new Dictionary<string, Storyboard>();
+        private ICollectionView _tagItemsView;
+        private TagCloudViewModel _observedViewModel;
 
         // Drag and drop support
         private Point _dragStartPoint;
@@ -34,25 +38,273 @@ namespace ImageFolderManager.Views
 
         public MainViewModel MainViewModel => _mainViewModel;
 
+        public static readonly DependencyProperty HasVisibleTagsProperty =
+            DependencyProperty.Register(
+                nameof(HasVisibleTags),
+                typeof(bool),
+                typeof(TagCloudWindow),
+                new PropertyMetadata(true));
+
+        public static readonly DependencyProperty EmptyStateMessageProperty =
+            DependencyProperty.Register(
+                nameof(EmptyStateMessage),
+                typeof(string),
+                typeof(TagCloudWindow),
+                new PropertyMetadata("Try clearing the filter or switch to another category."));
+
+        public bool HasVisibleTags
+        {
+            get => (bool)GetValue(HasVisibleTagsProperty);
+            set => SetValue(HasVisibleTagsProperty, value);
+        }
+
+        public string EmptyStateMessage
+        {
+            get => (string)GetValue(EmptyStateMessageProperty);
+            set => SetValue(EmptyStateMessageProperty, value);
+        }
+
         public TagCloudWindow(TagCloudViewModel viewModel, MainViewModel mainViewModel)
         {
             InitializeComponent();
 
             DataContext = viewModel;
             _mainViewModel = mainViewModel;
-
-            // Handle window load event
-            this.Loaded += (s, e) => {
-                UpdateWindowTitle();
-
-                if (viewModel?.TagItems != null && viewModel.TagItems.Count == 0)
-                {
-                    StatusText.Text = "No tags found. Add tags to folders to see them here.";
-                }
-            };
-
-            // Handle window size changes
             this.SizeChanged += TagCloudWindow_SizeChanged;
+            this.Loaded += TagCloudWindow_Loaded;
+            this.Closed += TagCloudWindow_Closed;
+            this.PreviewKeyDown += TagCloudWindow_PreviewKeyDown;
+        }
+
+        private void TagCloudWindow_Loaded(object sender, RoutedEventArgs e)
+        {
+            AttachViewModelSubscriptions(DataContext as TagCloudViewModel);
+            InitializeTagItemsView();
+            ApplySortMode();
+            RefreshFilterAndSummary();
+
+            if (_observedViewModel?.TagItems != null && _observedViewModel.TagItems.Count == 0)
+            {
+                StatusText.Text = "No tags found yet. Add tags to folders to build your cloud.";
+            }
+        }
+
+        private void TagCloudWindow_Closed(object sender, EventArgs e)
+        {
+            DetachViewModelSubscriptions();
+        }
+
+        private void TagCloudWindow_PreviewKeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.F && Keyboard.Modifiers == ModifierKeys.Control)
+            {
+                TagFilterTextBox.Focus();
+                TagFilterTextBox.SelectAll();
+                e.Handled = true;
+                return;
+            }
+
+            if (e.Key == Key.Escape && !string.IsNullOrEmpty(TagFilterTextBox.Text))
+            {
+                TagFilterTextBox.Clear();
+                e.Handled = true;
+            }
+        }
+
+        private void AttachViewModelSubscriptions(TagCloudViewModel viewModel)
+        {
+            if (ReferenceEquals(_observedViewModel, viewModel))
+                return;
+
+            DetachViewModelSubscriptions();
+            _observedViewModel = viewModel;
+
+            if (_observedViewModel == null)
+                return;
+
+            _observedViewModel.PropertyChanged += ObservedViewModel_PropertyChanged;
+
+            if (_observedViewModel.TagItems != null)
+            {
+                _observedViewModel.TagItems.CollectionChanged += TagItems_CollectionChanged;
+            }
+
+            if (_observedViewModel.Categories != null)
+            {
+                foreach (var category in _observedViewModel.Categories)
+                {
+                    category.PropertyChanged += Category_PropertyChanged;
+                }
+
+                _observedViewModel.Categories.CollectionChanged += Categories_CollectionChanged;
+            }
+        }
+
+        private void DetachViewModelSubscriptions()
+        {
+            if (_observedViewModel == null)
+                return;
+
+            _observedViewModel.PropertyChanged -= ObservedViewModel_PropertyChanged;
+
+            if (_observedViewModel.TagItems != null)
+            {
+                _observedViewModel.TagItems.CollectionChanged -= TagItems_CollectionChanged;
+            }
+
+            if (_observedViewModel.Categories != null)
+            {
+                foreach (var category in _observedViewModel.Categories)
+                {
+                    category.PropertyChanged -= Category_PropertyChanged;
+                }
+
+                _observedViewModel.Categories.CollectionChanged -= Categories_CollectionChanged;
+            }
+
+            _observedViewModel = null;
+        }
+
+        private void InitializeTagItemsView()
+        {
+            if (!(FindResource("TagItemsViewSource") is CollectionViewSource collectionViewSource))
+                return;
+
+            _tagItemsView = collectionViewSource.View;
+            if (_tagItemsView == null)
+                return;
+
+            _tagItemsView.Filter -= TagItemsFilter;
+            _tagItemsView.Filter += TagItemsFilter;
+        }
+
+        private bool TagItemsFilter(object item)
+        {
+            if (!(item is TagCloudItem tagItem))
+                return false;
+
+            string filter = TagFilterTextBox?.Text?.Trim() ?? string.Empty;
+            if (string.IsNullOrEmpty(filter))
+                return true;
+
+            return tagItem.Tag.IndexOf(filter, StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   tagItem.Category.IndexOf(filter, StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private void ApplySortMode()
+        {
+            if (_tagItemsView == null)
+                return;
+
+            using (_tagItemsView.DeferRefresh())
+            {
+                _tagItemsView.SortDescriptions.Clear();
+
+                int sortIndex = SortModeComboBox?.SelectedIndex ?? 0;
+                switch (sortIndex)
+                {
+                    case 1:
+                        _tagItemsView.SortDescriptions.Add(new SortDescription(nameof(TagCloudItem.Tag), ListSortDirection.Ascending));
+                        break;
+                    case 2:
+                        _tagItemsView.SortDescriptions.Add(new SortDescription(nameof(TagCloudItem.Tag), ListSortDirection.Descending));
+                        break;
+                    default:
+                        _tagItemsView.SortDescriptions.Add(new SortDescription(nameof(TagCloudItem.Count), ListSortDirection.Descending));
+                        _tagItemsView.SortDescriptions.Add(new SortDescription(nameof(TagCloudItem.Tag), ListSortDirection.Ascending));
+                        break;
+                }
+            }
+        }
+
+        private void RefreshFilterAndSummary()
+        {
+            _tagItemsView?.Refresh();
+            UpdateSummaryPanel();
+            UpdateEmptyState();
+            UpdateWindowTitle();
+        }
+
+        private void UpdateSummaryPanel()
+        {
+            var viewModel = DataContext as TagCloudViewModel;
+            if (viewModel == null)
+                return;
+
+            int totalTags = viewModel.Categories?.Sum(category => category.TagCount) ?? 0;
+            int totalCategories = viewModel.Categories?.Count ?? 0;
+            int visibleCount = _tagItemsView?.Cast<object>().Count() ?? viewModel.TagItems?.Count ?? 0;
+            int selectedCategoryCount = viewModel.SelectedCategory?.TagCount ?? 0;
+            string categoryName = viewModel.SelectedCategory?.Name ?? "All Categories";
+
+            HeaderSummaryText.Text = $"{totalTags} tag references across {totalCategories} categories";
+            SelectedCategorySummaryText.Text =
+                $"Viewing {categoryName}. Showing {visibleCount} tag{(visibleCount == 1 ? string.Empty : "s")} out of {selectedCategoryCount}.";
+            VisibleTagStatsText.Text = $"{visibleCount} shown";
+            FilterHintText.Text = string.IsNullOrWhiteSpace(TagFilterTextBox?.Text)
+                ? "Ctrl+F to focus filter"
+                : $"Filter active: \"{TagFilterTextBox.Text.Trim()}\"";
+        }
+
+        private void UpdateEmptyState()
+        {
+            int visibleCount = _tagItemsView?.Cast<object>().Count() ?? 0;
+            HasVisibleTags = visibleCount > 0;
+
+            if (HasVisibleTags)
+                return;
+
+            EmptyStateMessage = string.IsNullOrWhiteSpace(TagFilterTextBox?.Text)
+                ? "This category is empty right now. Add tags or drag a tag here to start organizing."
+                : "No tags match the current filter. Clear the filter or switch to another category.";
+        }
+
+        private void ObservedViewModel_PropertyChanged(object sender, PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName == nameof(TagCloudViewModel.SelectedCategory) ||
+                e.PropertyName == nameof(TagCloudViewModel.TagItems) ||
+                e.PropertyName == nameof(TagCloudViewModel.Categories))
+            {
+                Dispatcher.InvokeAsync(RefreshFilterAndSummary);
+            }
+        }
+
+        private void TagItems_CollectionChanged(object sender, NotifyCollectionChangedEventArgs e)
+        {
+            Dispatcher.InvokeAsync(RefreshFilterAndSummary);
+        }
+
+        private void Categories_CollectionChanged(object sender, NotifyCollectionChangedEventArgs e)
+        {
+            if (e.OldItems != null)
+            {
+                foreach (TagCategory category in e.OldItems)
+                {
+                    category.PropertyChanged -= Category_PropertyChanged;
+                }
+            }
+
+            if (e.NewItems != null)
+            {
+                foreach (TagCategory category in e.NewItems)
+                {
+                    category.PropertyChanged += Category_PropertyChanged;
+                }
+            }
+
+            Dispatcher.InvokeAsync(UpdateWindowTitle);
+            Dispatcher.InvokeAsync(UpdateSummaryPanel);
+        }
+
+        private void Category_PropertyChanged(object sender, PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName == nameof(TagCategory.TagCount) ||
+                e.PropertyName == nameof(TagCategory.Name) ||
+                e.PropertyName == nameof(TagCategory.DisplayName))
+            {
+                Dispatcher.InvokeAsync(UpdateWindowTitle);
+                Dispatcher.InvokeAsync(UpdateSummaryPanel);
+            }
         }
 
         private void TagCloudWindow_SizeChanged(object sender, SizeChangedEventArgs e)
@@ -84,6 +336,23 @@ namespace ImageFolderManager.Views
             }
         }
 
+        private void TagFilterTextBox_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            RefreshFilterAndSummary();
+        }
+
+        private void ClearFilterButton_Click(object sender, RoutedEventArgs e)
+        {
+            TagFilterTextBox.Clear();
+            TagFilterTextBox.Focus();
+        }
+
+        private void SortModeComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            ApplySortMode();
+            RefreshFilterAndSummary();
+        }
+
         #region Tag Button Events
 
         private void TagButton_Click(object sender, RoutedEventArgs e)
@@ -91,8 +360,8 @@ namespace ImageFolderManager.Views
             if (sender is Button button && button.Tag is TagCloudItem tag)
             {
                 e.Handled = true;
-                 AnimateTagSelection(button);
-                 
+                AnimateTagSelection(button);
+                StatusText.Text = $"Selected #{tag.Tag}. Right-click for actions, or drag it to another category.";
             }
         }
 
@@ -174,6 +443,7 @@ namespace ImageFolderManager.Views
             if (e.AddedItems.Count > 0 && e.AddedItems[0] is TagCategory category)
             {
                 StatusText.Text = $"Viewing category: {category.Name} ({category.TagCount} tags)";
+                RefreshFilterAndSummary();
             }
         }
 
@@ -186,7 +456,7 @@ namespace ImageFolderManager.Views
 
                 if (targetCategory != null && draggedTag != null)
                 {
-                    MoveTagToCategory(draggedTag, targetCategory.Name);
+                    _ = MoveTagToCategoryAsync(draggedTag, targetCategory.Name);
                     ClearDropHighlight(panel);
                 }
             }
@@ -224,7 +494,7 @@ namespace ImageFolderManager.Views
             {
                 if (category.Name != "Uncategorized")
                 {
-                    CloseCategoryTab(category);
+                    _ = CloseCategoryTabAsync(category);
                 }
             }
         }
@@ -242,7 +512,7 @@ namespace ImageFolderManager.Views
 
                 if (draggedTag != null && viewModel?.SelectedCategory != null)
                 {
-                    MoveTagToCategory(draggedTag, viewModel.SelectedCategory.Name);
+                    _ = MoveTagToCategoryAsync(draggedTag, viewModel.SelectedCategory.Name);
                 }
             }
 
@@ -284,11 +554,11 @@ namespace ImageFolderManager.Views
                 viewModel?.AddCategory(categoryName.Trim());
 
                 StatusText.Text = $"Added new category: {categoryName.Trim()}";
-                UpdateWindowTitle();
+                RefreshFilterAndSummary();
             }
         }
 
-        private void RefreshButton_Click(object sender, RoutedEventArgs e)
+        private async void RefreshButton_Click(object sender, RoutedEventArgs e)
         {
             try
             {
@@ -297,15 +567,12 @@ namespace ImageFolderManager.Views
                 if (DataContext is TagCloudViewModel viewModel)
                 {
                     viewModel.InvalidateCache();
-                    _mainViewModel?.UpdateTagCloudAsync().ContinueWith(_ =>
+                    if (_mainViewModel != null)
                     {
-                        this.Dispatcher.Invoke(() =>
-                        {
-                            StatusText.Text = "Tag cloud refreshed";
-                            UpdateWindowTitle();
-                        });
-                    });
-
+                        await _mainViewModel.UpdateTagCloudAsync();
+                    }
+                    RefreshFilterAndSummary();
+                    StatusText.Text = "Tag cloud refreshed";
                 }
             }
             catch (Exception ex)
@@ -416,7 +683,7 @@ namespace ImageFolderManager.Views
                     if (category.Name != tag.Category)
                     {
                         var categoryItem = new MenuItem { Header = category.Name };
-                        categoryItem.Click += (s, args) => MoveTagToCategory(tag, category.Name);
+                        categoryItem.Click += (s, args) => _ = MoveTagToCategoryAsync(tag, category.Name);
                         moveToItem.Items.Add(categoryItem);
                     }
                 }
@@ -449,14 +716,14 @@ namespace ImageFolderManager.Views
             if (category.Name != "Uncategorized")
             {
                 var renameItem = new MenuItem { Header = "Rename Category" };
-                renameItem.Click += (s, args) => RenameCategoryDialog(category);
+                renameItem.Click += (s, args) => _ = RenameCategoryDialogAsync(category);
                 contextMenu.Items.Add(renameItem);
 
                 contextMenu.Items.Add(new Separator());
 
                 // Add "Delete Category" menu item
                 var deleteItem = new MenuItem { Header = "Delete Category" };
-                deleteItem.Click += (s, args) => CloseCategoryTab(category);
+                deleteItem.Click += (s, args) => _ = CloseCategoryTabAsync(category);
                 contextMenu.Items.Add(deleteItem);
             }
 
@@ -469,15 +736,42 @@ namespace ImageFolderManager.Views
 
         #region Tag Operations
 
-        private void MoveTagToCategory(TagCloudItem tag, string newCategory)
+        private async Task MoveTagToCategoryAsync(TagCloudItem tag, string newCategory)
         {
             if (tag.Category == newCategory) return;
 
-            var viewModel = DataContext as TagCloudViewModel;
-            viewModel?.MoveTagToCategoryAsync(tag, newCategory);
+            try
+            {
+                string oldCategory = tag.Category;
 
-            StatusText.Text = $"Moved tag '{tag.Tag}' from '{tag.Category}' to '{newCategory}'";
-            UpdateWindowTitle();
+                if (_mainViewModel != null)
+                {
+                    await _mainViewModel.MoveTagToCategoryAsync(
+                        tag.Tag,
+                        oldCategory,
+                        newCategory,
+                        _mainViewModel.GetAllIndexedFolderPaths());
+                }
+                else
+                {
+                    var viewModel = DataContext as TagCloudViewModel;
+                    if (viewModel != null)
+                    {
+                        await viewModel.MoveTagToCategoryAsync(tag, newCategory);
+                    }
+                }
+
+                StatusText.Text = $"Moved tag '{tag.Tag}' from '{oldCategory}' to '{newCategory}'";
+                RefreshFilterAndSummary();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error moving tag to category: {ex.Message}",
+                    "Error",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+                StatusText.Text = "Error moving tag to category";
+            }
         }
 
         private void AddTagToTagInput(string tag)
@@ -619,21 +913,8 @@ namespace ImageFolderManager.Views
 
                         // Call the service to delete the tag
                         await _mainViewModel.DeleteTagFromAllFoldersAsync(tag, folderPaths);
-
-                        // Get the view model from the DataContext
-                        var viewModel = this.DataContext as TagCloudViewModel;
-
-                        // Update tag cloud
-                        if (viewModel != null)
-                        {
-                            await viewModel.DeleteTagAsync(tag);
-
-                            // Update window title
-                            int totalTags = viewModel.TagItems?.Count ?? 0;
-                            this.Title = $"Tag Cloud - {totalTags} tags";
-                        }
-
                         StatusText.Text = $"Tag '{tag}' has been deleted from all folders.";
+                        RefreshFilterAndSummary();
                     }
                 }
                 catch (Exception ex)
@@ -649,7 +930,7 @@ namespace ImageFolderManager.Views
 
         #region Category Operations
 
-        private void RenameCategoryDialog(TagCategory category)
+        private async Task RenameCategoryDialogAsync(TagCategory category)
         {
             if (category.Name == "Uncategorized")
             {
@@ -671,11 +952,21 @@ namespace ImageFolderManager.Views
             {
                 try
                 {
-                    var viewModel = DataContext as TagCloudViewModel;
-                    viewModel?.RenameCategory(category.Name, newName);
+                    if (_mainViewModel != null)
+                    {
+                        await _mainViewModel.RenameCategoryAsync(
+                            category.Name,
+                            newName,
+                            _mainViewModel.GetAllIndexedFolderPaths());
+                    }
+                    else
+                    {
+                        var viewModel = DataContext as TagCloudViewModel;
+                        viewModel?.RenameCategory(category.Name, newName);
+                    }
 
                     StatusText.Text = $"Category renamed from '{originalName}' to '{newName}'"; // Use originalName
-                    UpdateWindowTitle();
+                    RefreshFilterAndSummary();
                 }
                 catch (Exception ex)
                 {
@@ -689,7 +980,7 @@ namespace ImageFolderManager.Views
             }
         }
 
-        private void CloseCategoryTab(TagCategory category)
+        private async Task CloseCategoryTabAsync(TagCategory category)
         {
             if (category.Name == "Uncategorized")
             {
@@ -711,11 +1002,20 @@ namespace ImageFolderManager.Views
             {
                 try
                 {
-                    var viewModel = DataContext as TagCloudViewModel;
-                    viewModel?.DeleteCategory(category.Name);
+                    if (_mainViewModel != null)
+                    {
+                        await _mainViewModel.DeleteCategoryAsync(
+                            category.Name,
+                            _mainViewModel.GetAllIndexedFolderPaths());
+                    }
+                    else
+                    {
+                        var viewModel = DataContext as TagCloudViewModel;
+                        viewModel?.DeleteCategory(category.Name);
+                    }
 
                     StatusText.Text = $"Deleted category '{category.Name}'. Tags moved to 'Uncategorized'";
-                    UpdateWindowTitle();
+                    RefreshFilterAndSummary();
                 }
                 catch (Exception ex)
                 {
@@ -801,6 +1101,24 @@ namespace ImageFolderManager.Views
             {
                 return Visibility.Collapsed;
             }
+            return Visibility.Visible;
+        }
+
+        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            throw new NotImplementedException();
+        }
+    }
+
+    public class InverseBooleanToVisibilityConverter : IValueConverter
+    {
+        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            if (value is bool boolValue)
+            {
+                return boolValue ? Visibility.Collapsed : Visibility.Visible;
+            }
+
             return Visibility.Visible;
         }
 

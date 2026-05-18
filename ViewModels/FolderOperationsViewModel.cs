@@ -911,6 +911,192 @@ namespace ImageFolderManager.ViewModels
             });
         }
 
+        public async Task<bool> AutoAssortFoldersAsync(
+            string rootDirectory,
+            string sourceDirectory,
+            IReadOnlyList<AutoAssortmentExecutionItem> executionItems)
+        {
+            return await ExecuteSerializedAsync(async () =>
+            {
+                if (string.IsNullOrWhiteSpace(rootDirectory) || !Directory.Exists(rootDirectory))
+                {
+                    _dialogService.Show(
+                        "Please set a valid root directory first.",
+                        "Auto Assortment",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Information);
+                    return false;
+                }
+
+                if (string.IsNullOrWhiteSpace(sourceDirectory) || !Directory.Exists(sourceDirectory))
+                {
+                    _dialogService.Show(
+                        "Please select a valid source folder first.",
+                        "Auto Assortment",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Information);
+                    return false;
+                }
+
+                var moves = (executionItems ?? Array.Empty<AutoAssortmentExecutionItem>())
+                    .Where(item => item != null &&
+                                   !string.IsNullOrWhiteSpace(item.SourcePath) &&
+                                   !string.IsNullOrWhiteSpace(item.TargetDirectoryPath))
+                    .GroupBy(item => item.SourcePath, StringComparer.OrdinalIgnoreCase)
+                    .Select(group => group.First())
+                    .ToList();
+
+                if (moves.Count == 0)
+                {
+                    _dialogService.Show(
+                        "No folders are selected to move.",
+                        "Auto Assortment",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Information);
+                    return false;
+                }
+
+                var progressDialog = new ProgressDialog(
+                    "Auto Assortment",
+                    $"Moving {moves.Count} folder(s)...");
+                progressDialog.Owner = Application.Current.MainWindow;
+
+                using var cts = new CancellationTokenSource();
+                progressDialog.CancelRequested += (_, __) => cts.Cancel();
+
+                var movedPairs = new List<(string src, string dest)>();
+                bool wasCancelled = false;
+                int processed = 0;
+                int failed = 0;
+                int skipped = 0;
+
+                var task = Task.Run(async () =>
+                {
+                    foreach (var move in moves)
+                    {
+                        if (cts.Token.IsCancellationRequested)
+                        {
+                            wasCancelled = true;
+                            break;
+                        }
+
+                        try
+                        {
+                            double progress = moves.Count == 0 ? 0 : (double)processed / moves.Count;
+                            string sourceFolderName = Path.GetFileName(move.SourcePath);
+                            Application.Current.Dispatcher.Invoke(() =>
+                                progressDialog.UpdateProgress(progress, $"Moving: {sourceFolderName}"));
+
+                            if (!Directory.Exists(move.SourcePath) || !Directory.Exists(move.TargetDirectoryPath))
+                            {
+                                failed++;
+                                processed++;
+                                continue;
+                            }
+
+                            string preferredDestinationPath = Path.Combine(move.TargetDirectoryPath, Path.GetFileName(move.SourcePath));
+                            if (Directory.Exists(preferredDestinationPath))
+                            {
+                                skipped++;
+                                processed++;
+                                continue;
+                            }
+
+                            var moveResult = await _operationOrchestrator.MoveFolderAsync(
+                                move.SourcePath,
+                                preferredDestinationPath,
+                                cancellationToken: cts.Token);
+
+                            if (moveResult.Success)
+                            {
+                                string actualDestinationPath = moveResult.Data as string ?? preferredDestinationPath;
+                                movedPairs.Add((move.SourcePath, actualDestinationPath));
+                            }
+                            else
+                            {
+                                failed++;
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Debug.WriteLine($"[AutoAssortment] Failed for '{move.SourcePath}': {ex.Message}");
+                            failed++;
+                        }
+
+                        processed++;
+                    }
+
+                    Application.Current.Dispatcher.Invoke(() =>
+                        progressDialog.UpdateProgress(1.0, wasCancelled ? "Auto assortment cancelled" : "Auto assortment completed"));
+                }, cts.Token);
+
+                progressDialog.ShowDialog();
+
+                if (progressDialog.IsCancelled && !cts.IsCancellationRequested)
+                {
+                    cts.Cancel();
+                }
+
+                try
+                {
+                    await task;
+                }
+                catch (OperationCanceledException)
+                {
+                    wasCancelled = true;
+                }
+
+                if (movedPairs.Count > 0)
+                {
+                    UndoManager.Push(UndoRecord.ForMappedMove(
+                        movedPairs.Select(pair => (pair.src, pair.dest)),
+                        $"Auto assortment {movedPairs.Count} folders"));
+                }
+
+                var sourcePaths = movedPairs.Select(pair => pair.src).ToList();
+                var destinationPaths = movedPairs.Select(pair => pair.dest).ToList();
+                if (destinationPaths.Count == 1)
+                {
+                    OnFolderOperationCompleted(FolderOperationEventArgs.CreateSuccess(
+                        FolderOperation.Move,
+                        sourcePaths[0],
+                        destinationPaths[0]));
+                }
+                else if (destinationPaths.Count > 1)
+                {
+                    OnFolderOperationCompleted(FolderOperationEventArgs.CreateBatchMoveSuccess(
+                        sourcePaths,
+                        destinationPaths));
+                }
+
+                CommandManager.InvalidateRequerySuggested();
+
+                if (wasCancelled)
+                {
+                    UpdateStatus($"Auto assortment cancelled. Moved {movedPairs.Count} of {moves.Count} folder(s).");
+                    return false;
+                }
+
+                UpdateStatus(
+                    $"Auto assortment completed: moved {movedPairs.Count}/{moves.Count}, skipped {skipped}, failed {failed}.");
+
+                if (failed > 0 || skipped > 0)
+                {
+                    _dialogService.Show(
+                        $"Auto assortment completed with warnings.\n\n" +
+                        $"Moved: {movedPairs.Count}\n" +
+                        $"Skipped (destination exists): {skipped}\n" +
+                        $"Failed: {failed}\n\n" +
+                        $"You can press Ctrl+Z once to undo the whole moved batch.",
+                        "Auto Assortment",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Warning);
+                }
+
+                return failed == 0;
+            });
+        }
+
         private static string BuildSmartClassificationPreviewMessage(SmartFolderClassificationPlan plan)
         {
             var previewLines = plan.Moves

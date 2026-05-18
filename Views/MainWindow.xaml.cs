@@ -124,7 +124,8 @@ namespace ImageFolderManager
         // Modified to not load images automatically
         private void SearchResults_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
-            if (e.AddedItems.Count > 0 && e.AddedItems[0] is FolderInfo folder)
+            var listBox = sender as ListBox;
+            if (listBox?.SelectedItem is FolderInfo folder)
             {
                 Debug.WriteLine($"SearchResults_SelectionChanged with folder: {folder.FolderPath}");
 
@@ -149,6 +150,26 @@ namespace ImageFolderManager
             _ = ViewModel.SetSelectedFolderAsync(folderInfo);
             ShellTreeViewControl?.SelectPath(folderInfo.FolderPath);
             e.Handled = true;
+        }
+
+        private void SearchResultListBox_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            var listBox = sender as ListBox;
+            var element = e.OriginalSource as DependencyObject;
+            if (listBox == null || element == null)
+                return;
+
+            var item = FindVisualParent<ListBoxItem>(element);
+            if (item == null)
+                return;
+
+            if (!item.IsSelected)
+            {
+                listBox.SelectedItems.Clear();
+                item.IsSelected = true;
+            }
+
+            item.Focus();
         }
 
         private async void ImportFolder_Click(object sender, RoutedEventArgs e)
@@ -1181,60 +1202,91 @@ namespace ImageFolderManager
         private void SearchResultListBox_ContextMenuOpening(object sender, ContextMenuEventArgs e)
         {
             var listBox = sender as ListBox;
-            if (listBox == null) return;
+            if (listBox == null)
+                return;
 
             var element = e.OriginalSource as FrameworkElement;
-            if (element == null) return;
+            var item = element != null ? FindVisualParent<ListBoxItem>(element) : null;
 
-            var item = FindVisualParent<ListBoxItem>(element);
-            if (item == null) return;
+            var selectedFolders = GetSelectedSearchResultFolders(listBox);
 
-            var folderInfo = item.DataContext as FolderInfo;
-            if (folderInfo == null) return;
+            if (selectedFolders.Count == 0 && item?.DataContext is FolderInfo fallbackFolder)
+            {
+                selectedFolders.Add(fallbackFolder);
+            }
+
+            if (selectedFolders.Count == 0)
+            {
+                e.Handled = true;
+                return;
+            }
 
             var contextMenu = new ContextMenu();
 
-            var loadImagesItem = new MenuItem { Header = "Load Images" };
-            loadImagesItem.Click += async (s, args) =>
+            if (selectedFolders.Count == 1)
             {
+                var folderInfo = selectedFolders[0];
 
-                await ViewModel.SetSelectedFolderAsync(folderInfo);
-            };
-            contextMenu.Items.Add(loadImagesItem);
-
-            contextMenu.Items.Add(new Separator());
-
-            var selectItem = new MenuItem { Header = "Select in Tree" };
-            selectItem.Click += (s, args) =>
-            {
-                // Select this folder in the shell tree
-                if (ShellTreeViewControl != null)
+                var loadImagesItem = new MenuItem { Header = "Load Images" };
+                loadImagesItem.Click += async (s, args) =>
                 {
-                    ShellTreeViewControl.SelectPath(folderInfo.FolderPath);
-                }
-            };
-            contextMenu.Items.Add(selectItem);
+                    await ViewModel.SetSelectedFolderAsync(folderInfo);
+                };
+                contextMenu.Items.Add(loadImagesItem);
 
-            var showItem = new MenuItem { Header = "Show in Explorer" };
-            showItem.Click += (s, args) =>
-            {
-                ViewModel.ShowInExplorer(folderInfo);
-            };
-            contextMenu.Items.Add(showItem);
+                contextMenu.Items.Add(new Separator());
 
-            var deleteItem = new MenuItem { Header = "Delete" };
-            deleteItem.Click += async (s, args) =>
-            {
-                await ViewModel.DeleteFolderCommand.ExecuteAsync(folderInfo);
-                // Refresh the tree view after deletion
-                if (ShellTreeViewControl != null)
+                var selectItem = new MenuItem { Header = "Select in Tree" };
+                selectItem.Click += (s, args) =>
                 {
-                    await ShellTreeViewControl.RefreshTreeFull();
-                }
-            };
-            contextMenu.Items.Add(deleteItem);
+                    if (ShellTreeViewControl != null)
+                    {
+                        ShellTreeViewControl.SelectPath(folderInfo.FolderPath);
+                    }
+                };
+                contextMenu.Items.Add(selectItem);
 
-            item.ContextMenu = contextMenu;
+                var showItem = new MenuItem { Header = "Show in Explorer" };
+                showItem.Click += (s, args) =>
+                {
+                    ViewModel.ShowInExplorer(folderInfo);
+                };
+                contextMenu.Items.Add(showItem);
+
+                var deleteItem = new MenuItem { Header = "Delete" };
+                deleteItem.Click += async (s, args) =>
+                {
+                    await ViewModel.DeleteFolderCommand.ExecuteAsync(folderInfo);
+                    if (ShellTreeViewControl != null)
+                    {
+                        await ShellTreeViewControl.RefreshTreeFull();
+                    }
+                };
+                contextMenu.Items.Add(deleteItem);
+            }
+            else
+            {
+                var batchTagsItem = new MenuItem { Header = "Batch Tags..." };
+                batchTagsItem.Click += async (s, args) =>
+                {
+                    await ViewModel.BatchUpdateTags(selectedFolders);
+                };
+                contextMenu.Items.Add(batchTagsItem);
+            }
+
+            listBox.ContextMenu = contextMenu;
+        }
+
+        private static List<FolderInfo> GetSelectedSearchResultFolders(ListBox listBox)
+        {
+            if (listBox == null)
+                return new List<FolderInfo>();
+
+            return listBox.SelectedItems
+                .OfType<FolderInfo>()
+                .Where(folder => folder != null)
+                .Distinct()
+                .ToList();
         }
 
         /// <summary>
@@ -1308,6 +1360,161 @@ namespace ImageFolderManager
                     menuItem.IsEnabled = true;
                 }
             }
+        }
+
+        private async void AutoAssortment_Click(object sender, RoutedEventArgs e)
+        {
+            var menuItem = sender as MenuItem;
+            if (menuItem != null)
+            {
+                menuItem.IsEnabled = false;
+            }
+
+            try
+            {
+                if (ViewModel == null)
+                {
+                    MessageBox.Show(
+                        "ViewModel is not available.",
+                        "Auto Assortment",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Error);
+                    return;
+                }
+
+                string rootDirectory = ViewModel.CurrentRootDirectory;
+                if (string.IsNullOrWhiteSpace(rootDirectory))
+                {
+                    rootDirectory = AppSettings.Instance.DefaultRootDirectory;
+                }
+
+                if (string.IsNullOrWhiteSpace(rootDirectory) || !Directory.Exists(rootDirectory))
+                {
+                    MessageBox.Show(
+                        "Please set a valid root directory first.",
+                        "Auto Assortment",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Information);
+                    return;
+                }
+
+                string selectedSourceDirectory = PromptForAutoAssortmentSourceDirectory(rootDirectory);
+                if (string.IsNullOrWhiteSpace(selectedSourceDirectory))
+                {
+                    return;
+                }
+
+                if (ViewModel.IsIndexing)
+                {
+                    var proceed = MessageBox.Show(
+                        "Folder indexing is in progress. Auto assortment can continue, but the author folder list may be incomplete.\n\nContinue anyway?",
+                        "Indexing In Progress",
+                        MessageBoxButton.YesNo,
+                        MessageBoxImage.Question);
+                    if (proceed != MessageBoxResult.Yes)
+                    {
+                        return;
+                    }
+                }
+
+                AutoAssortmentPlan plan;
+                try
+                {
+                    var service = new AutoAssortmentService();
+                    plan = await Task.Run(() => service.BuildPlan(rootDirectory, selectedSourceDirectory));
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show(
+                        $"Failed to analyze folders:\n\n{ex.Message}",
+                        "Auto Assortment",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Error);
+                    return;
+                }
+
+                if (plan.Items.Count == 0)
+                {
+                    MessageBox.Show(
+                        "The selected folder has no child folders to classify.",
+                        "Auto Assortment",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Information);
+                    return;
+                }
+
+                if (plan.AuthorTargets.Count == 0)
+                {
+                    MessageBox.Show(
+                        "No [author] folders were found under the current root directory.",
+                        "Auto Assortment",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Information);
+                    return;
+                }
+
+                var dialog = new AutoAssortmentDialog(plan)
+                {
+                    Owner = this
+                };
+
+                if (dialog.ShowDialog() != true)
+                {
+                    return;
+                }
+
+                await ViewModel.AutoAssortFoldersAsync(
+                    rootDirectory,
+                    selectedSourceDirectory,
+                    dialog.SelectedMoves);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"AutoAssortment_Click error: {ex}");
+                MessageBox.Show(
+                    $"An error occurred during auto assortment:\n\n{ex.Message}",
+                    "Auto Assortment Error",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+            }
+            finally
+            {
+                if (menuItem != null)
+                {
+                    menuItem.IsEnabled = true;
+                }
+            }
+        }
+
+        private string PromptForAutoAssortmentSourceDirectory(string rootDirectory)
+        {
+            using var dialog = new System.Windows.Forms.FolderBrowserDialog
+            {
+                Description = "Select the unassorted folder under the current root directory",
+                SelectedPath = rootDirectory,
+                ShowNewFolderButton = false
+            };
+
+            if (dialog.ShowDialog() != System.Windows.Forms.DialogResult.OK)
+            {
+                return null;
+            }
+
+            string selectedPath = PathService.NormalizePath(dialog.SelectedPath);
+            string normalizedRoot = PathService.NormalizePath(rootDirectory);
+
+            if (!PathService.IsPathWithin(normalizedRoot, selectedPath) ||
+                PathService.PathsEqual(normalizedRoot, selectedPath))
+            {
+                MessageBox.Show(
+                    "Please select a subfolder inside the current root directory.",
+                    "Auto Assortment",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
+                return null;
+            }
+
+            return selectedPath;
         }
 
         /// <summary>

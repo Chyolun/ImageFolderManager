@@ -1,4 +1,4 @@
-using System;
+ï»¿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -80,6 +80,7 @@ namespace ImageFolderManager.Services
         private readonly ConcurrentDictionary<string, HashSet<string>> _folderNameIndex =
                 new ConcurrentDictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
         private readonly object _nameIndexLock = new object();
+        private static readonly int FolderMetadataParallelism = Math.Max(2, Math.Min(Environment.ProcessorCount, 8));
 
         #endregion
 
@@ -328,34 +329,17 @@ namespace ImageFolderManager.Services
             if (string.IsNullOrEmpty(rootPath) || !Directory.Exists(rootPath))
                 return new List<FolderInfo>();
 
-            var folders = new List<FolderInfo>();
-
             try
             {
                 IsIndexing = true;
 
-                await Task.Run(() =>
-                {
-                    var directories = Directory.GetDirectories(rootPath, "*", SearchOption.AllDirectories)
+                var directories = await Task.Run(() =>
+                    Directory.GetDirectories(rootPath, "*", SearchOption.AllDirectories)
                         .Concat(new[] { rootPath })
-                        .OrderBy(d => d);
+                        .OrderBy(d => d)
+                        .ToList());
 
-                    foreach (var directory in directories)
-                    {
-                        try
-                        {
-                            var folderInfo = CreateFolderInfo(directory);
-                            if (folderInfo != null)
-                            {
-                                folders.Add(folderInfo);
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            Debug.WriteLine($"Error loading folder {directory}: {ex.Message}");
-                        }
-                    }
-                });
+                return await CreateFolderInfosWithoutImagesAsync(directories);
             }
             catch (Exception ex)
             {
@@ -366,7 +350,7 @@ namespace ImageFolderManager.Services
                 IsIndexing = false;
             }
 
-            return folders;
+            return new List<FolderInfo>();
         }
 
         /// <summary>
@@ -375,6 +359,44 @@ namespace ImageFolderManager.Services
         public async Task<FolderInfo> CreateFolderInfoWithoutImagesAsync(string folderPath)
         {
             return await Task.Run(() => CreateFolderInfo(folderPath));
+        }
+
+        public async Task<List<FolderInfo>> CreateFolderInfosWithoutImagesAsync(
+            IEnumerable<string> folderPaths,
+            CancellationToken cancellationToken = default)
+        {
+            var normalizedPaths = (folderPaths ?? Enumerable.Empty<string>())
+                .Where(path => !string.IsNullOrWhiteSpace(path))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            if (normalizedPaths.Count == 0)
+                return new List<FolderInfo>();
+
+            var results = new FolderInfo[normalizedPaths.Count];
+            var options = new ParallelOptions
+            {
+                CancellationToken = cancellationToken,
+                MaxDegreeOfParallelism = FolderMetadataParallelism
+            };
+
+            await Parallel.ForEachAsync(Enumerable.Range(0, normalizedPaths.Count), options, async (index, ct) =>
+            {
+                try
+                {
+                    results[index] = await CreateFolderInfoSafe(normalizedPaths[index], ct);
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"Error loading folder {normalizedPaths[index]}: {ex.Message}");
+                }
+            });
+
+            return results.Where(folder => folder != null).ToList();
         }
 
         /// <summary>
@@ -390,7 +412,7 @@ namespace ImageFolderManager.Services
             var normalizedSearchTerm = searchTerm.ToLowerInvariant();
             var results = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-            // ©¤©¤ Fast path: name index (folder name substring) ©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤
+            // â”€â”€ Fast path: name index (folder name substring) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             foreach (var kvp in _folderNameIndex)
             {
                 if (kvp.Key.Contains(normalizedSearchTerm))
@@ -400,7 +422,7 @@ namespace ImageFolderManager.Services
                 }
             }
 
-            // ©¤©¤ Slow path: path substring (handles deep path matches) ©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤
+            // â”€â”€ Slow path: path substring (handles deep path matches) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             // Only needed when the term might appear in a parent-segment of the path
             // but NOT in the folder name itself.
             foreach (var folderPath in _folderIndex.Keys)
@@ -866,6 +888,40 @@ namespace ImageFolderManager.Services
             }
         }
 
+        private async Task<(List<TagWithCategory> categorizedTags, int rating)> LoadFolderMetadataSnapshotAsync(
+            string folderPath, CancellationToken cancellationToken = default)
+        {
+            var categorizedTags = await _tagService.GetTagsWithCategoriesForFolderAsync(folderPath);
+            cancellationToken.ThrowIfCancellationRequested();
+
+            int rating = await _tagService.GetRatingForFolderAsync(folderPath);
+            cancellationToken.ThrowIfCancellationRequested();
+
+            return (categorizedTags ?? new List<TagWithCategory>(), rating);
+        }
+
+        private static void ApplyFolderMetadata(
+            FolderInfo folderInfo,
+            IEnumerable<TagWithCategory> categorizedTags,
+            int rating)
+        {
+            var tagsSnapshot = (categorizedTags ?? Enumerable.Empty<TagWithCategory>())
+                .Where(tag => tag != null && !string.IsNullOrWhiteSpace(tag.TagName))
+                .Select(tag => new TagWithCategory
+                {
+                    TagName = tag.TagName,
+                    Category = string.IsNullOrWhiteSpace(tag.Category) ? "Uncategorized" : tag.Category
+                })
+                .ToList();
+
+            folderInfo.Tags = new ObservableCollection<string>(
+                tagsSnapshot.Select(tag => tag.TagName)
+                    .Distinct(StringComparer.OrdinalIgnoreCase));
+            folderInfo.CategorizedTags = new ObservableCollection<TagWithCategory>(tagsSnapshot);
+            folderInfo.Rating = rating;
+            folderInfo.IsLoading = false;
+        }
+
         // Add safe folder info creation:
         private async Task<FolderInfo> CreateFolderInfoSafe(string folderPath, CancellationToken cancellationToken = default)
         {
@@ -879,43 +935,14 @@ namespace ImageFolderManager.Services
                 {
                     FolderPath = folderPath,
                     Tags = new ObservableCollection<string>(),
+                    CategorizedTags = new ObservableCollection<TagWithCategory>(),
                     IsLoading = true // Set loading state initially
                 };
 
-                // Load metadata asynchronously
                 try
                 {
-                    var tags = await _tagService.GetTagsForFolderAsync(folderPath);
-                    var rating = await _tagService.GetRatingForFolderAsync(folderPath);
-
-                    if (!cancellationToken.IsCancellationRequested)
-                    {
-                        // Update on UI thread if available
-                        if (Application.Current?.Dispatcher != null)
-                        {
-                            await Application.Current.Dispatcher.InvokeAsync(() =>
-                            {
-                                folderInfo.Tags.Clear();
-                                foreach (var tag in tags)
-                                {
-                                    folderInfo.Tags.Add(tag);
-                                }
-                                folderInfo.Rating = rating;
-                                folderInfo.IsLoading = false; // Clear loading state
-                            }, DispatcherPriority.Background, cancellationToken);
-                        }
-                        else
-                        {
-                            // Direct update if no dispatcher
-                            folderInfo.Tags.Clear();
-                            foreach (var tag in tags)
-                            {
-                                folderInfo.Tags.Add(tag);
-                            }
-                            folderInfo.Rating = rating;
-                            folderInfo.IsLoading = false;
-                        }
-                    }
+                    var (categorizedTags, rating) = await LoadFolderMetadataSnapshotAsync(folderPath, cancellationToken);
+                    ApplyFolderMetadata(folderInfo, categorizedTags, rating);
                 }
                 catch (OperationCanceledException)
                 {
@@ -962,32 +989,20 @@ namespace ImageFolderManager.Services
 
                     FolderPath = folderPath,
 
-                    Tags = new ObservableCollection<string>()
+                    Tags = new ObservableCollection<string>(),
+                    CategorizedTags = new ObservableCollection<TagWithCategory>()
                 };
 
-                // Load tags asynchronously if needed
-                _ = Task.Run(async () =>
-                {
-                    try
-                    {
-                        var tags = await _tagService.GetTagsForFolderAsync(folderPath);
-                        var rating = await _tagService.GetRatingForFolderAsync(folderPath);
+                var categorizedTags = _tagService
+                    .GetTagsWithCategoriesForFolderAsync(folderPath)
+                    .GetAwaiter()
+                    .GetResult();
+                int rating = _tagService
+                    .GetRatingForFolderAsync(folderPath)
+                    .GetAwaiter()
+                    .GetResult();
 
-                        Application.Current?.Dispatcher.Invoke(() =>
-                        {
-                            folderInfo.Tags.Clear();
-                            foreach (var tag in tags)
-                            {
-                                folderInfo.Tags.Add(tag);
-                            }
-                            folderInfo.Rating = rating;
-                        });
-                    }
-                    catch (Exception ex)
-                    {
-                        Debug.WriteLine($"Error loading tags for {folderPath}: {ex.Message}");
-                    }
-                });
+                ApplyFolderMetadata(folderInfo, categorizedTags, rating);
 
                 return folderInfo;
             }

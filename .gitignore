@@ -19,6 +19,8 @@ packages/
 TestResults/
 *.coverage
 *.coveragexml
+artifacts/
+tests/
 
 # Rider / VS Code
 .idea/
