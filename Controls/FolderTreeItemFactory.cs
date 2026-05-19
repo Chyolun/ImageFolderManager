@@ -37,7 +37,7 @@ namespace ImageFolderManager.Controls
         private static readonly SolidColorBrush _iconBrush =
             Freeze(new SolidColorBrush(Color.FromRgb(255, 198, 79)));   // Windows-yellow
         private static readonly SolidColorBrush _textBrush =
-            Freeze(new SolidColorBrush(Colors.White));
+            Freeze(new SolidColorBrush(Color.FromRgb(234, 240, 247)));
         private static readonly SolidColorBrush _transparentBrush =
             Freeze(new SolidColorBrush(Colors.Transparent));
 
@@ -245,11 +245,11 @@ namespace ImageFolderManager.Controls
             {
                 Data = _folderGeometry,
                 Fill = _iconBrush,
-                Width = 16,
-                Height = 14,
+                Width = 15,
+                Height = 13,
                 Stretch = Stretch.Uniform,
                 VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(0, 0, 6, 0),
+                Margin = new Thickness(0, 0, 5, 0),
                 SnapsToDevicePixels = true,
             };
 
@@ -257,10 +257,11 @@ namespace ImageFolderManager.Controls
             {
                 Text = name,
                 Foreground = _textBrush,
-                FontSize = 13,
+                FontSize = 12,
                 VerticalAlignment = VerticalAlignment.Center,
                 // Prevent TextBlock from measuring every character during layout
                 TextTrimming = TextTrimming.None,
+                SnapsToDevicePixels = true,
             };
 
             panel.Children.Add(icon);
