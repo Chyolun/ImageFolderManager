@@ -655,16 +655,37 @@ namespace ImageFolderManager.Services
         {
             return (tags ?? Enumerable.Empty<TagWithCategory>())
                 .Where(t => !string.IsNullOrWhiteSpace(t?.TagName))
-                .Select(t => new TagWithCategory
+                .Select(t =>
                 {
-                    TagName = t.TagName.Trim(),
-                    Category = string.IsNullOrWhiteSpace(t.Category) ? "Uncategorized" : t.Category.Trim()
+                    string tagName = t.TagName.Trim();
+                    string category = string.IsNullOrWhiteSpace(t.Category)
+                        ? "Uncategorized"
+                        : t.Category.Trim();
+
+                    if (IsDefaultCategory(category))
+                    {
+                        string mappedCategory = _categoryService.GetTagCategory(tagName);
+                        if (!IsDefaultCategory(mappedCategory))
+                        {
+                            category = mappedCategory;
+                        }
+                    }
+
+                    return new TagWithCategory
+                    {
+                        TagName = tagName,
+                        Category = category
+                    };
                 })
                 .Where(t => !string.IsNullOrWhiteSpace(t.TagName))
                 .GroupBy(t => t.TagName, StringComparer.OrdinalIgnoreCase)
                 .Select(g => g.First())
                 .ToList();
         }
+
+        private static bool IsDefaultCategory(string category)
+            => string.IsNullOrWhiteSpace(category) ||
+               category.Equals("Uncategorized", StringComparison.OrdinalIgnoreCase);
 
         private static List<TagWithCategory> CloneTags(IEnumerable<TagWithCategory> tags)
         {

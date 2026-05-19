@@ -287,9 +287,9 @@ namespace ImageFolderManager.ViewModels
             try
             {
                 // Use provided folder paths or get all folder paths
-                folderPaths = folderPaths ?? GetAllFolderPaths();
+                var targetFolderPaths = ToFolderPathList(folderPaths ?? GetAllFolderPaths());
 
-                if (folderPaths == null || !folderPaths.Any())
+                if (targetFolderPaths.Count == 0)
                 {
                     _dialogService.Show(
                         "No folders available to search for tags. Please ensure folders are indexed.",
@@ -314,15 +314,15 @@ namespace ImageFolderManager.ViewModels
                 }
 
                 // Perform the tag renaming operation - pass the category separately to ensure it's preserved
-                await _tagService.RenameTagAsync(oldTag, tagNameOnly, folderPaths, category);
+                await _tagService.RenameTagAsync(oldTag, tagNameOnly, targetFolderPaths, category);
 
                 // Update tag cloud
                 _tagCloud.InvalidateCache();
-                await UpdateTagCloudAsync();
+                await RefreshTagCloudFromFolderPathsAsync(targetFolderPaths);
 
                 // If current folder has the renamed tag, refresh
                 if (CurrentFolder != null &&
-                    CurrentFolder.CategorizedTags.Any(tag =>
+                    (CurrentFolder.CategorizedTags ?? Enumerable.Empty<TagWithCategory>()).Any(tag =>
                         tag != null &&
                         tag.TagName.Equals(oldTag, StringComparison.OrdinalIgnoreCase)))
                 {
@@ -350,11 +350,11 @@ namespace ImageFolderManager.ViewModels
 
             try
             {
-                folderPaths = folderPaths ?? GetAllFolderPaths();
-                await _tagService.MoveTagToCategoryAsync(tagName, oldCategory, newCategory, folderPaths);
+                var targetFolderPaths = ToFolderPathList(folderPaths ?? GetAllFolderPaths());
+                await _tagService.MoveTagToCategoryAsync(tagName, oldCategory, newCategory, targetFolderPaths);
 
                 _tagCloud.InvalidateCache();
-                await UpdateTagCloudAsync();
+                await RefreshTagCloudFromFolderPathsAsync(targetFolderPaths);
 
                 if (CurrentFolder != null)
                 {
@@ -381,11 +381,11 @@ namespace ImageFolderManager.ViewModels
 
             try
             {
-                folderPaths = folderPaths ?? GetAllFolderPaths();
-                await _tagService.RenameCategoryAsync(oldCategory, newCategory, folderPaths);
+                var targetFolderPaths = ToFolderPathList(folderPaths ?? GetAllFolderPaths());
+                await _tagService.RenameCategoryAsync(oldCategory, newCategory, targetFolderPaths);
 
                 _tagCloud.InvalidateCache();
-                await UpdateTagCloudAsync();
+                await RefreshTagCloudFromFolderPathsAsync(targetFolderPaths);
 
                 if (CurrentFolder != null)
                 {
@@ -410,11 +410,11 @@ namespace ImageFolderManager.ViewModels
 
             try
             {
-                folderPaths = folderPaths ?? GetAllFolderPaths();
-                await _tagService.DeleteCategoryAsync(categoryName, folderPaths);
+                var targetFolderPaths = ToFolderPathList(folderPaths ?? GetAllFolderPaths());
+                await _tagService.DeleteCategoryAsync(categoryName, targetFolderPaths);
 
                 _tagCloud.InvalidateCache();
-                await UpdateTagCloudAsync();
+                await RefreshTagCloudFromFolderPathsAsync(targetFolderPaths);
 
                 if (CurrentFolder != null)
                 {
@@ -437,12 +437,59 @@ namespace ImageFolderManager.ViewModels
             if (allFolders != null)
             {
                 await _tagCloud.UpdateTagCloudAsync(allFolders);
+                return;
             }
+
+            await RefreshTagCloudFromFolderPathsAsync(GetAllFolderPaths());
         }
 
         #endregion
 
         #region Private Methods
+
+        private async Task RefreshTagCloudFromFolderPathsAsync(IEnumerable<string> folderPaths)
+        {
+            var folderPathList = ToFolderPathList(folderPaths);
+            if (folderPathList.Count == 0)
+                return;
+
+            var folders = new List<FolderInfo>();
+            foreach (var folderPath in folderPathList)
+            {
+                var tagsWithCategories = await _tagService.GetTagsWithCategoriesForFolderAsync(folderPath);
+                int rating = await _tagService.GetRatingForFolderAsync(folderPath);
+
+                var validTags = (tagsWithCategories ?? new List<TagWithCategory>())
+                    .Where(tag => tag != null && !string.IsNullOrWhiteSpace(tag.TagName))
+                    .Select(tag => new TagWithCategory
+                    {
+                        TagName = tag.TagName,
+                        Category = tag.Category
+                    })
+                    .ToList();
+
+                folders.Add(new FolderInfo(folderPath)
+                {
+                    Tags = new ObservableCollection<string>(
+                        validTags
+                            .Select(tag => tag.TagName)
+                            .Distinct(StringComparer.OrdinalIgnoreCase)),
+                    CategorizedTags = new ObservableCollection<TagWithCategory>(validTags),
+                    Rating = rating
+                });
+            }
+
+            await _tagCloud.UpdateTagCloudAsync(folders);
+        }
+
+        private static List<string> ToFolderPathList(IEnumerable<string> folderPaths)
+        {
+            return (folderPaths ?? Enumerable.Empty<string>())
+                .Where(path => !string.IsNullOrWhiteSpace(path))
+                .Select(path => path.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
 
         private static List<TagWithCategory> ParseStoredTags(IEnumerable<string> tags)
         {
@@ -506,21 +553,13 @@ namespace ImageFolderManager.ViewModels
                 if (!isUncategorized)
                     return parsedTag;
 
-                var matchedCategories = existingCategorizedTags
-                    .Where(existing =>
-                        existing.TagName.Equals(parsedTag.TagName, StringComparison.OrdinalIgnoreCase) &&
-                        !string.IsNullOrWhiteSpace(existing.Category) &&
-                        !existing.Category.Equals("Uncategorized", StringComparison.OrdinalIgnoreCase))
-                    .Select(existing => existing.Category)
-                    .Distinct(StringComparer.OrdinalIgnoreCase)
-                    .ToList();
-
-                if (matchedCategories.Count == 1)
+                string existingCategory = ResolveExistingCategoryForTag(parsedTag.TagName, existingCategorizedTags);
+                if (!string.IsNullOrWhiteSpace(existingCategory))
                 {
                     return new TagWithCategory
                     {
                         TagName = parsedTag.TagName,
-                        Category = matchedCategories[0]
+                        Category = existingCategory
                     };
                 }
 
@@ -529,6 +568,53 @@ namespace ImageFolderManager.ViewModels
 
             return ToStoredTagIdentifiers(resolvedTags);
         }
+
+        private string ResolveExistingCategoryForTag(
+            string tagName,
+            IEnumerable<TagWithCategory> currentFolderTags)
+        {
+            if (string.IsNullOrWhiteSpace(tagName))
+                return null;
+
+            string mappedCategory = _categoryService.GetTagCategory(tagName);
+            if (!IsDefaultCategory(mappedCategory))
+                return mappedCategory;
+
+            var matchedCategories = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var existing in currentFolderTags ?? Enumerable.Empty<TagWithCategory>())
+            {
+                if (existing == null ||
+                    string.IsNullOrWhiteSpace(existing.TagName) ||
+                    string.IsNullOrWhiteSpace(existing.Category) ||
+                    IsDefaultCategory(existing.Category) ||
+                    !existing.TagName.Equals(tagName, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                matchedCategories.Add(existing.Category);
+            }
+
+            foreach (var category in _tagCloud.Categories ?? Enumerable.Empty<TagCategory>())
+            {
+                if (category == null || IsDefaultCategory(category.Name))
+                    continue;
+
+                bool containsTag = _tagCloud.GetTagsInCategory(category.Name)
+                    .Any(tag => tag.Tag.Equals(tagName, StringComparison.OrdinalIgnoreCase));
+
+                if (containsTag)
+                {
+                    matchedCategories.Add(category.Name);
+                }
+            }
+
+            return matchedCategories.Count == 1 ? matchedCategories.First() : null;
+        }
+
+        private static bool IsDefaultCategory(string category)
+            => string.IsNullOrWhiteSpace(category) ||
+               category.Equals("Uncategorized", StringComparison.OrdinalIgnoreCase);
 
         private static bool MatchesTagOperation(TagWithCategory tag, string tagExpression)
         {

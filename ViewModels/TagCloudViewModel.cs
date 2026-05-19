@@ -209,6 +209,7 @@ namespace ImageFolderManager.ViewModels
                 var folderContributionCache =
                     new Dictionary<string, Dictionary<string, int>>(StringComparer.OrdinalIgnoreCase);
                 var tagData = new Dictionary<string, TagCloudItemData>(StringComparer.OrdinalIgnoreCase);
+                var categoryHints = BuildKnownTagCategoryHints(allFolders);
 
                 foreach (var folder in allFolders)
                 {
@@ -216,7 +217,7 @@ namespace ImageFolderManager.ViewModels
                         continue;
 
                     string normalizedPath = PathService.NormalizePath(folder.FolderPath);
-                    var contribution = BuildFolderContributionMap(folder);
+                    var contribution = BuildFolderContributionMap(folder, categoryHints);
                     folderContributionCache[normalizedPath] = contribution;
 
                     foreach (var kvp in contribution)
@@ -356,7 +357,80 @@ namespace ImageFolderManager.ViewModels
             return Task.CompletedTask;
         }
 
-        private IEnumerable<TagWithCategory> EnumerateCategorizedTags(FolderInfo folder)
+        private IEnumerable<TagWithCategory> EnumerateCategorizedTags(
+            FolderInfo folder,
+            IReadOnlyDictionary<string, string> categoryHints = null)
+        {
+            if (folder?.CategorizedTags != null && folder.CategorizedTags.Count > 0)
+            {
+                foreach (var tag in folder.CategorizedTags)
+                {
+                    if (tag != null && !string.IsNullOrWhiteSpace(tag.TagName))
+                    {
+                        yield return new TagWithCategory
+                        {
+                            TagName = tag.TagName,
+                            Category = ResolveCategoryForTag(tag.TagName, tag.Category, categoryHints)
+                        };
+                    }
+                }
+                yield break;
+            }
+
+            if (folder?.Tags == null)
+                yield break;
+
+            foreach (var tag in folder.Tags)
+            {
+                if (string.IsNullOrWhiteSpace(tag))
+                    continue;
+
+                var (category, tagName) = ParseTagWithCategory(tag);
+                if (!string.IsNullOrWhiteSpace(tagName))
+                {
+                    yield return new TagWithCategory
+                    {
+                        TagName = tagName,
+                        Category = ResolveCategoryForTag(tagName, category, categoryHints)
+                    };
+                }
+            }
+        }
+
+        private Dictionary<string, string> BuildKnownTagCategoryHints(IEnumerable<FolderInfo> folders)
+        {
+            var categorySets = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var folder in folders ?? Enumerable.Empty<FolderInfo>())
+            {
+                foreach (var tag in EnumerateRawCategorizedTags(folder))
+                {
+                    if (tag == null ||
+                        string.IsNullOrWhiteSpace(tag.TagName) ||
+                        IsDefaultCategory(tag.Category))
+                    {
+                        continue;
+                    }
+
+                    if (!categorySets.TryGetValue(tag.TagName, out var categories))
+                    {
+                        categories = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                        categorySets[tag.TagName] = categories;
+                    }
+
+                    categories.Add(tag.Category);
+                }
+            }
+
+            return categorySets
+                .Where(kvp => kvp.Value.Count == 1)
+                .ToDictionary(
+                    kvp => kvp.Key,
+                    kvp => kvp.Value.First(),
+                    StringComparer.OrdinalIgnoreCase);
+        }
+
+        private IEnumerable<TagWithCategory> EnumerateRawCategorizedTags(FolderInfo folder)
         {
             if (folder?.CategorizedTags != null && folder.CategorizedTags.Count > 0)
             {
@@ -387,6 +461,27 @@ namespace ImageFolderManager.ViewModels
                 }
             }
         }
+
+        private string ResolveCategoryForTag(
+            string tagName,
+            string category,
+            IReadOnlyDictionary<string, string> categoryHints = null)
+        {
+            if (!IsDefaultCategory(category))
+                return category;
+
+            string mappedCategory = _categoryService.GetTagCategory(tagName);
+            if (!IsDefaultCategory(mappedCategory))
+                return mappedCategory;
+
+            return categoryHints != null && categoryHints.TryGetValue(tagName, out var hintedCategory)
+                ? hintedCategory
+                : DEFAULT_CATEGORY;
+        }
+
+        private static bool IsDefaultCategory(string category)
+            => string.IsNullOrWhiteSpace(category) ||
+               category.Equals(DEFAULT_CATEGORY, StringComparison.OrdinalIgnoreCase);
 
         /// <summary>
         /// Parse tag to extract category and tag name
@@ -933,16 +1028,20 @@ namespace ImageFolderManager.ViewModels
             _folderTagContributions.Remove(folderPath);
         }
 
-        private IEnumerable<TagWithCategory> EnumerateCategorizedTagsForContribution(FolderInfo folder)
-            => EnumerateCategorizedTags(folder);
+        private IEnumerable<TagWithCategory> EnumerateCategorizedTagsForContribution(
+            FolderInfo folder,
+            IReadOnlyDictionary<string, string> categoryHints = null)
+            => EnumerateCategorizedTags(folder, categoryHints);
 
-        private Dictionary<string, int> BuildFolderContributionMap(FolderInfo folder)
+        private Dictionary<string, int> BuildFolderContributionMap(
+            FolderInfo folder,
+            IReadOnlyDictionary<string, string> categoryHints = null)
         {
             var contribution = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             if (folder == null)
                 return contribution;
 
-            foreach (var tag in EnumerateCategorizedTagsForContribution(folder))
+            foreach (var tag in EnumerateCategorizedTagsForContribution(folder, categoryHints))
             {
                 if (tag == null || string.IsNullOrWhiteSpace(tag.TagName))
                     continue;

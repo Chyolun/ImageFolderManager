@@ -47,6 +47,7 @@ namespace ImageFolderManager
             var viewModel = new MainViewModel();
             _mainViewModelInstanceInfo = viewModel.GetInstanceInfo();
             DataContext = viewModel;
+            viewModel.TagCloudRequested += MainViewModel_TagCloudRequested;
             viewModel.SetShellTreeView(ShellTreeViewControl);
             SearchSuggestionListBox.ItemsSource = _searchSuggestionItems;
             TagSuggestionListBox.ItemsSource = _tagSuggestionItems;
@@ -65,7 +66,21 @@ namespace ImageFolderManager
         // ADD THIS METHOD: Cleanup debug monitoring when window is closing
         private void MainWindow_Closing(object sender, System.ComponentModel.CancelEventArgs e)
         {
+            if (ViewModel != null)
+            {
+                ViewModel.TagCloudRequested -= MainViewModel_TagCloudRequested;
+            }
+        }
 
+        private void MainViewModel_TagCloudRequested(object sender, EventArgs e)
+        {
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.Invoke(ShowTagCloudWindow);
+                return;
+            }
+
+            ShowTagCloudWindow();
         }
 
         private async Task LoadDefaultRootDirectoryAsync()
@@ -1618,6 +1633,11 @@ namespace ImageFolderManager
 
         private void TagsCloud_Click(object sender, RoutedEventArgs e)
         {
+            ShowTagCloudWindow();
+        }
+
+        private void ShowTagCloudWindow()
+        {
             // Check if there is already an open TagCloudWindow
             foreach (Window window in Application.Current.Windows)
             {
@@ -1629,6 +1649,9 @@ namespace ImageFolderManager
                     return;
                 }
             }
+
+            if (ViewModel?.TagManagement?.TagCloud == null)
+                return;
 
             // Create the tag cloud window - fixed property access
             var tagCloudWindow = new TagCloudWindow(ViewModel.TagManagement.TagCloud, ViewModel);

@@ -169,6 +169,8 @@ namespace ImageFolderManager.ViewModels
         public IAsyncRelayCommand<FolderInfo> DeleteFolderCommand => FolderOperations.DeleteFolderCommand;
         public IAsyncRelayCommand TagsCloudCommand => TagManagement.TagsCloudCommand;
 
+        public event System.EventHandler TagCloudRequested;
+
         // Main commands
         public IAsyncRelayCommand SetRootDirectoryCommand { get; }
         public ICommand CollapseParentDirectoryCommand { get; }
@@ -752,9 +754,8 @@ namespace ImageFolderManager.ViewModels
 
         private void ShowTagCloud()
         {
-            // This would be handled by the View
-            // The View would check for existing TagCloudWindow and show it
             StatusMessage = "Opening tag cloud...";
+            TagCloudRequested?.Invoke(this, System.EventArgs.Empty);
         }
 
         private async Task HandleTagsUpdated(TagsUpdatedEventArgs e)

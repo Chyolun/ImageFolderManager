@@ -245,6 +245,128 @@ public sealed class TagConcurrencyIntegrationTests : IDisposable
     }
 
     [Fact]
+    public async Task TagManagementViewModel_RenameTagAsync_ShouldRefreshTagCloudFromProvidedFolderPaths()
+    {
+        string configDir = CreateDirectory("tag_cloud_rename_refresh");
+        await RunOnDispatcherThreadAsync(async dispatcher =>
+        {
+            var categoryService = new TagCategoryService(configDir);
+            var tagService = new FolderTagService(categoryService);
+            var tagCloud = new TagCloudViewModel(categoryService);
+            var viewModel = new TagManagementViewModel(tagService, tagCloud, dialogService: new TestDialogService());
+
+            var folderPaths = new List<string>
+            {
+                CreateDirectory(Path.Combine("rename_refresh", "Folder_A")),
+                CreateDirectory(Path.Combine("rename_refresh", "Folder_B"))
+            };
+
+            foreach (var folderPath in folderPaths)
+            {
+                await tagService.SetTagsAndRatingForFolderAsync(
+                    folderPath,
+                    new List<string> { "OldTag" },
+                    rating: 0);
+            }
+
+            var initialFolders = folderPaths
+                .Select(path => new FolderInfo(path)
+                {
+                    CategorizedTags = new System.Collections.ObjectModel.ObservableCollection<TagWithCategory>
+                    {
+                        new TagWithCategory
+                        {
+                            TagName = "OldTag",
+                            Category = TagCloudViewModel.DEFAULT_CATEGORY
+                        }
+                    }
+                })
+                .ToList();
+
+            await viewModel.UpdateTagCloudAsync(initialFolders);
+
+            await viewModel.RenameTagAsync("OldTag", "NewTag", folderPaths);
+
+            var finalTags = tagCloud.GetTagsInCategory(TagCloudViewModel.DEFAULT_CATEGORY)
+                .Select(t => t.Tag)
+                .ToList();
+
+            Assert.Contains("NewTag", finalTags, StringComparer.OrdinalIgnoreCase);
+            Assert.DoesNotContain(finalTags, t => t.Equals("OldTag", StringComparison.OrdinalIgnoreCase));
+        });
+    }
+
+    [Fact]
+    public async Task TagCloudViewModel_ShouldResolveUncategorizedTagToExistingCategory()
+    {
+        string configDir = CreateDirectory("tag_cloud_existing_category");
+        await RunOnDispatcherThreadAsync(async dispatcher =>
+        {
+            var categoryService = new TagCategoryService(configDir);
+            var viewModel = new TagCloudViewModel(categoryService);
+
+            var folders = new List<FolderInfo>
+            {
+                new FolderInfo(CreateDirectory(Path.Combine("cloud_existing_category", "Folder_A")))
+                {
+                    CategorizedTags = new System.Collections.ObjectModel.ObservableCollection<TagWithCategory>
+                    {
+                        new TagWithCategory
+                        {
+                            TagName = "SharedTag",
+                            Category = "People"
+                        }
+                    }
+                },
+                new FolderInfo(CreateDirectory(Path.Combine("cloud_existing_category", "Folder_B")))
+                {
+                    Tags = new System.Collections.ObjectModel.ObservableCollection<string> { "SharedTag" }
+                }
+            };
+
+            await viewModel.UpdateTagCloudAsync(folders);
+
+            var peopleTag = Assert.Single(viewModel.GetTagsInCategory("People"));
+            Assert.Equal("SharedTag", peopleTag.Tag);
+            Assert.Equal(2, peopleTag.Count);
+            Assert.DoesNotContain(
+                viewModel.GetTagsInCategory(TagCloudViewModel.DEFAULT_CATEGORY),
+                tag => tag.Tag.Equals("SharedTag", StringComparison.OrdinalIgnoreCase));
+        });
+    }
+
+    [Fact]
+    public async Task TagManagementViewModel_SaveTagsCommand_ShouldUseExistingCategoryForBareTag()
+    {
+        string configDir = CreateDirectory("tag_save_existing_category");
+        await RunOnDispatcherThreadAsync(async dispatcher =>
+        {
+            var categoryService = new TagCategoryService(configDir);
+            var tagService = new FolderTagService(categoryService);
+            var tagCloud = new TagCloudViewModel(categoryService);
+            var viewModel = new TagManagementViewModel(tagService, tagCloud, dialogService: new TestDialogService());
+
+            string sourceFolder = CreateDirectory(Path.Combine("tag_save_existing_category", "Folder_A"));
+            string targetFolder = CreateDirectory(Path.Combine("tag_save_existing_category", "Folder_B"));
+
+            await tagService.SetTagsAndRatingForFolderAsync(
+                sourceFolder,
+                new List<string> { "People::SharedTag" },
+                rating: 0);
+
+            await viewModel.LoadFolderMetadataAsync(new FolderInfo(targetFolder));
+            viewModel.TagInputText = "#SharedTag";
+
+            await viewModel.SaveTagsCommand.ExecuteAsync(null);
+
+            var savedTags = await tagService.GetTagsWithCategoriesForFolderAsync(targetFolder);
+            var savedTag = Assert.Single(savedTags);
+            Assert.Equal("SharedTag", savedTag.TagName);
+            Assert.Equal("People", savedTag.Category);
+        });
+    }
+
+    [Fact]
     public void TagCategoryService_DefaultCategoryDeletion_ShouldBeCaseInsensitiveNoOp()
     {
         string configDir = CreateDirectory("default_category_case");
